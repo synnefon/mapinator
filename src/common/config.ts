@@ -1,19 +1,19 @@
 export interface MapGenSettings {
-    resolution: number;
-    jitter: number;
-    wavelength: number;
-    rainfall: number;
-    seaLevel: number;
-    shatter: number;    // 0..1, default 1 for current behavior
-    edgeCurve: number; // optional, >1 = stronger falloff near edges
+  resolution: number;
+  jitter: number;
+  wavelength: number;
+  rainfall: number;
+  seaLevel: number;
+  shatter: number;
+  edgeCurve: number;
 }
 
 export const DEFAULTS: MapGenSettings = {
   resolution: 75,
   jitter: 0.5,
   wavelength: 0.4,
-  rainfall: 0.5,
+  rainfall: 0.6,
   seaLevel: 0.5,
-  shatter: 0.5,    // 0..1, default 1 for current behavior
-  edgeCurve: 0.8, // optional, >1 = stronger falloff near edges
+  shatter: 0.1,
+  edgeCurve: 0.8,
 };
