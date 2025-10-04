@@ -97,20 +97,17 @@ export class MapGenerator {
             const nx = points[r].x / resolution - 0.5;
             const ny = points[r].y / resolution - 0.5;
 
-            // base noise (octaves)
             let e =
                 1 / 3 +
                 this.noise2D(nx / wavelength, ny / wavelength) / 2 +
                 this.noise2D((2 * nx) / wavelength, (2 * ny) / wavelength) / 3;
 
-            // edge distance (0 center → 1 border), shaped by edgeExp
+            // edge distance (0 center → 1 border)
             let d = 2 * Math.max(Math.abs(nx), Math.abs(ny));
             d = Math.pow(d, edgeExp);
 
-            // island-style mask (lowers edges)
             const shatterMasked = (1 + e - d) / 2;
 
-            // blend raw noise vs masked by 'shatter' (your inverted control)
             e = lerp(e, shatterMasked, clamp(shatter));
 
             elevation[r] = clamp(e);

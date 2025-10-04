@@ -27,7 +27,6 @@ type LanguageConfig = {
 const V_OPEN = ["a", "e", "i", "o", "u"];
 const V_DIP = ["ai", "au", "ei", "ia", "io", "oa", "ue", "ui"];
 const V_SOFT = ["a", "e", "i", "o", "u", "ia", "io", "ie", "ea"];
-const V_BACK = ["a", "o", "u", "au", "oo"];
 const V_SEMI = ["a", "i", "u", "aa", "ii", "uu", "ai", "au"];
 
 export const languageConfigs: { [key: string]: LanguageConfig } = {

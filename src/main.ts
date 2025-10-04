@@ -1,7 +1,7 @@
 import type { Map } from "./common/map";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
-import { NameGenerator, type Family } from "./mapgen/NameGenerator";
+import { NameGenerator } from "./mapgen/NameGenerator";
 import { DEFAULTS, type MapGenSettings } from "./common/config";
 
 const fetchElement = <T>(id: string): T => {
