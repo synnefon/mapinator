@@ -5,40 +5,29 @@
   font-size: 1.3em;
 
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #000000;
-
-  font-synthesis: none;
+  color: rgba(0, 0, 0, 0.87);
+  background-color: #d9d7d7;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Layout */
 body {
   margin: 0;
-  display: flex;
-  justify-content: center; /* horizontal center */
-  align-items: center;     /* vertical center */
-  min-width: 100vw;
-  min-height: 100vh;
+  height: 100vh;
+  width: 100vw;
+  display: inline-grid;
+  grid-template-columns: 20vw 70vw;
 }
 
-canvas {
-  width: min(75vw, 75vh);
-  height: auto;
-  display: block;
-  margin: 0 auto;
-  border: 3px solid #222;
-}
-
+/* Toolbar */
 .toolbar {
   display: flex;
-  flex-direction: column;   /* stack vertically */
-  gap: 1rem;                /* spacing between each control */
-  align-items: flex-start;  /* left-align labels & sliders */
-  padding: 1rem;
-  max-width: 300px;         /* optional: keep it narrow */
-  margin: 0 auto;           /* center toolbar horizontally */
+  flex-direction: column;
+  gap: 1rem;
+  margin-left: 1em;
+  margin-top: 1em;
 }
 
 .toolbar label {
@@ -47,19 +36,42 @@ canvas {
 }
 
 .toolbar input[type="range"] {
-  width: 100%;              /* sliders expand to fill toolbar */
+  width: 100%;
 }
 
-#wavelength {
-  width: 240px;
+/* Map area */
+#map-container {
+  width: 100%;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;                     /* button bar “hugs” the map */
+}
+
+canvas {
+  width: 65%;
+  height: auto;
+  display: block;
+  border: 5px solid #222;
+  margin-top: 1em;
+}
+
+/* Button bar under the map */
+.button-bar {
+  width: 100%;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-start;  /* 👈 align buttons left */
+  flex-direction: row;
 }
 
 button {
-  font-family: inherit;   /* ← grab from :root (Roboto Mono) */
+  font-family: inherit;
   font-size: 1rem;
   padding: 0.5rem 1rem;
   border: 1px solid #444;
-  border-radius: 4px;
+  border-radius: 6px;
   background: #111;
   color: #fff;
   cursor: pointer;
@@ -67,12 +79,16 @@ button {
 }
 
 button:hover {
-  background: #222;
+  background: #5e5f5e;
 }
 
-#download {
-  font-family: 'Roboto Mono', monospace;
-  margin-top: 6em;
-  padding: 0.5em 1em;
-  cursor: pointer;
+/* Responsive: stack on small screens */
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    border-right: none;
+    border-bottom: 2px solid #222;
+  }
 }

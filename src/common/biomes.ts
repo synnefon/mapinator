@@ -27,7 +27,7 @@ export interface BiomeRule {
   biome: BiomeConfig,
 }
 
-export const VERY_HIGH_ELEVATION: [number, number] = [0.6, 1.1];
+export const VERY_HIGH_ELEVATION: [number, number] = [0.6, 1];
 export const HIGH_ELEVATION: [number, number] = [0.4, 0.6];
 export const MEDIUM_ELEVATION: [number, number] = [0.2, 0.4];
 export const LOW_ELEVATION: [number, number] = [0, 0.2];

@@ -7,7 +7,7 @@ export interface Point {
 
 export interface BaseMap {
     points: Point[];
-    gridsize: number;
+    resolution: number;
     numRegions: number;
     numTriangles: number;
     numEdges: number;

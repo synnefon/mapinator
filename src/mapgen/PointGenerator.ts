@@ -121,10 +121,10 @@ export class PointGenerator {
     }
 
 
-    private initPoints(gridSize: number, jitter: number): Point[] {
+    private initPoints(resolution: number, jitter: number): Point[] {
         const points = [];
-        for (let x = 0; x < gridSize; x++) {
-            for (let y = 0; y < gridSize; y++) {
+        for (let x = 0; x < resolution; x++) {
+            for (let y = 0; y < resolution; y++) {
                 const jx = x + (jitter * (Math.random() - Math.random()));
                 const jy = y + (jitter * (Math.random() - Math.random()));
                 points.push({ x: jx, y: jy });
@@ -137,9 +137,9 @@ export class PointGenerator {
         centers: Point[];
         delaunay: Delaunator<any>;
     } {
-        const { gridSize, jitter } = settings;
+        const { resolution, jitter } = settings;
 
-        const points = this.initPoints(gridSize, jitter);
+        const points = this.initPoints(resolution, jitter);
         const { centers, delaunay } = this.relaxPoints(points, 4);
         return { centers, delaunay };
     }

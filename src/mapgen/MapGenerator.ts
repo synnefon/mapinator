@@ -22,13 +22,13 @@ export class MapGenerator {
     }
 
     public generateMap(settings: MapGenSettings): Map {
-        const { gridSize } = settings;
+        const { resolution } = settings;
 
         const { centers, delaunay } = this.pointGenerator.genPoints(settings);
 
         const baseMap: BaseMap = {
             points: centers,
-            gridsize: gridSize,
+            resolution: resolution,
             numRegions: centers.length,
             numTriangles: delaunay.halfedges.length / 3,
             numEdges: delaunay.halfedges.length,
@@ -71,8 +71,8 @@ export class MapGenerator {
         const { points, numRegions } = baseMap;
         let moisture = [];
         for (let r = 0; r < numRegions; r++) {
-            const nx = points[r].x / baseMap.gridsize - 1 / 2;
-            const ny = points[r].y / baseMap.gridsize - 1 / 2;
+            const nx = points[r].x / baseMap.resolution - 1 / 2;
+            const ny = points[r].y / baseMap.resolution - 1 / 2;
             const m = (1 + this.noise2D(nx / wavelength, ny / wavelength)) / 2;
             // Clamp into [0,1]
             moisture[r] = Math.max(0, Math.min(1, m));
@@ -87,15 +87,15 @@ export class MapGenerator {
         const maxExp = 3.0;
         const edgeExp = minExp + (maxExp - minExp) * edgeCurve;
 
-        const { points, numRegions, gridsize } = baseMap;
+        const { points, numRegions, resolution } = baseMap;
         const elevation: number[] = new Array(numRegions);
 
         const clamp = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
         const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
         for (let r = 0; r < numRegions; r++) {
-            const nx = points[r].x / gridsize - 0.5;
-            const ny = points[r].y / gridsize - 0.5;
+            const nx = points[r].x / resolution - 0.5;
+            const ny = points[r].y / resolution - 0.5;
 
             // base noise (octaves)
             let e =

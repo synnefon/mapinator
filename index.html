@@ -15,6 +15,9 @@
 
 <body>
   <div class="toolbar">
+    <label for="resolution">resolution: <span id="resolutionValue"></span></label>
+    <input id="resolution" type="range" min="10" max="150" step="5" />
+
     <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
     <input id="wavelength" type="range" min="0.05" max="1.0" step="0.05" />
 
@@ -24,9 +27,6 @@
     <label for="edgeCurve">egde curve: <span id="edgeCurveValue"></span></label>
     <input id="edgeCurve" type="range" min="0.05" max="1" step="0.05" />
 
-    <!-- <label for="jitter">jitter: <span id="jitterValue"></span></label>
-    <input id="jitter" type="range" min="0.05" max="1.0" step="0.05" /> -->
-
     <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
     <input id="seaLevel" type="range" min="0.05" max="1.0" step="0.05" />
 
@@ -34,12 +34,14 @@
     <input id="rainfall" type="range" min="0.05" max="1.0" step="0.05" />
 
     <button id="regen">Regenerate</button>
-
-    <button id="download">⬇️ Download</button>
   </div>
 
-  <canvas id="map" width="1000" height="1000"></canvas>
-  <div class="controls">
+  <div id="map-container">
+    <canvas id="map" width="1000" height="1000"></canvas>
+    <div id="button-bar">
+      <!-- <button id="download">💾 Save</button> -->
+      <button id="download">⬇️ Download</button>
+    </div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

@@ -5,19 +5,15 @@ export class MapRenderer {
     public drawCellColors(canvas: HTMLCanvasElement, map: Map): void {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-        const { gridsize, points, biomes } = map;
+        const { resolution, points, biomes } = map;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
-        ctx.scale(canvas.width / gridsize, canvas.height / gridsize);
-
-        // Optional: paint a background so any remaining subpixel gaps aren't black
-        // ctx.fillStyle = "#111";
-        // ctx.fillRect(0, 0, gridsize, gridsize);
+        ctx.scale(canvas.width / resolution, canvas.height / resolution);
 
         // Build Voronoi clipped to the box
         const dela = Delaunay.from(points, p => p.x, p => p.y);
-        const vor = dela.voronoi([0, 0, gridsize, gridsize]);
+        const vor = dela.voronoi([0, 0, resolution, resolution]);
 
         for (let i = 0; i < points.length; i++) {
             const poly = vor.cellPolygon(i); // Array<[x,y]> (closed)

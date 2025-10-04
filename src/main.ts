@@ -19,18 +19,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const drawMap = () => {
     const map: Map = mapGenerator.generateMap(settings);
     mapRenderer.drawCellColors(canvas, map);
-    // mapRenderer.drawCellBoundaries(canvas, map);
-    // mapRenderer.drawPoints(canvas, map.gridsize, map.centers)
-  }
+  };
 
   const canvas = fetchElement<HTMLCanvasElement>("map");
   const regenBtn = fetchElement<HTMLButtonElement>("regen");
 
   const wavelengthInput = fetchElement<HTMLInputElement>("wavelength");
   const wavelengthLabel = fetchElement<HTMLSpanElement>("wavelengthValue");
-
-  // const jitterInput = fetchElement<HTMLInputElement>("jitter");
-  // const jitterLabel = fetchElement<HTMLSpanElement>("jitterValue");
 
   const rainfallInput = fetchElement<HTMLInputElement>("rainfall");
   const rainfallLabel = fetchElement<HTMLSpanElement>("rainfallValue");
@@ -44,15 +39,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const edgeCurveInput = fetchElement<HTMLInputElement>("edgeCurve");
   const edgeCurveLabel = fetchElement<HTMLSpanElement>("edgeCurveValue");
 
+  const resolutionInput = fetchElement<HTMLInputElement>("resolution");
+  const resolutionLabel = fetchElement<HTMLSpanElement>("resolutionValue");
+
   // Single source of truth
   const settings: MapGenSettings = { ...DEFAULTS };
 
   // Initialize sliders + labels from DEFAULTS
   wavelengthInput.value = String(settings.wavelength);
   wavelengthLabel.textContent = settings.wavelength.toFixed(2);
-
-  // jitterInput.value = String(settings.jitter);
-  // jitterLabel.textContent = settings.jitter.toFixed(2);
 
   rainfallInput.value = String(settings.rainfall);
   rainfallLabel.textContent = settings.rainfall.toFixed(2);
@@ -66,18 +61,16 @@ document.addEventListener("DOMContentLoaded", () => {
   edgeCurveInput.value = String(settings.edgeCurve);
   edgeCurveLabel.textContent = settings.edgeCurve.toFixed(2);
 
-  // Update settings as the user moves sliders (no auto-render)
+  // NEW: init resolution UI + backing pixels
+  resolutionInput.value = String(settings.resolution);
+  resolutionLabel.textContent = settings.resolution.toFixed(2);
+
+  // Update settings as the user moves sliders (then redraw)
   wavelengthInput.addEventListener("input", () => {
     settings.wavelength = Number(wavelengthInput.value);
     wavelengthLabel.textContent = settings.wavelength.toFixed(2);
     drawMap();
   });
-
-  // jitterInput.addEventListener("input", () => {
-  //   settings.jitter = Number(jitterInput.value);
-  //   jitterLabel.textContent = settings.jitter.toFixed(2);
-  //   drawMap();
-  // });
 
   rainfallInput.addEventListener("input", () => {
     settings.rainfall = Number(rainfallInput.value);
@@ -103,6 +96,13 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
+  // NEW: resolution listener → resize backing store + redraw
+  resolutionInput.addEventListener("input", () => {
+    settings.resolution = Number(resolutionInput.value);
+    resolutionLabel.textContent = settings.resolution.toFixed(2);
+    drawMap();
+  });
+
   // Render only on explicit click
   regenBtn.addEventListener("click", () => {
     mapGenerator.reSeed();
@@ -113,10 +113,9 @@ document.addEventListener("DOMContentLoaded", () => {
   drawMap();
 
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
-
   downloadBtn.addEventListener("click", () => {
     const link = document.createElement("a");
-    link.download = `map-${Date.now()}.png`; // unique filename
+    link.download = `map-${Date.now()}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
   });

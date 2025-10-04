@@ -1,5 +1,5 @@
 export interface MapGenSettings {
-    gridSize: number;
+    resolution: number;
     jitter: number;
     wavelength: number;
     rainfall: number;
@@ -9,7 +9,7 @@ export interface MapGenSettings {
 }
 
 export const DEFAULTS: MapGenSettings = {
-  gridSize: 120,
+  resolution: 75,
   jitter: 0.5,
   wavelength: 0.5,
   rainfall: 0.5,
