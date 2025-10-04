@@ -133,6 +133,26 @@ h4 {
   /* gap: 0.6rem; */
 }
 
+#mobile-warning {
+  display: none; /* default hidden */
+  position: fixed;
+  inset: 0;
+  background: #000;
+  color: #fff;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Roboto Mono', monospace;
+  text-align: center;
+  padding: 2rem;
+  z-index: 9999;
+}
+
+#mobile-warning.show {
+  display: flex; /* shown via class toggle */
+}
+
+
 /* Responsive: stack on small screens */
 @media (max-width: 900px) {
   .layout {

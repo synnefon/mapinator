@@ -15,6 +15,13 @@
 </head>
 
 <body>
+  <div id="mobile-warning" class="hidden">
+    <h2>⚠️ Not Supported</h2>
+    <p>
+      One day I'll get around to formatting this for small screens, but for now please use a big one.
+    </p>
+  </div>
+
   <div class="toolbar">
     <label for="resolution">resolution: <span id="resolutionValue"></span></label>
     <input id="resolution" type="range" min="10" max="150" step="5" />
@@ -47,6 +54,7 @@
   </div>
 
   <script type="module" src="/src/main.ts"></script>
+  <script type="module" src="/src/mobile-check.ts"></script>
 </body>
 
 </html>
