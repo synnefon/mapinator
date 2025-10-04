@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css" />
+  <script src="https://unpkg.com/simplex-noise@2.4.0/simplex-noise.js"></script>
+  <script src="https://unpkg.com/delaunator@4.0.1/delaunator.min.js"></script>
+</head>
+<body>
+  <div class="toolbar">
+    <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
+    <input id="wavelength" type="range" min="0.05" max="1.0" step="0.05" />
+
+    <label for="shatter">shatter: <span id="shatterValue"></span></label>
+    <input id="shatter" type="range" min="0.05" max="1" step="0.05" />
+
+    <label for="edgeCurve">egde curve: <span id="edgeCurveValue"></span></label>
+    <input id="edgeCurve" type="range" min="0.05" max="1" step="0.05" />
+
+    <!-- <label for="jitter">jitter: <span id="jitterValue"></span></label>
+    <input id="jitter" type="range" min="0.05" max="1.0" step="0.05" /> -->
+
+    <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
+    <input id="seaLevel" type="range" min="0.05" max="1.0" step="0.05" />
+
+    <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
+    <input id="rainfall" type="range" min="0.05" max="1.0" step="0.05" />
+
+    <button id="regen">Regenerate</button>
+  </div>
+
+  <canvas id="map" width="1000" height="1000"></canvas>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
