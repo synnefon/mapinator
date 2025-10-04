@@ -13,20 +13,6 @@ const fetchElement = <T>(id: string): T => {
   return elem;
 }
 
-function randomFamily(): Family {
-  const families: Family[] = [
-    "romance",
-    "germanic",
-    "slavic",
-    "turkic_persian",
-    "semitic",
-    "bantu_like",
-    "generic"
-  ];
-  const idx = Math.floor(Math.random() * families.length);
-  return families[idx];
-}
-
 document.addEventListener("DOMContentLoaded", () => {
   const mapGenerator = new MapGenerator();
   const mapRenderer = new MapRenderer();
@@ -38,7 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const genTitle = () => {
-    const name = nameGenerator.generate({ family: randomFamily() });
+    const name = nameGenerator.generate({});
 
     const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
     mapTitle.textContent = name;

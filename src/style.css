@@ -50,7 +50,7 @@ body {
 }
 
 canvas {
-  width: 65%;
+  width: 60%;
   height: auto;
   display: block;
   border: 5px solid #222;
