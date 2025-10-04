@@ -1,7 +1,7 @@
 import type { Map } from "./common/map";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
-import { NameGenerator } from "./mapgen/NameGenerator";
+import { NameGenerator, type Family } from "./mapgen/NameGenerator";
 import { DEFAULTS, type MapGenSettings } from "./common/config";
 
 const fetchElement = <T>(id: string): T => {
@@ -11,6 +11,20 @@ const fetchElement = <T>(id: string): T => {
     throw new Error("UI init failed. Check element IDs.");
   }
   return elem;
+}
+
+function randomFamily(): Family {
+  const families: Family[] = [
+    "romance",
+    "germanic",
+    "slavic",
+    "turkic_persian",
+    "semitic",
+    "bantu_like",
+    "generic"
+  ];
+  const idx = Math.floor(Math.random() * families.length);
+  return families[idx];
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -24,10 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const genTitle = () => {
-    const name = nameGenerator.genName({
-      seed: Date.now(),
-      allowDiacritics: false,
-    });
+    const name = nameGenerator.generate({ family: randomFamily() });
 
     const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
     mapTitle.textContent = name;
