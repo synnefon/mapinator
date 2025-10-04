@@ -18,6 +18,6 @@ export interface BaseMap {
 export interface Map extends BaseMap {
     elevations: number[];
     moistures: number[];
-    biomes: BiomeConfig[],
+    biomes: BiomeConfig[];
 }
 
