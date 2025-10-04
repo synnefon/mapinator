@@ -1,6 +1,7 @@
 import type { Map } from "./common/map";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
+import { NameGenerator } from "./mapgen/NameGenerator";
 import { DEFAULTS, type MapGenSettings } from "./common/config";
 
 const fetchElement = <T>(id: string): T => {
@@ -15,11 +16,22 @@ const fetchElement = <T>(id: string): T => {
 document.addEventListener("DOMContentLoaded", () => {
   const mapGenerator = new MapGenerator();
   const mapRenderer = new MapRenderer();
+  const nameGenerator = new NameGenerator();
 
   const drawMap = () => {
     const map: Map = mapGenerator.generateMap(settings);
     mapRenderer.drawCellColors(canvas, map);
   };
+
+  const genTitle = () => {
+    const name = nameGenerator.genName({
+      seed: Date.now(),
+      allowDiacritics: false,
+    });
+
+    const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
+    mapTitle.textContent = name;
+  }
 
   const canvas = fetchElement<HTMLCanvasElement>("map");
   const regenBtn = fetchElement<HTMLButtonElement>("regen");
@@ -41,6 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const resolutionInput = fetchElement<HTMLInputElement>("resolution");
   const resolutionLabel = fetchElement<HTMLSpanElement>("resolutionValue");
+
+  genTitle();
 
   // Single source of truth
   const settings: MapGenSettings = { ...DEFAULTS };
@@ -106,6 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Render only on explicit click
   regenBtn.addEventListener("click", () => {
     mapGenerator.reSeed();
+    genTitle();
     drawMap();
   });
 

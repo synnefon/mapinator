@@ -54,7 +54,7 @@ canvas {
   height: auto;
   display: block;
   border: 5px solid #222;
-  margin-top: 1em;
+  /* margin-top: 1em; */
 }
 
 /* Button bar under the map */
@@ -80,6 +80,10 @@ button {
 
 button:hover {
   background: #5e5f5e;
+}
+
+.map-title {
+  gap: 0.6rem;
 }
 
 /* Responsive: stack on small screens */
