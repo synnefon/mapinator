@@ -111,4 +111,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // initial render
   drawMap();
+
+  const downloadBtn = fetchElement<HTMLButtonElement>("download");
+
+  downloadBtn.addEventListener("click", () => {
+    const link = document.createElement("a");
+    link.download = `map-${Date.now()}.png`; // unique filename
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+  });
 });
