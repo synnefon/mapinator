@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const mapGenerator = new MapGenerator(mapName);
   const mapRenderer = new MapRenderer();
 
-  const drawMap = () => {
+  const drawMap = (canvas) => {
     const map: Map = mapGenerator.generateMap(settings);
     mapRenderer.drawCellColors(canvas, map);
   };
@@ -33,9 +33,9 @@ document.addEventListener("DOMContentLoaded", () => {
     mapTitle.textContent = name;
   }
 
-  const redraw = () => {
+  const redraw = (canvas) => {
     drawTitle(mapName);
-    drawMap();
+    drawMap(canvas);
   }
 
   const loadMap = (n: string) => {
@@ -47,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     mapName = n;
     mapGenerator.reSeed(n);
-    redraw();
+    redraw(canvas);
   }
 
   const canvas = fetchElement<HTMLCanvasElement>("map");
@@ -105,25 +105,25 @@ document.addEventListener("DOMContentLoaded", () => {
   wavelengthInput.addEventListener("input", () => {
     settings.wavelength = Number(wavelengthInput.value);
     wavelengthLabel.textContent = settings.wavelength.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   rainfallInput.addEventListener("input", () => {
     settings.rainfall = Number(rainfallInput.value);
     rainfallLabel.textContent = settings.rainfall.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   seaLevelInput.addEventListener("input", () => {
     settings.seaLevel = Number(seaLevelInput.value);
     seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   shatterInput.addEventListener("input", () => {
     settings.shatter = Number(shatterInput.value);
     shatterLabel.textContent = settings.shatter.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   elevationContrastInput.addEventListener("input", () => {
@@ -135,7 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
   resolutionInput.addEventListener("input", () => {
     settings.resolution = Number(resolutionInput.value);
     resolutionLabel.textContent = settings.resolution.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   colorSchemeSelect.addEventListener("change", () => {
@@ -149,11 +149,11 @@ document.addEventListener("DOMContentLoaded", () => {
     mapGenerator.reSeed(mapName);
     nameGenerator.reSeed(mapName);
 
-    redraw();
+    redraw(canvas);
   });
 
   // initial render
-  redraw();
+  redraw(canvas);
 
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
   downloadBtn.addEventListener("click", () => {
@@ -162,8 +162,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // create a temporary canvas with extra space for title
     const exportCanvas = document.createElement("canvas");
     const padding = 60;
-    exportCanvas.width = canvas.width;
-    exportCanvas.height = canvas.height + padding;
+    exportCanvas.width = canvas.width * 2;
+    exportCanvas.height = (canvas.height + padding) * 2;
     const ctx = exportCanvas.getContext("2d");
     if (!ctx) return;
 
@@ -177,15 +177,18 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.font = "bold 36px 'Roboto Mono', monospace";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
-    ctx.fillText(mapTitle, exportCanvas.width / 2, 40);
+    ctx.fillText(mapTitle, exportCanvas.width / 2, 80);
 
     // download
     const link = document.createElement("a");
     let map_name = fetchElement<HTMLParagraphElement>("map-title").textContent;
     let date = new Date().toLocaleDateString('en-CA').replace(/-/g, "");
-    link.download = `map-${map_name.toLowerCase()}-${date}.png`;
-    link.href = canvas.toDataURL("image/png");
-    link.click();
+    let filename = `map-${map_name.toLowerCase()}-${date}.png`;
+    link.download = filename;
+    link.href = tempCanvas.toDataURL("image/png");
+    linkclick();
+
+    exportCanvas.remove();
   });
 
   loadBtn.addEventListener("click", () => {
