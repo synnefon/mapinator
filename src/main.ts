@@ -25,7 +25,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const drawMap = (canvas) => {
     const map: Map = mapGenerator.generateMap(settings);
+    mapRenderer.clearCells(canvas);
     mapRenderer.drawCellColors(canvas, map);
+    mapRenderer.drawPixelShadows(canvas, map);
   };
 
   const drawTitle = (n: string | undefined = undefined) => {
@@ -61,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const seaLevelInput = fetchElement<HTMLInputElement>("seaLevel");
   const seaLevelLabel = fetchElement<HTMLSpanElement>("seaLevelValue");
-
+  
   const shatterInput = fetchElement<HTMLInputElement>("shatter");
   const shatterLabel = fetchElement<HTMLSpanElement>("shatterValue");
 
