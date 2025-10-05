@@ -31,9 +31,8 @@ export class MapRenderer {
 
             // Hairline same-color stroke to hide AA seams
             ctx.strokeStyle = fill;
-            ctx.lineWidth = 0.05;
-            ctx.lineJoin = "round";
-            ctx.miterLimit = 2;
+            ctx.lineWidth = resolution / 1000;
+            ctx.lineJoin = "bevel";
             ctx.stroke();
         }
 
