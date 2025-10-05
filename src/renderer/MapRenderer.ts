@@ -78,28 +78,6 @@ export class MapRenderer {
 	    const y = i % resolution;
 	    return {x: x, y: y};
 	}
-	
-	// Calculate the average of elements in a window within a 1d array.
-	// const windowAvg = (elements: number[], centerIndex: number, windowSideLength: number): number => {
-	//     const windowRadius = (windowSideLength - 1) / 2;
-	//     const topLeftIndex = centerIndex - windowRadius - (windowRadius * resolution);
-	//     const totalIndexCount = Math.pow(windowSideLength, 2);
-
-	//     let sum = 0;
-	//     let totalSummed = 0;
-	//     for (let y = 0; y < windowSideLength; y++) {
-    	//         for (let x = 0; x < windowSideLength; x++) {
-        //             const index = topLeftIndex + (y * resolution) + x; 
-	// 	    if (index < 0 || index >= elements.length) continue;
-
-	// 	    sum += elements[index];
-	// 	    totalSummed += 1;
-    	//         }
-	//     }
-
-	//     const avg = sum / totalSummed;
-	//     return avg;
-	// };
 
 	// Get the number of intersections between a point and the edge of its array (the sun).
 	const countIntersections = (elements: number[], coords: Coord): number => {
