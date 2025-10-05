@@ -13,6 +13,7 @@ export interface BaseMap {
     numEdges: number;
     halfedges: Int32Array<ArrayBufferLike>;
     triangles: Uint32Array<ArrayBufferLike>;
+    test?:number;
 }
 
 export interface Map extends BaseMap {
