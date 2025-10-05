@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapinator</title>
+  <link rel="icon" type="image/x-icon" href="/mapinator/assets/favicon-DTtNnFZh.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/simplex-noise@2.4.0/simplex-noise.js"></script>
+  <script src="https://unpkg.com/delaunator@4.0.1/delaunator.min.js"></script>
+  <script type="module" crossorigin src="/mapinator/assets/index-CGBfu2aQ.js"></script>
+  <link rel="stylesheet" crossorigin href="/mapinator/assets/index-BTevm-e4.css">
+</head>
+
+<body>
+  <div id="mobile-warning" class="hidden">
+    <h2>⚠️ Not Supported</h2>
+    <p>
+      One day I'll get around to formatting this for small screens, but for now please use a big one.
+    </p>
+  </div>
+
+  <div class="toolbar">
+    <label for="resolution">resolution: <span id="resolutionValue"></span></label>
+    <input id="resolution" type="range" min="10" max="150" step="5" />
+
+    <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
+    <input id="wavelength" type="range" min="0.05" max="1.0" step="0.05" />
+
+    <label for="shatter">shatter: <span id="shatterValue"></span></label>
+    <input id="shatter" type="range" min="0.05" max="1" step="0.05" />
+
+    <label for="edgeCurve">egde curve: <span id="edgeCurveValue"></span></label>
+    <input id="edgeCurve" type="range" min="0.05" max="1" step="0.05" />
+
+    <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
+    <input id="seaLevel" type="range" min="0.05" max="1.0" step="0.05" />
+
+    <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
+    <input id="rainfall" type="range" min="0.05" max="1.0" step="0.05" />
+
+    <button id="regen">Regenerate</button>
+  </div>
+
+  <div id="map-container">
+    <h4 id="map-title"></h4>
+    <canvas id="map" width="1000" height="1000"></canvas>
+    <div id="button-bar">
+      <!-- <button id="download">💾 Save</button> -->
+      <button id="download">⬇️ Download</button>
+    </div>
+  </div>
+
+</body>
+
+</html>
