@@ -15,11 +15,6 @@
 </head>
 
 <body>
-  <div id="mobile-warning" class="hidden">
-    <h2>⚠️ Attention</h2>
-    <p>This app may exhibit formatting issues on smaller screens.  User beware!</p>
-  </div>
-
   <div class="toolbar">
     <label for="resolution">resolution: <span id="resolutionValue"></span></label>
     <input id="resolution" type="range" min="0" max="1" step="0.01" />
@@ -60,15 +55,16 @@
   </div>
 
   <div id="map-container">
-    <h4 id="map-title"></h4>
+    <h1 id="map-title"></h1>
     <canvas id="map" width="1000" height="1000"></canvas>
     <div id="button-bar">
-      <button id="download">⬇️ download png</button>
+      <!-- <button id="download">💾 Save</button> -->
+      <button id="regen">♻️</button>
+      <button id="download">💾</button>
     </div>
   </div>
 
-  <script type="module" src="./src/main.ts"></script>
-  <script type="module" src="./src/mobile-check.ts"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>

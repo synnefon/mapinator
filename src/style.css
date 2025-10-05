@@ -1,13 +1,12 @@
 :root {
   --text: rgb(0, 0, 0);
   --bg: #dedede;
+  --bg-emphasis: #cdcdcd;
   --track: rgba(0, 0, 0, 0.87);
   --thumb: rgba(0, 0, 255, 0.87);
 
   font-family: 'Roboto Mono', monospace;
-  line-height: 2.5;
   font-weight: 400;
-  font-size: 2vh;
 
   color-scheme: light dark;
   color: var(--text);
@@ -23,22 +22,32 @@
 body {
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: 20vw 70vw;
+}
+
+@media only screen and (min-width: 768px) {
+  body {
+    display: grid;
+    grid-template-columns: 13em 70vw;
+  }
+}
+
+@media only screen and (max-width: 768px) {
+  body {
+    display: flex;
+    flex-direction: column-reverse;
+  }
 }
 
 /* Toolbar */
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 1.2vh;
-  margin-left: 1em;
-  margin-top: 1em;
+  gap: 1em;
+  margin: 1em;
 }
 
 .toolbar label {
-  font-size: 0.9rem;
-  margin-bottom: 0.25rem;
+  margin-top: 1em;
 }
 
 .toolbar input[type="range"] {
@@ -175,7 +184,7 @@ select:focus {
 }
 
 canvas {
-  width: 60%;
+  width: 65vh;
   height: auto;
   display: block;
   border: 5px solid #222;
@@ -194,13 +203,11 @@ canvas {
 
 button {
   font-family: inherit;
-  font-size: 1rem;
-  padding: 0.5rem 1rem;
-  border: 4px solid #000000;
-  /* border-radius: 6px; */
-  background: #111;
+  font-size: 2em;
+  border: 0;
+  border-radius: 0.2em;
   color: var(--text);
-  background-color: var(--bg);
+  background-color: var(--bg-emphasis);
   cursor: pointer;
   transition: background 0.2s ease;
 }
@@ -210,43 +217,12 @@ button:hover {
   color: var(--bg);
 }
 
+button:active {
+  cursor: auto;
+}
+
 h4 {
   margin: 0px;
-  /* gap: 0.6rem; */
-}
-
-#mobile-warning {
-  display: none;
-  /* default hidden */
-  position: fixed;
-  z-index: 9999;
-
-  width: 100%;
-  bottom: 0;
-
-  padding: 0.2em;
-
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-
-  font-family: 'Roboto Mono', monospace;
-  font-size: 50%;
-  background: #000;
-  color: #fff;
-
-  opacity: 85%;
-  transition: 6.5s opacity cubic-bezier(1, .04, .76, 1.06);
-}
-
-#mobile-warning.show {
-  display: flex; /* shown via class toggle */
-  opacity: 15%;
-}
-
-#mobile-warning>* {
-  margin: 0.2em;
 }
 
 #seed-container {
@@ -284,16 +260,4 @@ h4 {
   border: 1px solid var(--thumb);
   cursor: var(--script);
   user-select: all;
-}
-
-/* Responsive: stack on small screens */
-@media (max-width: 900px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    border-right: none;
-    border-bottom: 2px solid #222;
-  }
 }
