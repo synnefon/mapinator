@@ -181,8 +181,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // download
     const link = document.createElement("a");
-    link.download = `MAPINATOR_${mapTitle.replace(/\s+/g, "_")}.png`;
-    link.href = exportCanvas.toDataURL("image/png");
+    let map_name = fetchElement<HTMLParagraphElement>("map-title").textContent;
+    let date = new Date().toLocaleDateString('en-CA').replace(/-/g, "");
+    link.download = `map-${map_name.toLowerCase()}-${date}.png`;
+    link.href = canvas.toDataURL("image/png");
     link.click();
   });
 
