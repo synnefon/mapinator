@@ -25,5 +25,5 @@ Then open your browser at [http://localhost:5173](http://localhost:5173).
 
 --
 
-<img width="1365" height="908" alt="Screenshot 2025-10-06 at 4 48 29 AM" src="https://github.com/user-attachments/assets/ab826db6-c56a-4a86-a0da-be80540a24d2" />
 
+<img width="1316" height="893" alt="Screenshot 2025-10-06 at 4 57 18 AM" src="https://github.com/user-attachments/assets/188b7100-5ca7-45fe-aba8-00ea46a2ee76" />
