@@ -142,10 +142,7 @@ export class MapRenderer {
 
 	// Calculate a shadow intensity for each elevation we store.
         for (let i = 0; i < elevations.length; i++) {
-	    let shadowHex = "#001122";
-	    if (biomes[i].name == "ocean") {
-                shadowHex = "#000044";
-	    }
+	    const shadowHex = darkenHexColor(biomes[i].color, 65);
 
 	    const coords = indexToCoords(i, resolution);
 	    const intersections = countIntersections(elevations, coords);
@@ -212,4 +209,27 @@ function bresenhamLine(src: Coord, dst: Coord): Coord[] {
     }
 
     return points;
+}
+
+// Darken a hex color by a certain percentage and return it.
+function darkenHexColor(hex: string, percent: number): string {
+     // Remove the '#' if present.
+     hex = hex.replace(/^#/, '');
+  
+     // Convert hex to RGB.
+     let r = parseInt(hex.substring(0, 2), 16);
+     let g = parseInt(hex.substring(2, 4), 16);
+     let b = parseInt(hex.substring(4, 6), 16);
+  
+     // Calculate the darkening factor.
+     const factor = 1 - (percent / 100);
+  
+     // Darken each RGB component.
+     r = Math.max(0, Math.floor(r * factor));
+     g = Math.max(0, Math.floor(g * factor));
+     b = Math.max(0, Math.floor(b * factor));
+  
+     // Convert RGB back to hex.
+     const toHex = (c) => ('0' + c.toString(16)).slice(-2);
+     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }

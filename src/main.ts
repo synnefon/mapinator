@@ -76,7 +76,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // Color scheme dropdown
   const colorSchemeSelect = fetchElement<HTMLSelectElement>("colorScheme");
 
-
   const seedInput = fetchElement<HTMLInputElement>("seed-input");
   const loadBtn = fetchElement<HTMLButtonElement>("load-seed-btn");
 
@@ -131,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
   elevationContrastInput.addEventListener("input", () => {
     settings.elevationContrast = Number(elevationContrastInput.value);
     elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   resolutionInput.addEventListener("input", () => {
@@ -142,7 +141,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   colorSchemeSelect.addEventListener("change", () => {
     settings.colorScheme = colorSchemeSelect.value as MapGenSettings["colorScheme"];
-    drawMap();
+    drawMap(canvas);
   });
 
   // Render only on explicit click
