@@ -156,9 +156,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
   downloadBtn.addEventListener("click", () => {
+    const mapTitle = (document.getElementById("map-title") as HTMLElement)?.innerText || "Untitled Map";
+
+    // create a temporary canvas with extra space for title
+    const exportCanvas = document.createElement("canvas");
+    const padding = 60;
+    exportCanvas.width = canvas.width;
+    exportCanvas.height = canvas.height + padding;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.fillStyle = "#dedede";
+    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+    // draw map
+    ctx.drawImage(canvas, 0, padding);
+
+    // draw title
+    ctx.font = "bold 36px 'Roboto Mono', monospace";
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "center";
+    ctx.fillText(mapTitle, exportCanvas.width / 2, 40);
+
+    // download
     const link = document.createElement("a");
-    link.download = `map-${Date.now()}.png`;
-    link.href = canvas.toDataURL("image/png");
+    link.download = `${mapTitle.replace(/\s+/g, "_")}.png`;
+    link.href = exportCanvas.toDataURL("image/png");
     link.click();
   });
 
