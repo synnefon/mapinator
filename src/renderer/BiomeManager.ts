@@ -1,4 +1,4 @@
-import type { BiomeConfig, BiomeRule } from "../common/biomes";
+import type { Biome, BiomeRule } from "../common/biomes";
 import { biomeRules, Biomes } from "../common/biomes";
 
 export class BiomeManager {
@@ -10,29 +10,35 @@ export class BiomeManager {
             throw Error("rainfall & seaLevel must be 0-1");
         }
 
-        rainfall = this.expCurve(1-rainfall, 4.1)
+        rainfall = this.expCurve(1 - rainfall, 4.1)
         this.rainfall = Math.max(0.01, rainfall * 25);
 
         this.seaLevel = 2.0 * (seaLevel - 0.5); // -1 to 1
     }
 
-    public getBiome(elevation: number, moisture: number): BiomeConfig {
-        let e = (2.0 * (elevation - 0.5)) - (this.seaLevel - 0.1); // convert 0:1 to -1:+1
+    public getBiome(elevation: number, moisture: number): Biome {
+        let e = (2.0 * (elevation - 0.5)) - (this.seaLevel - 0.1);
         let m = moisture ** this.rainfall;
 
         // to make some checks work
         e = Math.max(Math.min(e, 1 - this.EPS), -1);
         m = Math.max(Math.min(m, 1 - this.EPS), -1);
 
+        const biomeRule = this.findMatchingBiomeRule(e, m);
+        if (!biomeRule) {
+            throw new Error(`unable to find biome for elevation: ${elevation}, moisture: ${moisture}`);
+        };
+
+        return biomeRule.biome;
+    };
+
+    private findMatchingBiomeRule(elevation: number, moisture: number): BiomeRule {
         const ruleIdx = this.findLastIndex(
             biomeRules,
-            (rule: BiomeRule, _i: number, _r: BiomeRule[]) => this.matchesRule(rule, e, m),
-        )
+            (rule: BiomeRule, _i: number, _r: BiomeRule[]) => this.matchesRule(rule, elevation, moisture),
+        );
 
-        return biomeRules[ruleIdx]?.biome || {
-            color: "#ff008cff",
-            name: "fallback"
-        };
+        return biomeRules[ruleIdx];
     }
 
     public isOcean(elevation: number) {

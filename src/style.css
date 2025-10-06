@@ -4,6 +4,10 @@
   --bg: #dedede;
   --track: rgba(0, 0, 0, 0.87);
   --thumb: rgba(0, 0, 255, 0.87);
+  --arrow: url("./assets/cursors/Arrows/Arrow2.png"), auto;
+  --pointer: url("./assets/cursors/Hands/Hand3.png"), auto;
+  --drag: url("./assets/cursors/Hands/Hand_Drag2.png"), auto;
+  --script: url("./assets/cursors/Text/Text3.png"), auto;
 
   font-family: 'Roboto Mono', monospace;
   line-height: 2.5;
@@ -16,6 +20,9 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  cursor: var(--arrow);
+  user-select: none;
 }
 
 /* Layout */
@@ -31,14 +38,16 @@ body {
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.5rem;
   margin-left: 1em;
   margin-top: 1em;
+  cursor: var(--arrow);
 }
 
 .toolbar label {
   font-size: 0.9rem;
   margin-bottom: 0.25rem;
+  cursor: var(--arrow);
 }
 
 .toolbar input[type="range"] {
@@ -49,7 +58,7 @@ body {
   /* Standard property */
   background: transparent;
   /* Remove default background */
-  cursor: pointer;
+  cursor: var(--pointer);
   /* Indicate it's interactive */
   border: none;
   /* Remove default border */
@@ -57,31 +66,33 @@ body {
 
 /* WebKit browsers */
 input[type="range"]::-webkit-slider-runnable-track {
-  background: var(--track);
-  /* Example: light gray track */
+  background: var(--bg);
   height: 8px;
-  border-radius: 4px;
+  /* border-radius: 4px; */
+  border: 2px solid var(--track);
 }
 
 /* Firefox */
 input[type="range"]::-moz-range-track {
-  background: var(--track);
+  background: var(--bg);
   height: 8px;
-  border-radius: 4px;
+  /* border-radius: 4px; */
+  border: 2px solid var(--track);
 }
 
 /* WebKit browsers */
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  /* Reset default WebKit thumb appearance */
   background: var(--thumb);
-  /* Example: blue thumb */
   height: 16px;
   width: 16px;
   border-radius: 50%;
-  /* Make it a circle */
-  margin-top: -4px;
-  /* Adjust vertical position to center on track */
+  margin-top: -5px;
+  opacity: 1;
+}
+
+input[type="range"]::-webkit-slider-thumb:active {
+  cursor: var(--drag);
 }
 
 /* Firefox */
@@ -91,7 +102,35 @@ input[type="range"]::-moz-range-thumb {
   width: 16px;
   border-radius: 50%;
   border: none;
-  /* Remove default Firefox border */
+  margin-top: -5px;
+  opacity: 1;
+}
+
+input[type="range"]::-moz-range-thumb:active {
+  cursor: var(--drag);
+}
+
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  vertical-align: middle;
+  position: relative;
+  outline: none;
+  width: 1.5em;
+  height: 1.5em;
+  border: 4px solid var(--text);
+  border-radius: 5%;
+  cursor: var(--pointer);
+  background-color: var(--bg);
+}
+
+input[type="checkbox"]:hover {
+  background-color: var(--thumb);
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--thumb);
+  color: var(--text);
 }
 
 /* Map area */
@@ -103,6 +142,10 @@ input[type="range"]::-moz-range-thumb {
   align-items: center;
   gap: 0.5rem;
   /* button bar “hugs” the map */
+}
+
+#map-title {
+  user-select: text;
 }
 
 canvas {
@@ -132,7 +175,7 @@ button {
   background: #111;
   color: var(--text);
   background-color: var(--bg);
-  cursor: pointer;
+  cursor: var(--pointer);
   transition: background 0.2s ease;
 }
 
@@ -168,16 +211,21 @@ h4 {
 }
 
 #seed-container {
+  margin-top: 3em;
   width: 100%;
   flex-direction: row;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  cursor: var(--script);
+  user-select: all;
 }
 
 #seed-container label {
   font-weight: bold;
   font-family: sans-serif;
+  cursor: var(--arrow);
+  user-select: none;
 }
 
 #seed-input {
@@ -190,10 +238,14 @@ h4 {
   font-size: 0.8em;
   width: 80%;
   border: 1px solid var(--text);
+  cursor: var(--script);
+  user-select: all;
 }
 
 #seed-input:focus {
   border: 1px solid var(--thumb);
+  cursor: var(--script);
+  user-select: all;
 }
 
 /* Responsive: stack on small screens */

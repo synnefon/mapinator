@@ -2,7 +2,7 @@ import type { Map } from "../common/map";
 import { Delaunay } from "d3-delaunay";
 
 export class MapRenderer {
-    public drawCellColors(canvas: HTMLCanvasElement, map: Map): void {
+    public drawCellColors(canvas: HTMLCanvasElement, map: Map, greyscale: boolean): void {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         const { resolution, points, biomes } = map;
@@ -25,7 +25,7 @@ export class MapRenderer {
             ctx.closePath();
 
             // Fill
-            const fill = biomes[i].color;
+            const fill = greyscale ? biomes[i].greyscale : biomes[i].color;
             ctx.fillStyle = fill;
             ctx.fill();
 

@@ -1,4 +1,4 @@
-import { type BiomeConfig } from "./biomes";
+import { type Biome } from "./biomes";
 
 export interface Point {
     x: number;
@@ -18,6 +18,6 @@ export interface BaseMap {
 export interface Map extends BaseMap {
     elevations: number[];
     moistures: number[];
-    biomes: BiomeConfig[];
+    biomes: Biome[];
 }
 

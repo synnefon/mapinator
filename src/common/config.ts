@@ -6,6 +6,7 @@ export interface MapGenSettings {
   seaLevel: number;
   shatter: number;
   edgeCurve: number;
+  greyScale: boolean;
 }
 
 export const DEFAULTS: MapGenSettings = {
@@ -16,4 +17,5 @@ export const DEFAULTS: MapGenSettings = {
   seaLevel: 0.5,
   shatter: 0.1,
   edgeCurve: 0.8,
+  greyScale: false,
 };
