@@ -1,4 +1,3 @@
-import { v4 as uuid } from 'uuid';
 import { DEFAULTS, type MapGenSettings } from "./common/config";
 import type { Map } from "./common/map";
 import { MapGenerator } from "./mapgen/MapGenerator";
@@ -14,16 +13,16 @@ const fetchElement = <T>(id: string): T => {
   return elem;
 }
 
-const genSeed = () => uuid().substring(0, 18).replaceAll("-", ""); // actually len 16
+// const genSeed = () => uuid().substring(0, 18).replaceAll("-", ""); // actually len 16
 
 document.addEventListener("DOMContentLoaded", () => {
-  let seed = genSeed();
-
   // Single source of truth
   const settings: MapGenSettings = { ...DEFAULTS };
 
-  const mapGenerator = new MapGenerator(seed);
-  const nameGenerator = new NameGenerator(seed);
+  const nameGenerator = new NameGenerator(`${Date.now()}`);
+  let mapName = nameGenerator.generate();
+
+  const mapGenerator = new MapGenerator(mapName);
   const mapRenderer = new MapRenderer();
 
   const drawMap = () => {
@@ -31,28 +30,25 @@ document.addEventListener("DOMContentLoaded", () => {
     mapRenderer.drawCellColors(canvas, map, settings.greyScale);
   };
 
-  const drawTitle = () => {
-    const name = nameGenerator.generate({});
-
-    const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
+  const drawTitle = (n: string | undefined = undefined) => {
+    const name = n ?? nameGenerator.generate({});
     mapTitle.textContent = name;
   }
 
-  const drawSeed = () => {
-    const mapSeed = fetchElement<HTMLInputElement>("seed-input");
-    mapSeed.value = seed;
-  }
-
   const redraw = () => {
-    drawTitle();
+    drawTitle(mapName);
     drawMap();
-    drawSeed();
   }
 
-  const loadSeed = (s: string) => {
-    seed = s;
-    mapGenerator.reSeed(seed);
-    nameGenerator.reSeed(seed);
+  const loadMap = (n: string) => {
+    if (!n.trim()) {
+      alert("Please enter the name of a map to load in");
+      mapName = "";
+      seedInput.textContent = "";
+      return;
+    }
+    mapName = n;
+    mapGenerator.reSeed(n);
     redraw();
   }
 
@@ -81,6 +77,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const seedInput = fetchElement<HTMLInputElement>("seed-input");
   const loadBtn = fetchElement<HTMLButtonElement>("load-seed-btn");
+
+  const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
 
   // Initialize sliders + labels from DEFAULTS
   wavelengthInput.value = String(settings.wavelength);
@@ -148,9 +146,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Render only on explicit click
   regenBtn.addEventListener("click", () => {
-    seed = genSeed();
-    mapGenerator.reSeed(seed);
-    nameGenerator.reSeed(seed);
+    mapName = nameGenerator.generate();
+    mapGenerator.reSeed(mapName);
+    nameGenerator.reSeed(mapName);
 
     redraw();
   });
@@ -167,7 +165,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   loadBtn.addEventListener("click", () => {
-    const seed = seedInput.value.trim();
-    loadSeed(seed);
+    mapName = seedInput.value.trim();
+    loadMap(mapName);
   });
 });
