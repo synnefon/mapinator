@@ -346,24 +346,6 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         medialMorphChance: 0.6,
         suffixes: ["na", "nana", "banana", "mana", "pana", "bana", "lala", "haha"],
     },
-    [Language.MIMICIAN]: {
-        // everything is meant to sound sing-song or mirrored
-        onsets: [
-            "b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "y",
-            "bl", "br", "cl", "dr", "fl", "gl", "pl", "pr", "sn", "sp", "tr", "tw"
-        ],
-        vowels: ["a", "e", "i", "o", "u", "ai", "ea", "ee", "ie", "oo", "ou"],
-        codas: ["b", "d", "g", "k", "m", "n", "p", "r", "s", "t", "nk", "mp", "pp", "zz", "ff", "sh"],
-        codaChance: 0.5,
-        medials: [
-            "bop", "doodle", "fiddle", "gig", "jib", "kib", "lop", "mop", "nib", "pip",
-            "pop", "quib", "rib", "sib", "tip", "top", "wig", "wob", "yip", "zip"
-        ],
-        medialMorphChance: 0.55,
-        suffixes: [
-            "bop", "boop", "flip", "flop", "doodle", "fiddle", "wiggle", "wag", "zap", "zip", "zoop", "snoot"
-        ],
-    },
     [Language.LYRICIAN]: {
         onsets: [
             "a", "e", "i", "o", "u",
