@@ -85,6 +85,11 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   margin-top: -5px;
   opacity: 1;
+  cursor: grab;
+}
+
+input[type="range"]::-webkit-slider-thumb:active {
+  cursor: grabbing;
 }
 
 /* Firefox */
@@ -96,8 +101,12 @@ input[type="range"]::-moz-range-thumb {
   border: none;
   margin-top: -5px;
   opacity: 1;
+  cursor: grab;
 }
 
+input[type="range"]::-moz-range-thumb:active {
+  cursor: grabbing;
+}
 
 input[type="checkbox"] {
   appearance: none;
