@@ -1,8 +1,8 @@
-import seedrandom from "seedrandom";
 import { createNoise2D, type NoiseFunction2D } from "simplex-noise";
 import type { Biome } from "../common/biomes";
 import type { MapGenSettings } from "../common/config";
 import type { BaseMap, Map } from "../common/map";
+import { makeRNG } from "../common/random";
 import { BiomeManager } from "../renderer/BiomeManager";
 import { PointGenerator } from "./PointGenerator";
 
@@ -11,12 +11,12 @@ export class MapGenerator {
     private pointGenerator: PointGenerator;
 
     public constructor(seed: string) {
-        this.noise2D = createNoise2D(seedrandom(seed));
+        this.noise2D = createNoise2D(makeRNG(seed));
         this.pointGenerator = new PointGenerator(seed);
     }
 
     public reSeed(seed: string) {
-        this.noise2D = createNoise2D(seedrandom(seed));
+        this.noise2D = createNoise2D(makeRNG(seed));
         this.pointGenerator = new PointGenerator(seed);
     }
 

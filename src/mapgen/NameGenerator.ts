@@ -1,4 +1,5 @@
 import { Language, languageConfigs } from "../common/language";
+import { makeRNG, type RNG } from "../common/random";
 
 
 export interface CountryGenOptions {
@@ -10,17 +11,15 @@ export interface CountryGenOptions {
     useArticle?: boolean;
 }
 
-type RNG = () => number;
-
 export class NameGenerator {
     private rng: RNG;
 
     constructor(seed: string) {
-        this.rng = this.makeRNG(seed);
+        this.rng = makeRNG(seed);
     }
 
     public reSeed(seed: string) {
-        this.rng = this.makeRNG(seed);
+        this.rng = makeRNG(seed);
     }
 
     /** Generate a single country name */
@@ -90,24 +89,5 @@ export class NameGenerator {
 
     private randInt(min: number, max: number): number {
         return Math.floor(this.rng() * (max - min + 1)) + min;
-    }
-
-    /** Simple deterministic PRNG */
-    private makeRNG(seed: string): RNG {
-        let x = typeof seed === "number" ? seed | 0 : this.hash32(String(seed));
-        if (x === 0) x = 0x6d2b79f5;
-        return function () {
-            x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
-            return ((x >>> 0) % 1_000_000) / 1_000_000;
-        };
-    }
-
-    private hash32(s: string): number {
-        let h = 2166136261 >>> 0;
-        for (let i = 0; i < s.length; i++) {
-            h ^= s.charCodeAt(i);
-            h = Math.imul(h, 16777619);
-        }
-        return h >>> 0;
     }
 }

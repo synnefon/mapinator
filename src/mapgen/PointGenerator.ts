@@ -1,14 +1,30 @@
 import Delaunator from "delaunator";
-import seedrandom from "seedrandom";
 import type { MapGenSettings } from "../common/config";
 import type { Point } from "../common/map";
+import { makeRNG, type RNG } from "../common/random";
 
+type PointGenReturn = {
+    centers: Point[];
+    delaunay: Delaunator<any>;
+}
 
 export class PointGenerator {
-    private rng: () => number;
+    private rng: RNG;
 
     constructor(seed: string) {
-        this.rng = seedrandom(seed);
+        this.rng = makeRNG(seed);
+    }
+
+    public genPoints(settings: MapGenSettings): PointGenReturn {
+        // makes it deterministic :)
+        this.rng = makeRNG(`seed-${settings.resolution}`);
+
+        const { resolution, jitter } = settings;
+
+        const points = this.initPoints(resolution, jitter);
+        const { centers, delaunay } = this.relaxPoints(points, 4);
+
+        return { centers, delaunay };
     }
 
     // --- Halfedge helpers ---
@@ -138,16 +154,5 @@ export class PointGenerator {
             }
         }
         return points;
-    }
-
-    public genPoints(settings: MapGenSettings): {
-        centers: Point[];
-        delaunay: Delaunator<any>;
-    } {
-        const { resolution, jitter } = settings;
-
-        const points = this.initPoints(resolution, jitter);
-        const { centers, delaunay } = this.relaxPoints(points, 4);
-        return { centers, delaunay };
     }
 }

@@ -13,8 +13,6 @@ const fetchElement = <T>(id: string): T => {
   return elem;
 }
 
-// const genSeed = () => uuid().substring(0, 18).replaceAll("-", ""); // actually len 16
-
 document.addEventListener("DOMContentLoaded", () => {
   // Single source of truth
   const settings: MapGenSettings = { ...DEFAULTS };
