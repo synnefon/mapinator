@@ -163,20 +163,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // create a temporary canvas with extra space for title
     const exportCanvas = document.createElement("canvas");
-    const padding = 60;
+    const padding = 120;
     exportCanvas.width = canvas.width * 2;
-    exportCanvas.height = (canvas.height + padding) * 2;
+    exportCanvas.height = (canvas.height * 2) + padding;
     const ctx = exportCanvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.fillStyle = "#dedede";
+    ctx.fillStyle = "#fcf5e5";
     ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
 
     // draw map
-    ctx.drawImage(canvas, 0, padding);
+    const mapCanvas = document.createElement("canvas");
+    mapCanvas.width = exportCanvas.width;
+    mapCanvas.height = exportCanvas.width;
+    drawMap(mapCanvas);
+    ctx.drawImage(mapCanvas, 0, padding);
 
     // draw title
-    ctx.font = "bold 36px 'Roboto Mono', monospace";
+    ctx.font = "bold 6.5em 'Roboto Mono', monospace";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
     ctx.fillText(mapTitle, exportCanvas.width / 2, 80);
@@ -187,8 +191,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let date = new Date().toLocaleDateString('en-CA').replace(/-/g, "");
     let filename = `map-${map_name.toLowerCase()}-${date}.png`;
     link.download = filename;
-    link.href = tempCanvas.toDataURL("image/png");
-    linkclick();
+    link.href = exportCanvas.toDataURL("image/png");
+    link.click();
 
     exportCanvas.remove();
   });
