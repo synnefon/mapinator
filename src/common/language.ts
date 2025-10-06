@@ -6,8 +6,8 @@ export enum Language {
     BANTU_LIKE = "BANTU_LIKE",
     AFRICAN_WEST = "AFRICAN_WEST",
     AFRICAN_HORN = "AFRICAN_HORN",
-    EAST_ASIAN_CN = "EAST_ASIAN_CN",
-    EAST_ASIAN_JP = "EAST_ASIAN_JP",
+    CN = "CN",
+    JP = "JP",
     POLYNESIAN = "POLYNESIAN",
     MONGOLIC = "MONGOLIC",
     GREEKIC = "GREEKIC",
@@ -20,6 +20,15 @@ export enum Language {
     TECHNARCH = "TECHNARCH",
     INFERNO = "INFERNO",
     SIRENIC = "SIRENIC",
+    OOGA_BOOGA = "OOGA_BOOGA",
+    DWARVISH = "DWARVISH",
+    HALFLING = "HALFLING",
+    NOCTURNIC = "NOCTURNIC",
+    DERPTONGUE = "DERPTONGUE",
+    TOADISH = "TOADISH",
+    BANANAIC = "BANANAIC",
+    LYRICIAN = "LYRICIAN",
+    ANGLISHIC = "ANGLISHIC",
 };
 
 type LanguageConfig = {
@@ -92,7 +101,7 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         medialMorphChance: 0.50,
         suffixes: ["el", "es", "os", "on", "u"],
     },
-    [Language.EAST_ASIAN_CN]: {
+    [Language.CN]: {
         onsets: [
             "b", "p", "m", "f", "d", "t", "n", "l", "g", "k", "h",
             "zh", "ch", "sh", "r", "z", "c", "s"
@@ -108,7 +117,7 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         suffixes: ["shan", "dao", "zhou", "guo", "cheng", "men"],
     },
 
-    [Language.EAST_ASIAN_JP]: {
+    [Language.JP]: {
         onsets: [
             "k", "s", "t", "n", "h", "m", "y", "r", "w",
             "g", "z", "d", "b", "p",
@@ -271,6 +280,123 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         medialMorphChance: 0.40,
         suffixes: [
             "ine", "is", "ir", "iel", "ora", "ara", "una", "elle", "en", "ys", "eth", "wen"
+        ],
+    },
+    [Language.OOGA_BOOGA]: {
+        onsets: ["", "b", "g", "k", "m", "n", "t", "p", "w", "h", "bg", "gb", "gr", "kr"],
+        vowels: ["o", "a", "u", "oo", "oa", "ou", "ua", "uga", "oga"],
+        codas: ["", "g", "k", "ng", "ga", "ka", "gk"],
+        codaChance: 0.72,
+        medials: ["ooga", "booga", "boga", "maka", "taka", "gora", "gugu", "koko", "boko"],
+        medialMorphChance: 0.35,
+        suffixes: ["uga", "booga", "g", "ka", "ko", "ga", "bog", "ok"],
+    },
+    [Language.DWARVISH]: {
+        onsets: ["b", "d", "g", "k", "m", "n", "r", "t", "v", "z", "br", "dr", "gr", "kr", "tr", "thr", "kh"],
+        vowels: ["a", "e", "i", "o", "u", "ai", "oi", "au"],
+        codas: ["r", "n", "m", "k", "g", "d", "nd", "rd", "ld", "rn", "rm", "rg", "rk"],
+        codaChance: 0.75,
+        medials: ["dur", "grim", "bar", "kar", "grom", "thal", "dun", "fund", "brak", "stenn", "stein"],
+        medialMorphChance: 0.45,
+        suffixes: ["in", "ar", "orn", "grin", "dun", "hald", "heim", "hold"],
+    },
+    [Language.HALFLING]: {
+        onsets: ["b", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "r", "s", "t", "w", "br", "cl", "fl", "pl", "wh"],
+        vowels: ["a", "e", "i", "o", "u", "ie", "ea", "ai", "oa", "oi", "oo"],
+        codas: ["n", "r", "l", "m", "s", "t", "ck", "nd", "rt", "ft", "ley", "ton"],
+        codaChance: 0.55,
+        medials: ["apple", "bur", "brook", "dale", "mill", "merry", "will", "hedge", "bottle", "puddle"],
+        medialMorphChance: 0.30,
+        suffixes: ["ton", "ford", "wick", "brook", "hill", "bury", "shaw", "combe", "ley"],
+    },
+    [Language.NOCTURNIC]: {
+        onsets: ["v", "s", "z", "r", "l", "m", "n", "d", "t", "c", "ch", "sh", "vr", "cr", "dr", "str"],
+        vowels: ["a", "e", "i", "o", "u", "ae", "ei", "ia", "io", "ou", "ui"],
+        codas: ["r", "s", "th", "x", "z", "n", "l", "re", "is", "us", "oth", "yx"],
+        codaChance: 0.65,
+        medials: ["nos", "sang", "vel", "mor", "car", "lac", "umbr", "noir", "vlad", "rav", "dusk"],
+        medialMorphChance: 0.45,
+        suffixes: ["ius", "elle", "oire", "an", "ar", "or", "yx", "ath", "osa"],
+    },
+    [Language.DERPTONGUE]: {
+        onsets: ["b", "g", "k", "p", "d", "t", "f", "m", "n", "r", "s", "bl", "gr", "kr", "sn", "pl", "fl", "z", "v"],
+        vowels: ["a", "e", "i", "o", "u", "oo", "ee", "uh", "ah", "ow"],
+        codas: ["", "g", "k", "p", "t", "n", "m", "b", "sh", "zz", "rp", "nk"],
+        codaChance: 0.6,
+        medials: ["derp", "blor", "snar", "plop", "gorp", "flub", "drool", "bonk", "boop"],
+        medialMorphChance: 0.55,
+        suffixes: ["er", "us", "o", "ee", "oo", "ah", "uh", "boop", "onk"],
+    },
+    [Language.TOADISH]: {
+        onsets: ["gr", "kr", "br", "cro", "fro", "gl", "pl", "r", "bl", "cr", "tr", "dr"],
+        vowels: ["o", "u", "oo", "oa", "ou", "uh", "a", "ua"],
+        codas: ["g", "k", "rk", "rg", "mp", "b", "bb", "gk", "nk", "rr", "p"],
+        codaChance: 0.75,
+        medials: ["croa", "rib", "grub", "glo", "slop", "murk", "drib", "blob"],
+        medialMorphChance: 0.45,
+        suffixes: ["og", "ug", "ump", "ok", "ogg", "onk", "croak"],
+    },
+    [Language.BANANAIC]: {
+        // lots of open syllables; some empty onset for pure-vowel starts
+        onsets: ["", "b", "d", "g", "k", "m", "n", "p", "t", "w", "h", "ba", "na", "ma", "pa", "ga", "da"],
+        vowels: ["a", "e", "i", "o", "u", "aa", "ee", "oo", "ai", "au"],
+        codas: ["", "na", "ma", "pa", "ba", "ga", "ka", "la", "ha"],
+        codaChance: 0.6,
+        medials: ["na", "nana", "mama", "papa", "gaga", "lala", "haha", "wawa", "baba", "dada"],
+        medialMorphChance: 0.6,
+        suffixes: ["na", "nana", "banana", "mana", "pana", "bana", "lala", "haha"],
+    },
+    [Language.MIMICIAN]: {
+        // everything is meant to sound sing-song or mirrored
+        onsets: [
+            "b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "y",
+            "bl", "br", "cl", "dr", "fl", "gl", "pl", "pr", "sn", "sp", "tr", "tw"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ai", "ea", "ee", "ie", "oo", "ou"],
+        codas: ["b", "d", "g", "k", "m", "n", "p", "r", "s", "t", "nk", "mp", "pp", "zz", "ff", "sh"],
+        codaChance: 0.5,
+        medials: [
+            "bop", "doodle", "fiddle", "gig", "jib", "kib", "lop", "mop", "nib", "pip",
+            "pop", "quib", "rib", "sib", "tip", "top", "wig", "wob", "yip", "zip"
+        ],
+        medialMorphChance: 0.55,
+        suffixes: [
+            "bop", "boop", "flip", "flop", "doodle", "fiddle", "wiggle", "wag", "zap", "zip", "zoop", "snoot"
+        ],
+    },
+    [Language.LYRICIAN]: {
+        onsets: [
+            "a", "e", "i", "o", "u",
+            "l", "n", "m", "r", "s", "v", "f", "h", "y",
+            "al", "el", "il", "ol", "ul", "ar", "en", "ir", "or", "ur", "ly", "ny", "th", "ph"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ai", "ei", "ia", "io", "oa", "ue", "ui"],
+        codas: ["l", "n", "r", "s", "th", "m", "el", "en", "ir", "is", "ar", "al"],
+        codaChance: 0.45,
+        medials: [
+            "ara", "eli", "ian", "ora", "ina", "ira", "ala", "esi", "len", "mir", "var", "ser", "vel", "lin"
+        ],
+        medialMorphChance: 0.35,
+        suffixes: ["iel", "is", "en", "el", "ora", "ine", "ar", "eth", "iel", "ane"],
+    },
+    [Language.ANGLISHIC]: {
+        onsets: [
+            "b", "br", "bl", "c", "cl", "cr", "d", "dr", "f", "fl", "fr", "g", "gr", "gl", "h", "j", "k", "kr",
+            "l", "m", "n", "p", "pl", "pr", "r", "s", "sl", "sm", "sn", "sp", "st", "sw", "t", "tr", "v", "w", "wh"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ai", "ea", "ie", "oa", "oo", "ou", "uh", "ar", "er"],
+        codas: [
+            "b", "d", "f", "g", "k", "l", "m", "n", "p", "r", "s", "t",
+            "ck", "nd", "nt", "st", "sp", "sh", "th", "rd", "rk", "rm", "rl", "lp", "ft"
+        ],
+        codaChance: 0.6,
+        medials: [
+            "ing", "ish", "est", "ard", "orn", "all", "and", "ell", "ock", "ump", "old", "ent",
+            "ram", "win", "ber", "ble", "trum", "croft", "shire", "worth"
+        ],
+        medialMorphChance: 0.4,
+        suffixes: [
+            "ton", "ham", "worth", "wick", "well", "ford", "croft", "den", "fell", "bury", "brook", "mere", "stead"
         ],
     },
 

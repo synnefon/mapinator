@@ -43,8 +43,8 @@ export class NameGenerator {
             Language.ROMANCE,
             Language.GERMANIC,
             Language.SEMITIC,
-            Language.EAST_ASIAN_CN,
-            Language.EAST_ASIAN_JP,
+            Language.CN,
+            Language.JP,
             Language.AFRICAN_WEST,
             Language.AFRICAN_HORN,
             Language.POLYNESIAN,
@@ -56,8 +56,19 @@ export class NameGenerator {
             Language.GOBLINIC,
             Language.INFERNO,
             Language.SIRENIC,
+            Language.OOGA_BOOGA,
+            Language.DWARVISH,
+            Language.HALFLING,
+            Language.NOCTURNIC,
+            Language.DERPTONGUE,
+            Language.TOADISH,
+            Language.BANANAIC,
+            Language.LYRICIAN,
+            Language.ANGLISHIC
         ];
-        return langs[Math.floor(this.rng() * langs.length)];
+        const lang = langs[Math.floor(this.rng() * langs.length)];
+        console.log(`chosen language: ${lang}`)
+        return lang;
     }
 
     private pickSuffix(f: Language): string {
