@@ -127,6 +127,39 @@ input[type="checkbox"]:checked {
   color: var(--text);
 }
 
+#theme-select-container {
+  width: 100%;
+  display: inline-grid;
+  grid-template-columns: 30% 70%;
+  margin-top: 0.5em;
+}
+
+select {
+  background-color: var(--bg);
+  border: 4px solid var(--text);
+  color: var(--text);
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 400;
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+select:hover,
+select:focus {
+  border-color: var(--thumb);
+}
+
+::selection {
+  background-color: var(--thumb);
+  /* Sets the background of selected text to red */
+  color: #ffffff;
+  /* Sets the text color of selected text to white */
+}
+
+#regen {
+  margin-top: 1em;
+}
+
 /* Map area */
 #map-container {
   width: 100%;

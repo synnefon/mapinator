@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const drawMap = () => {
     const map: Map = mapGenerator.generateMap(settings);
-    mapRenderer.drawCellColors(canvas, map, settings.greyScale);
+    mapRenderer.drawCellColors(canvas, map);
   };
 
   const drawTitle = (n: string | undefined = undefined) => {
@@ -71,7 +71,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const resolutionInput = fetchElement<HTMLInputElement>("resolution");
   const resolutionLabel = fetchElement<HTMLSpanElement>("resolutionValue");
 
-  const greyscaleInput = fetchElement<HTMLInputElement>("grayscale");
+  // Color scheme dropdown
+  const colorSchemeSelect = fetchElement<HTMLSelectElement>("colorScheme");
+
 
   const seedInput = fetchElement<HTMLInputElement>("seed-input");
   const loadBtn = fetchElement<HTMLButtonElement>("load-seed-btn");
@@ -97,8 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
   resolutionInput.value = String(settings.resolution);
   resolutionLabel.textContent = settings.resolution.toFixed(2);
 
-  greyscaleInput.checked = settings.greyScale;
-
+  colorSchemeSelect.value = settings.colorScheme;
 
   // Update settings as the user moves sliders (then redraw)
   wavelengthInput.addEventListener("input", () => {
@@ -137,8 +138,8 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
-  greyscaleInput.addEventListener("input", () => {
-    settings.greyScale = greyscaleInput.checked;
+  colorSchemeSelect.addEventListener("change", () => {
+    settings.colorScheme = colorSchemeSelect.value as MapGenSettings["colorScheme"];
     drawMap();
   });
 

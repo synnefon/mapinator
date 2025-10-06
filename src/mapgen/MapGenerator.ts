@@ -61,7 +61,7 @@ export class MapGenerator {
     ): Biome[] {
         const { numRegions } = baseMap;
 
-        const biomeManager = new BiomeManager(settings.rainfall, settings.seaLevel);
+        const biomeManager = new BiomeManager(settings.rainfall, settings.seaLevel, settings.colorScheme);
         const biomes: Biome[] = [];
         for (let r = 0; r < numRegions; r++) {
             biomes.push(biomeManager.getBiome(elevations[r], moistures[r]))

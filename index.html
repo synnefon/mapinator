@@ -41,9 +41,15 @@
     <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
     <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
 
-    <div>
-      <label for="grayscale">grayscale: <span id="grayscaleValue"></span></label>
-      <input type="checkbox" id="grayscale" />
+    <div id="theme-select-container">
+      <label for="colorScheme">theme:</label>
+      <select id="colorScheme">
+        <option value="default">default</option>
+        <option value="oldAtlas">old atlas</option>
+        <option value="verdant">verdant</option>
+        <option value="ashfall">ashfall</option>
+        <option value="greyscale">greyscale</option>
+      </select>
     </div>
 
     <button id="regen">Regenerate</button>

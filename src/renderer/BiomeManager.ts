@@ -1,70 +1,70 @@
-import type { Biome, BiomeRule } from "../common/biomes";
-import { biomeRules, Biomes } from "../common/biomes";
+// BiomeManager.ts
+import {
+    Biomes,
+    biomeRules,
+    type Biome,
+    type BiomeKey,
+    type BiomeRule,
+    type ColorScheme,
+} from "../common/biomes";
 
 export class BiomeManager {
-    private rainfall: number; // 0-1
-    private seaLevel: number; // 0-1
+    private rainfall: number;   // internal exponent factor
+    private seaLevel: number;   // -1..1 (normalized)
+    private colorScheme: ColorScheme;
+    private EPS = 1e-9;
 
-    public constructor(rainfall: number, seaLevel: number) {
+    public constructor(rainfall: number, seaLevel: number, colorScheme: ColorScheme) {
         if (rainfall < 0 || rainfall > 1 || seaLevel < 0 || seaLevel > 1) {
             throw Error("rainfall & seaLevel must be 0-1");
         }
 
-        rainfall = this.expCurve(1 - rainfall, 4.1)
-        this.rainfall = Math.max(0.01, rainfall * 25);
+        // Moisture shaping
+        const shaped = this.expCurve(1 - rainfall, 4.1);
+        this.rainfall = Math.max(0.01, shaped * 25);
 
-        this.seaLevel = 2.0 * (seaLevel - 0.5); // -1 to 1
+        // Normalize sea level to -1..1
+        this.seaLevel = 2.0 * (seaLevel - 0.5);
+
+        this.colorScheme = colorScheme;
     }
 
     public getBiome(elevation: number, moisture: number): Biome {
+        // remap & clamp
         let e = (2.0 * (elevation - 0.5)) - (this.seaLevel - 0.1);
         let m = moisture ** this.rainfall;
-
-        // to make some checks work
         e = Math.max(Math.min(e, 1 - this.EPS), -1);
         m = Math.max(Math.min(m, 1 - this.EPS), -1);
 
-        const biomeRule = this.findMatchingBiomeRule(e, m);
-        if (!biomeRule) {
+        const rule = this.findMatchingBiomeRule(e, m);
+        if (!rule) {
             throw new Error(`unable to find biome for elevation: ${elevation}, moisture: ${moisture}`);
-        };
-
-        return biomeRule.biome;
-    };
-
-    private findMatchingBiomeRule(elevation: number, moisture: number): BiomeRule {
-        const ruleIdx = this.findLastIndex(
-            biomeRules,
-            (rule: BiomeRule, _i: number, _r: BiomeRule[]) => this.matchesRule(rule, elevation, moisture),
-        );
-
-        return biomeRules[ruleIdx];
+        }
+        const key: BiomeKey = rule.biomeKey;
+        return Biomes[this.colorScheme][key];
     }
 
-    public isOcean(elevation: number) {
-        const oceanRuleIdx = this.findLastIndex(biomeRules, r =>
-            r.biome.name === Biomes.OCEAN.name
+    private findMatchingBiomeRule(elevation: number, moisture: number): BiomeRule | undefined {
+        const idx = this.findLastIndex(
+            biomeRules,
+            (rule) => this.matchesRule(rule, elevation, moisture),
         );
-        const oceanRule = biomeRules[oceanRuleIdx];
-        return oceanRule.elevation[1] >= elevation;
+        return idx >= 0 ? biomeRules[idx] : undefined;
     }
 
     private expCurve(x: number, k: number): number {
-        // Clamp input
         const clamped = Math.max(0, Math.min(1, x));
-
-        // Exponential remap
         return (Math.exp(k * clamped) - 1) / (Math.exp(k) - 1);
     }
 
     private matchesRule(rule: BiomeRule, elevation: number, moisture: number): boolean {
-        return rule.elevation[0] <= elevation &&
-            rule.elevation[1] > elevation &&
+        return (
+            rule.elevation[0] <= elevation &&
+            elevation < rule.elevation[1] &&
             rule.moisture[0] <= moisture &&
-            rule.moisture[1] > moisture
+            moisture < rule.moisture[1]
+        );
     }
-
-    private EPS = 1e-9;
 
     private findLastIndex<T>(
         arr: T[],
