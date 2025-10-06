@@ -84,17 +84,34 @@ export class MapGenerator {
     }
 
     private genElevations(baseMap: BaseMap, settings: MapGenSettings): number[] {
-        const { wavelength, edgeCurve } = settings;
+        const { wavelength, edgeCurve, elevationContrast = 0.5 } = settings;
         const shatter = 1 - settings.shatter;
         const minExp = 0.5;
         const maxExp = 3.0;
         const edgeExp = minExp + (maxExp - minExp) * edgeCurve;
 
         const { points, numRegions, resolution } = baseMap;
-        const elevation: number[] = new Array(numRegions);
+        const elevations: number[] = new Array(numRegions);
 
         const clamp = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
         const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+        // 0 -> flat, 0.5 -> identity, 1 -> max contrast
+        const applyElevationContrast = (e: number, c: number) => {
+            const u = 2 * e - 1; // shift to [-1,1]
+
+            // Map c ∈ [0,1] into a gamma curve that’s symmetric around c=0.5
+            // 0.5 = gamma=1 (no change)
+            // 1.0 = gamma<1 (boost contrast)
+            // 0.0 = gamma>1 (flatten)
+            const gamma =
+                c < 0.5
+                    ? lerp(3.0, 1.0, c / 0.5) // flatten side
+                    : lerp(1.0, 0.2, (c - 0.5) / 0.5); // contrast side
+
+            const uMod = Math.sign(u) * Math.pow(Math.abs(u), gamma);
+            return clamp((uMod + 1) / 2);
+        };
 
         for (let r = 0; r < numRegions; r++) {
             const nx = points[r].x / resolution - 0.5;
@@ -105,17 +122,18 @@ export class MapGenerator {
                 this.noise2D(nx / wavelength, ny / wavelength) / 2 +
                 this.noise2D((2 * nx) / wavelength, (2 * ny) / wavelength) / 3;
 
-            // edge distance (0 center → 1 border)
             let d = 2 * Math.max(Math.abs(nx), Math.abs(ny));
             d = Math.pow(d, edgeExp);
 
             const shatterMasked = (1 + e - d) / 2;
-
             e = lerp(e, shatterMasked, clamp(shatter));
 
-            elevation[r] = clamp(e);
+            e = applyElevationContrast(clamp(e), elevationContrast);
+            elevations[r] = clamp(e);
         }
 
-        return elevation;
+        return elevations;
     }
+
+
 }

@@ -7,6 +7,7 @@ export interface MapGenSettings {
   shatter: number;
   edgeCurve: number;
   greyScale: boolean;
+  elevationContrast: number;
 }
 
 export const DEFAULTS: MapGenSettings = {
@@ -18,4 +19,5 @@ export const DEFAULTS: MapGenSettings = {
   shatter: 0.1,
   edgeCurve: 0.8,
   greyScale: false,
+  elevationContrast: 0.5,
 };

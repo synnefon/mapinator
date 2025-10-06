@@ -65,8 +65,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const shatterInput = fetchElement<HTMLInputElement>("shatter");
   const shatterLabel = fetchElement<HTMLSpanElement>("shatterValue");
 
-  const edgeCurveInput = fetchElement<HTMLInputElement>("edgeCurve");
-  const edgeCurveLabel = fetchElement<HTMLSpanElement>("edgeCurveValue");
+  const elevationContrastInput = fetchElement<HTMLInputElement>("elevationContrast");
+  const elevationContrastLabel = fetchElement<HTMLSpanElement>("elevationContrastValue");
 
   const resolutionInput = fetchElement<HTMLInputElement>("resolution");
   const resolutionLabel = fetchElement<HTMLSpanElement>("resolutionValue");
@@ -91,8 +91,8 @@ document.addEventListener("DOMContentLoaded", () => {
   shatterInput.value = String(settings.shatter);
   shatterLabel.textContent = settings.shatter.toFixed(2);
 
-  edgeCurveInput.value = String(settings.edgeCurve);
-  edgeCurveLabel.textContent = settings.edgeCurve.toFixed(2);
+  elevationContrastInput.value = String(settings.elevationContrast);
+  elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
 
   resolutionInput.value = String(settings.resolution);
   resolutionLabel.textContent = settings.resolution.toFixed(2);
@@ -125,9 +125,9 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
-  edgeCurveInput.addEventListener("input", () => {
-    settings.edgeCurve = Number(edgeCurveInput.value);
-    edgeCurveLabel.textContent = settings.edgeCurve.toFixed(2);
+  elevationContrastInput.addEventListener("input", () => {
+    settings.elevationContrast = Number(elevationContrastInput.value);
+    elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
     drawMap();
   });
 
