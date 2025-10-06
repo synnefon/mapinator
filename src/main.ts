@@ -180,7 +180,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // download
     const link = document.createElement("a");
-    link.download = `${mapTitle.replace(/\s+/g, "_")}.png`;
+    link.download = `MAPINATOR_${mapTitle.replace(/\s+/g, "_")}.png`;
     link.href = exportCanvas.toDataURL("image/png");
     link.click();
   });
