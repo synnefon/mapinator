@@ -10,14 +10,21 @@ type PointGenReturn = {
 
 export class PointGenerator {
     private rng: RNG;
+    private seed: string;
 
     constructor(seed: string) {
+        this.rng = makeRNG(seed);
+        this.seed = seed;
+    }
+
+    public reSeed(seed: string) {
+        this.seed = seed;
         this.rng = makeRNG(seed);
     }
 
     public genPoints(settings: MapGenSettings): PointGenReturn {
         // makes it deterministic :)
-        this.rng = makeRNG(`seed-${settings.resolution}`);
+        this.rng = makeRNG(`${this.seed}-${settings.resolution}`);
 
         const { resolution, jitter } = settings;
 
