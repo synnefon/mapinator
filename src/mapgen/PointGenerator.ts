@@ -9,17 +9,15 @@ type PointGenReturn = {
 }
 
 export class PointGenerator {
-    private rng: RNG;
+    private rng: RNG = () => 0; // set in genPoints
     private seed: string;
 
     constructor(seed: string) {
-        this.rng = makeRNG(seed);
         this.seed = seed;
     }
 
     public reSeed(seed: string) {
         this.seed = seed;
-        this.rng = makeRNG(seed);
     }
 
     public genPoints(settings: MapGenSettings): PointGenReturn {

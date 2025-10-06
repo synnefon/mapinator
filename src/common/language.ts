@@ -1,16 +1,25 @@
 export enum Language {
-    ROMANCE = "romance",
-    GERMANIC = "germanic",
-    SLAVIC = "slavic",
-    TURKIC = "turkic",
-    SEMITIC = "semitic",
-    BANTU_LIKE = "bantu_like",
-    AFRICAN_WEST = "african_west",
-    AFRICAN_HORN = "african_horn",
-    EAST_ASIAN_CN = "east_asian_cn",
-    EAST_ASIAN_JP = "east_asian_jp",
-    EAST_ASIAN_KR = "east_asian_kr",
-    POLYNESIAN = "polynesian",
+    ROMANCE = "ROMANCE",
+    GERMANIC = "GERMANIC",
+    TURKIC = "TURKIC",
+    SEMITIC = "SEMITIC",
+    BANTU_LIKE = "BANTU_LIKE",
+    AFRICAN_WEST = "AFRICAN_WEST",
+    AFRICAN_HORN = "AFRICAN_HORN",
+    EAST_ASIAN_CN = "EAST_ASIAN_CN",
+    EAST_ASIAN_JP = "EAST_ASIAN_JP",
+    POLYNESIAN = "POLYNESIAN",
+    MONGOLIC = "MONGOLIC",
+    GREEKIC = "GREEKIC",
+    LATINIC = "LATINIC",
+    CELESTIC = "CELESTIC",
+    INFERNIC = "INFERNIC",
+    ARCANE = "ARCANE",
+    DEEP_SPEECH = "DEEP_SPEECH",
+    GOBLINIC = "GOBLINIC",
+    TECHNARCH = "TECHNARCH",
+    INFERNO = "INFERNO",
+    SIRENIC = "SIRENIC",
 };
 
 type LanguageConfig = {
@@ -37,8 +46,8 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         codas: ["n", "r", "s", "l", "m"],
         codaChance: 0.45,
         medials: ["del", "dor", "ver", "mar", "val", "lor", "ria", "lia", "mia"],
-        medialMorphChance: 0.35,
-        suffixes: ["ia", "aria", "esia"],
+        medialMorphChance: 0.45,
+        suffixes: ["ia", "aria", "esia", "orio", "io", "a", "o", "es"],
     },
     [Language.GERMANIC]: {
         onsets: ["b", "d", "f", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "w", "th",
@@ -49,16 +58,6 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         medials: ["wald", "heim", "mark", "gard", "dorf"],
         medialMorphChance: 0.30,
         suffixes: ["land", "heim", "berg"],
-    },
-    [Language.SLAVIC]: {
-        onsets: ["b", "v", "g", "d", "z", "k", "l", "m", "n", "p", "r", "s", "t",
-            "br", "cr", "dr", "gr", "kr", "pr", "tr", "vl", "vr", "zv", "zl", "sk", "sp", "sl", "sm", "sn", "pl", "kl", "gl", "brn"],
-        vowels: [...V_OPEN, "ya", "yo", "yu", "ia", "ie", "io"],
-        codas: ["v", "n", "r", "nsk", "grad", "gor", "pol", "mir", "slav", "sk"],
-        codaChance: 0.70,
-        medials: ["grad", "slav", "pol", "gor"],
-        medialMorphChance: 0.40,
-        suffixes: ["ia", "ovia", "grad"],
     },
     [Language.SEMITIC]: {
         onsets: ["al", "ar", "as", "bal", "dar", "qal", "mal", "ram", "sam", "zar", "bar", "sar"],
@@ -78,7 +77,7 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         codas: ["n", "m", "wa", "ra", ""],
         codaChance: 0.35,
         medials: ["loba", "femi", "kwe", "tunde", "chukwu", "nwa", "kofi", "yemi"],
-        medialMorphChance: 0.40,
+        medialMorphChance: 0.50,
         suffixes: ["la", "ba", "ra", "ni", "do", "ma"],
     },
     [Language.AFRICAN_HORN]: {
@@ -90,7 +89,7 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         codas: ["s", "m", "n", "l", "t", ""],
         codaChance: 0.45,
         medials: ["sel", "geb", "tek", "yon", "hab", "mar", "zer", "wold"],
-        medialMorphChance: 0.35,
+        medialMorphChance: 0.50,
         suffixes: ["el", "es", "os", "on", "u"],
     },
     [Language.EAST_ASIAN_CN]: {
@@ -105,7 +104,7 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         codas: ["n", "ng", ""],
         codaChance: 0.40,
         medials: ["shan", "jiang", "he", "hu", "zhou", "dao", "lin", "yang", "qing", "jing", "guo", "cheng"],
-        medialMorphChance: 0.30,
+        medialMorphChance: 0.35,
         suffixes: ["shan", "dao", "zhou", "guo", "cheng", "men"],
     },
 
@@ -122,21 +121,6 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         medialMorphChance: 0.30,
         suffixes: ["to", "ken", "do", "fu", "shi", "mura"],
     },
-
-    [Language.EAST_ASIAN_KR]: {
-        onsets: [
-            "g", "n", "d", "r", "m", "b", "s", "j", "ch", "k", "t", "p", "h"
-        ],
-        vowels: [
-            "a", "eo", "o", "u", "eu", "i",
-            "ae", "e", "ya", "yeo", "yo", "yu", "wa", "we", "wi", "ui"
-        ],
-        codas: ["k", "n", "t", "l", "m", "p", "ng", ""],
-        codaChance: 0.45,
-        medials: ["san", "seong", "gang", "cheon", "buk", "nam", "jin", "dae", "won", "do"],
-        medialMorphChance: 0.35,
-        suffixes: ["do", "si", "gun", "eup", "ri"],
-    },
     [Language.POLYNESIAN]: {
         // allow vowel-initial names; Polynesian loves CV / V syllables
         onsets: [
@@ -145,15 +129,149 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         ],
         // favor pure vowels & gentle diphthongs; add macrons if allowDiacritics
         vowels: ["a", "e", "i", "o", "u"],
-        codas: ["", "’", "ʻ"], // ASCII apostrophe and unicode okina options
+        codas: ["", "’", "ʻ"],
         codaChance: 0.2,
-        // common morphemes across Māori/Samoan/Tahitian/Hawaiian vibes
         medials: [
             "moa", "rangi", "tonga", "tai", "wai", "puna", "tapu", "mana",
             "ariki", "tiki", "honu", "pua", "mata", "ika", "koro", "hale", "fale", "nui", "loa", "roa"
         ],
         medialMorphChance: 0.30,
-        // gentle, place-namey endings
         suffixes: ["nui", "roa", "loa", "rangi", "moana", "tonga", "tai", "puna"],
     },
+    [Language.LATINIC]: {
+        onsets: [
+            "a", "e", "i", "o", "u",
+            "b", "c", "d", "f", "g", "l", "m", "n", "p", "r", "s", "t", "v",
+            "cl", "fl", "gl", "pr", "tr", "cr", "pl", "fr", "gr", "dr", "qu"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ae", "oe", "au", "ia", "io", "ua", "uo"],
+        codas: ["s", "n", "r", "m", "t", "l", "us", "um", "a"],
+        codaChance: 0.55,
+        medials: [
+            "dom", "val", "magn", "clar", "fort", "sanct", "imper", "aure", "vit", "cel", "luc", "reg", "mart"
+        ],
+        medialMorphChance: 0.50,
+        suffixes: [
+            "us", "um", "a", "or", "is", "ianus", "ensis", "atus", "itas", "arium", "arium"
+        ],
+    },
+    [Language.MONGOLIC]: {
+        onsets: [
+            "ba", "bo", "bu", "ta", "to", "tu", "ga", "go", "gu", "da", "do", "du",
+            "kha", "kh", "qar", "gur", "dar", "bor", "nar", "sar", "bat", "alt"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ai", "oi", "ua", "uu"],
+        codas: ["n", "r", "g", "t", "s", ""],
+        codaChance: 0.50,
+        medials: ["bator", "dorj", "suren", "erdene", "tungal", "bayar", "bold", "gan"],
+        medialMorphChance: 0.50,
+        suffixes: ["bator", "gur", "tengri", "dalai", "khun"],
+    },
+    [Language.INFERNIC]: {
+        onsets: [
+            "gr", "kr", "dr", "br", "thr", "vr", "zr", "kl", "sk", "sn", "gn", "vrog", "ulg", "zor", "rak", "gash", "morg"
+        ],
+        vowels: ["a", "o", "u", "e", "ia", "oa", "ua", "ai", "oi"],
+        codas: ["th", "k", "g", "r", "z", "x", "sh", "kh", "gh", "n", "m"],
+        codaChance: 0.75,
+        medials: ["gor", "zul", "rak", "thr", "khar", "vur", "drak", "mor", "gron", "vul"],
+        medialMorphChance: 0.45,
+        suffixes: ["oth", "ar", "rak", "gul", "zor", "eth", "uzad", "ash", "ath"],
+    },
+    [Language.ARCANE]: {
+        onsets: [
+            "a", "e", "i", "o", "u",
+            "x", "z", "v", "q", "k", "s", "r", "th", "sh", "ch", "ph", "gh",
+            "xa", "xi", "ze", "zy", "qu", "ka", "ly", "sy", "va", "or", "ny"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ae", "ia", "ie", "io", "ei", "ou", "ui"],
+        codas: ["n", "r", "s", "th", "x", "z", "sh", "m", "l", "t"],
+        codaChance: 0.60,
+        medials: ["ar", "en", "is", "os", "ith", "al", "or", "ir", "um", "ex", "ul"],
+        medialMorphChance: 0.50,
+        suffixes: ["ar", "en", "is", "os", "ith", "or", "ul", "um", "ae", "ion"],
+    },
+
+    [Language.CELESTIC]: {
+        onsets: [
+            "a", "ae", "e", "el", "al", "il", "ol", "ul", "cel", "ser", "ver", "lir", "aur", "eir", "mir", "thal", "val"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ae", "ea", "ai", "ia", "ie", "io", "ou", "ui"],
+        codas: ["l", "n", "r", "s", "th", "el", "iel", "ar", "is", "as"],
+        codaChance: 0.55,
+        medials: ["ael", "iel", "ion", "ora", "iel", "ir", "ara", "uri", "arion"],
+        medialMorphChance: 0.60,
+        suffixes: ["iel", "ael", "ion", "ora", "is", "arion", "iel", "eth"],
+    },
+    [Language.DEEP_SPEECH]: {
+        onsets: [
+            "gh", "gr", "kr", "zr", "zh", "xh", "kl", "ql", "k’", "x’", "t’", "sh", "sk", "thl", "vr", "vx", "dl", "rk"
+        ],
+        vowels: ["a", "u", "o", "e", "ia", "ua", "ao", "ou", ""],
+        codas: ["th", "x", "g", "k", "z", "sh", "’th", "’x", "’g", "n"],
+        codaChance: 0.80,
+        medials: [
+            "ul", "gur", "zha", "kth", "rax", "xul", "gath", "urh", "shul", "vrax", "qor", "thrul", "zoth"
+        ],
+        medialMorphChance: 0.45,
+        suffixes: ["’thul", "’gath", "’nax", "’ul", "’rax", "oth", "zoth", "gath", "khul"],
+    },
+    [Language.GOBLINIC]: {
+        onsets: [
+            "g", "gr", "kr", "kl", "sn", "sk", "sm", "sp", "st", "tr", "dr", "bl", "br", "pl", "gl", "zz", "gn", "ch", "sc"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "aa", "oo", "ei", "oi"],
+        codas: ["k", "g", "n", "m", "b", "t", "z", "zz", "sh", "p", "x", ""],
+        codaChance: 0.70,
+        medials: [
+            "grub", "snag", "krat", "blit", "skrag", "drub", "gnar", "plok", "zib", "krin", "grot", "snib"
+        ],
+        medialMorphChance: 0.45,
+        suffixes: ["ak", "ig", "ok", "nob", "zit", "gob", "bag", "pik", "nip", "ogg"],
+    },
+    [Language.INFERNO]: {
+        onsets: [
+            "f", "ph", "b", "v", "p", "t", "th", "kh", "k", "r", "s", "sh", "ch", "z",
+            "br", "kr", "fr", "fl", "dr", "gr", "vr", "zar", "bal", "kal", "ash", "rav", "ign", "py", "flam"
+        ],
+        vowels: [
+            "a", "e", "i", "o", "u",
+            "aa", "ae", "ai", "au", "ea", "ei", "io", "oa", "ou", "ua"
+        ],
+        codas: [
+            "r", "s", "th", "x", "z", "n", "m", "sh", "ch", "k", "t", "ar", "az", "eth", "oth"
+        ],
+        codaChance: 0.70,
+        medials: [
+            "ash", "zar", "rak", "vyr", "thar", "gor", "ign", "az", "flar", "kesh", "rath", "vor", "pyra"
+        ],
+        medialMorphChance: 0.45,
+        suffixes: [
+            "ash", "ur", "zar", "eth", "or", "oth", "ar", "rak", "ath", "zor", "ion"
+        ],
+    },
+    [Language.SIRENIC]: {
+        onsets: [
+            "a", "e", "i", "o", "u",
+            "l", "n", "m", "s", "v", "r", "h", "w",
+            "sh", "th", "ph", "ch", "wh", "ly", "ny",
+            "sel", "sir", "mar", "nai", "ora", "thal", "vel", "mel", "lun", "aqu", "ond"
+        ],
+        vowels: [
+            "a", "e", "i", "o", "u",
+            "ae", "ai", "ea", "ee", "ia", "ie", "io", "oa", "oe", "ou", "ua", "ue", "ui"
+        ],
+        codas: [
+            "n", "r", "l", "s", "th", "sh", "h", "m", "el", "en", "ir", "is", "a", "ia", "ine"
+        ],
+        codaChance: 0.45,
+        medials: [
+            "ara", "ela", "ine", "ora", "ula", "iri", "oni", "ari", "una", "esi", "mar", "sel", "vai", "wen", "lua", "nys"
+        ],
+        medialMorphChance: 0.40,
+        suffixes: [
+            "ine", "is", "ir", "iel", "ora", "ara", "una", "elle", "en", "ys", "eth", "wen"
+        ],
+    },
+
 }

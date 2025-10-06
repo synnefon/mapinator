@@ -10,6 +10,12 @@ export function makeRNG(seed: string): RNG {
     };
 }
 
+export function randomChoice<T>(arr: T[]) {
+    const rng = makeRNG(`${Date.now()}`);
+    return arr[Math.floor(rng() * arr.length)];
+}
+
+
 function hash32(s: string): number {
     let h = 2166136261 >>> 0;
     for (let i = 0; i < s.length; i++) {
