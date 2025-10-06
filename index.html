@@ -39,9 +39,15 @@
     <input id="seaLevel" type="range" min="0.05" max="1.0" step="0.05" />
 
     <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
-    <input id="rainfall" type="range" min="0.05" max="1.0" step="0.05" />
+    <input id="rainfall" type="range" min="0.05" max="1.0" step="0.01" />
 
     <button id="regen">Regenerate</button>
+
+    <div id="seed-container">
+      <label for="seed-input">Seed:</label>
+      <input type="text" id="seed-input" />
+    </div>
+    <button id="load-seed-btn">Load</button>
   </div>
 
   <div id="map-container">

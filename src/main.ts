@@ -1,8 +1,9 @@
+import { v4 as uuid } from 'uuid';
+import { DEFAULTS, type MapGenSettings } from "./common/config";
 import type { Map } from "./common/map";
 import { MapGenerator } from "./mapgen/MapGenerator";
-import { MapRenderer } from "./renderer/MapRenderer";
 import { NameGenerator } from "./mapgen/NameGenerator";
-import { DEFAULTS, type MapGenSettings } from "./common/config";
+import { MapRenderer } from "./renderer/MapRenderer";
 
 const fetchElement = <T>(id: string): T => {
   const elem = document.getElementById(id) as T;
@@ -13,21 +14,43 @@ const fetchElement = <T>(id: string): T => {
   return elem;
 }
 
+const genSeed = () => uuid().substring(0, 18).replaceAll("-", ""); // actually len 16
+
 document.addEventListener("DOMContentLoaded", () => {
-  const mapGenerator = new MapGenerator();
+  let seed = genSeed();
+
+  const mapGenerator = new MapGenerator(seed);
+  const nameGenerator = new NameGenerator(seed);
   const mapRenderer = new MapRenderer();
-  const nameGenerator = new NameGenerator();
 
   const drawMap = () => {
     const map: Map = mapGenerator.generateMap(settings);
     mapRenderer.drawCellColors(canvas, map);
   };
 
-  const genTitle = () => {
+  const drawTitle = () => {
     const name = nameGenerator.generate({});
 
     const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
     mapTitle.textContent = name;
+  }
+
+  const drawSeed = () => {
+    const mapSeed = fetchElement<HTMLInputElement>("seed-input");
+    mapSeed.value = seed;
+  }
+
+  const redraw = () => {
+    drawTitle();
+    drawMap();
+    drawSeed();
+  }
+
+  const loadSeed = (s: string) => {
+    seed = s;
+    mapGenerator.reSeed(seed);
+    nameGenerator.reSeed(seed);
+    redraw();
   }
 
   const canvas = fetchElement<HTMLCanvasElement>("map");
@@ -51,7 +74,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const resolutionInput = fetchElement<HTMLInputElement>("resolution");
   const resolutionLabel = fetchElement<HTMLSpanElement>("resolutionValue");
 
-  genTitle();
+  const seedInput = fetchElement<HTMLInputElement>("seed-input");
+  const loadBtn = fetchElement<HTMLButtonElement>("load-seed-btn");
 
   // Single source of truth
   const settings: MapGenSettings = { ...DEFAULTS };
@@ -116,13 +140,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Render only on explicit click
   regenBtn.addEventListener("click", () => {
-    mapGenerator.reSeed();
-    genTitle();
-    drawMap();
+    seed = genSeed();
+    mapGenerator.reSeed(seed);
+    nameGenerator.reSeed(seed);
+
+    redraw();
   });
 
   // initial render
-  drawMap();
+  redraw();
 
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
   downloadBtn.addEventListener("click", () => {
@@ -130,5 +156,10 @@ document.addEventListener("DOMContentLoaded", () => {
     link.download = `map-${Date.now()}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
+  });
+
+  loadBtn.addEventListener("click", () => {
+    const seed = seedInput.value.trim();
+    loadSeed(seed);
   });
 });

@@ -43,16 +43,22 @@ body {
 
 .toolbar input[type="range"] {
   width: 100%;
-  -webkit-appearance: none; /* For WebKit browsers (Chrome, Safari) */
-  appearance: none; /* Standard property */
-  background: transparent; /* Remove default background */
-  cursor: pointer; /* Indicate it's interactive */
-  border: none; /* Remove default border */
+  -webkit-appearance: none;
+  /* For WebKit browsers (Chrome, Safari) */
+  appearance: none;
+  /* Standard property */
+  background: transparent;
+  /* Remove default background */
+  cursor: pointer;
+  /* Indicate it's interactive */
+  border: none;
+  /* Remove default border */
 }
 
 /* WebKit browsers */
 input[type="range"]::-webkit-slider-runnable-track {
-  background: var(--track); /* Example: light gray track */
+  background: var(--track);
+  /* Example: light gray track */
   height: 8px;
   border-radius: 4px;
 }
@@ -66,12 +72,16 @@ input[type="range"]::-moz-range-track {
 
 /* WebKit browsers */
 input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; /* Reset default WebKit thumb appearance */
-  background: var(--thumb); /* Example: blue thumb */
+  -webkit-appearance: none;
+  /* Reset default WebKit thumb appearance */
+  background: var(--thumb);
+  /* Example: blue thumb */
   height: 16px;
   width: 16px;
-  border-radius: 50%; /* Make it a circle */
-  margin-top: -4px; /* Adjust vertical position to center on track */
+  border-radius: 50%;
+  /* Make it a circle */
+  margin-top: -4px;
+  /* Adjust vertical position to center on track */
 }
 
 /* Firefox */
@@ -80,7 +90,8 @@ input[type="range"]::-moz-range-thumb {
   height: 16px;
   width: 16px;
   border-radius: 50%;
-  border: none; /* Remove default Firefox border */
+  border: none;
+  /* Remove default Firefox border */
 }
 
 /* Map area */
@@ -90,7 +101,8 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;                     /* button bar “hugs” the map */
+  gap: 0.5rem;
+  /* button bar “hugs” the map */
 }
 
 canvas {
@@ -106,7 +118,8 @@ canvas {
   width: 100%;
   display: flex;
   gap: 0.6rem;
-  justify-content: flex-start;  /* 👈 align buttons left */
+  justify-content: flex-start;
+  /* 👈 align buttons left */
   flex-direction: row;
 }
 
@@ -125,7 +138,7 @@ button {
 
 button:hover {
   background: var(--thumb);
-  color:  var(--bg);
+  color: var(--bg);
 }
 
 h4 {
@@ -134,7 +147,8 @@ h4 {
 }
 
 #mobile-warning {
-  display: none; /* default hidden */
+  display: none;
+  /* default hidden */
   position: fixed;
   inset: 0;
   background: #000;
@@ -149,15 +163,45 @@ h4 {
 }
 
 #mobile-warning.show {
-  display: flex; /* shown via class toggle */
+  display: flex;
+  /* shown via class toggle */
 }
 
+#seed-container {
+  width: 100%;
+  flex-direction: row;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#seed-container label {
+  font-weight: bold;
+  font-family: sans-serif;
+}
+
+#seed-input {
+  border: 0px;
+  background-color: var(--bg);
+  color: var(--text);
+  outline: none;
+  font-family: 'Roboto Mono', monospace;
+  font-weight: 400;
+  font-size: 0.8em;
+  width: 80%;
+  border: 1px solid var(--text);
+}
+
+#seed-input:focus {
+  border: 1px solid var(--thumb);
+}
 
 /* Responsive: stack on small screens */
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
   }
+
   .sidebar {
     border-right: none;
     border-bottom: 2px solid #222;

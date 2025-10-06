@@ -1,9 +1,16 @@
 import Delaunator from "delaunator";
-import type { Point } from "../common/map";
+import seedrandom from "seedrandom";
 import type { MapGenSettings } from "../common/config";
+import type { Point } from "../common/map";
 
 
 export class PointGenerator {
+    private rng: () => number;
+
+    constructor(seed: string) {
+        this.rng = seedrandom(seed);
+    }
+
     // --- Halfedge helpers ---
     private nextHalfedge(e: number): number {
         return e % 3 === 2 ? e - 2 : e + 1;
@@ -125,8 +132,8 @@ export class PointGenerator {
         const points = [];
         for (let x = 0; x < resolution; x++) {
             for (let y = 0; y < resolution; y++) {
-                const jx = x + (jitter * (Math.random() - Math.random()));
-                const jy = y + (jitter * (Math.random() - Math.random()));
+                const jx = x + (jitter * (this.rng() - this.rng()));
+                const jy = y + (jitter * (this.rng() - this.rng()));
                 points.push({ x: jx, y: jy });
             }
         }

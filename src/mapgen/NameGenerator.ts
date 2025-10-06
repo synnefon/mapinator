@@ -15,16 +15,19 @@ type RNG = () => number;
 export class NameGenerator {
     private rng: RNG;
 
-    constructor(seed: string | number = Date.now()) {
-        this.rng = NameGenerator.makeRNG(seed);
+    constructor(seed: string) {
+        this.rng = this.makeRNG(seed);
+    }
+
+    public reSeed(seed: string) {
+        this.rng = this.makeRNG(seed);
     }
 
     /** Generate a single country name */
-    generate(opts: CountryGenOptions = {}): string {
-        const rng = this.rng;
+    public generate(opts: CountryGenOptions = {}): string {
         const lang = opts.lang ?? this.pickLanguage();
         const [minSyl, maxSyl] = opts.syllables ?? [1, 2];
-        const coreSylCount = NameGenerator.randInt(rng, minSyl, maxSyl);
+        const coreSylCount = this.randInt(minSyl, maxSyl);
         const suffix = (opts.forceSuffix ?? this.pickSuffix(lang)).toLowerCase();
 
         let stem = this.buildStem(coreSylCount, lang);
@@ -85,13 +88,13 @@ export class NameGenerator {
         return arr[Math.floor(this.rng() * arr.length)];
     }
 
-    private static randInt(rng: RNG, min: number, max: number): number {
-        return Math.floor(rng() * (max - min + 1)) + min;
+    private randInt(min: number, max: number): number {
+        return Math.floor(this.rng() * (max - min + 1)) + min;
     }
 
     /** Simple deterministic PRNG */
-    private static makeRNG(seedish: string | number): RNG {
-        let x = typeof seedish === "number" ? seedish | 0 : NameGenerator.hash32(String(seedish));
+    private makeRNG(seed: string): RNG {
+        let x = typeof seed === "number" ? seed | 0 : this.hash32(String(seed));
         if (x === 0) x = 0x6d2b79f5;
         return function () {
             x ^= x << 13; x ^= x >>> 17; x ^= x << 5;
@@ -99,7 +102,7 @@ export class NameGenerator {
         };
     }
 
-    private static hash32(s: string): number {
+    private hash32(s: string): number {
         let h = 2166136261 >>> 0;
         for (let i = 0; i < s.length; i++) {
             h ^= s.charCodeAt(i);

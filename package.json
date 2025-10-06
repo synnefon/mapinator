@@ -23,6 +23,7 @@
     "delaunator": "^5.0.1",
     "gh-pages": "^6.3.0",
     "seedrandom": "^3.0.5",
-    "simplex-noise": "^4.0.3"
+    "simplex-noise": "^4.0.3",
+    "uuid": "^13.0.0"
   }
 }

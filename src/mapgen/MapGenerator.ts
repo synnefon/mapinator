@@ -10,15 +10,14 @@ export class MapGenerator {
     private noise2D: NoiseFunction2D;
     private pointGenerator: PointGenerator;
 
-    public constructor() {
-        const rng = seedrandom("my-seed-" + Date.now());
-        this.noise2D = createNoise2D(rng);
-        this.pointGenerator = new PointGenerator();
+    public constructor(seed: string) {
+        this.noise2D = createNoise2D(seedrandom(seed));
+        this.pointGenerator = new PointGenerator(seed);
     }
 
-    public reSeed() {
-        const rng = seedrandom("my-seed-" + Date.now());
-        this.noise2D = createNoise2D(rng);
+    public reSeed(seed: string) {
+        this.noise2D = createNoise2D(seedrandom(seed));
+        this.pointGenerator = new PointGenerator(seed);
     }
 
     public generateMap(settings: MapGenSettings): Map {
