@@ -24,6 +24,7 @@ export class MapGenerator {
         settings = {
             ...settings,
             wavelength: settings.wavelength + 0.2,
+            resolution: 10 + settings.resolution * (150 - 10),
         }
         const { resolution } = settings;
 
@@ -134,6 +135,4 @@ export class MapGenerator {
 
         return elevations;
     }
-
-
 }
