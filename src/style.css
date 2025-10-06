@@ -4,10 +4,10 @@
   --bg: #dedede;
   --track: rgba(0, 0, 0, 0.87);
   --thumb: rgba(0, 0, 255, 0.87);
-  --arrow: url("./assets/cursors/Arrows/Arrow2.png"), auto;
-  --pointer: url("./assets/cursors/Hands/Hand3.png"), auto;
-  --drag: url("./assets/cursors/Hands/Hand_Drag2.png"), auto;
-  --script: url("./assets/cursors/Text/Text3.png"), auto;
+  --arrow: url("assets/cursors/Arrows/Arrow2.png"), auto;
+  --pointer: url("assets/cursors/Hands/Hand3.png"), auto;
+  --drag: url("assets/cursors/Hands/Hand_Drag2.png"), auto;
+  --script: url("assets/cursors/Text/Text3.png"), auto;
 
   font-family: 'Roboto Mono', monospace;
   line-height: 2.5;
