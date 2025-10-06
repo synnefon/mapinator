@@ -12,7 +12,7 @@ export interface MapGenSettings {
 export const DEFAULTS: MapGenSettings = {
   resolution: 75,
   jitter: 0.5,
-  wavelength: 0.4,
+  wavelength: 0.2,
   rainfall: 0.6,
   seaLevel: 0.5,
   shatter: 0.1,

@@ -21,6 +21,10 @@ export class MapGenerator {
     }
 
     public generateMap(settings: MapGenSettings): Map {
+        settings = {
+            ...settings,
+            wavelength: settings.wavelength + 0.2,
+        }
         const { resolution } = settings;
 
         const { centers, delaunay } = this.pointGenerator.genPoints(settings);
@@ -66,7 +70,7 @@ export class MapGenerator {
     }
 
     private genMoistures(baseMap: BaseMap, settings: MapGenSettings): number[] {
-        const { wavelength } = settings;
+        const wavelength = settings.wavelength;
         const { points, numRegions } = baseMap;
         let moisture = [];
         for (let r = 0; r < numRegions; r++) {
