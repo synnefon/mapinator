@@ -42,12 +42,8 @@ body {
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 1em;
+  gap: 2em;
   margin: 1em;
-}
-
-.toolbar label {
-  margin-top: 1em;
 }
 
 .toolbar input[type="range"] {
@@ -69,7 +65,7 @@ input[type="range"]::-webkit-slider-runnable-track {
   background: var(--bg);
   height: 8px;
   /* border-radius: 4px; */
-  border: 2px solid var(--track);
+  border: 0.2em solid var(--track);
 }
 
 /* Firefox */
@@ -77,7 +73,7 @@ input[type="range"]::-moz-range-track {
   background: var(--bg);
   height: 8px;
   /* border-radius: 4px; */
-  border: 2px solid var(--track);
+  border: 0.2em solid var(--track);
 }
 
 /* WebKit browsers */
@@ -120,7 +116,7 @@ input[type="checkbox"] {
   outline: none;
   width: 1.5em;
   height: 1.5em;
-  border: 4px solid var(--text);
+  border: 0.2em solid var(--text);
   border-radius: 5%;
   cursor: pointer;
   background-color: var(--bg);
@@ -135,16 +131,9 @@ input[type="checkbox"]:checked {
   color: var(--text);
 }
 
-#theme-select-container {
-  width: 100%;
-  display: inline-grid;
-  grid-template-columns: 30% 70%;
-  margin-top: 0.5em;
-}
-
 select {
   background-color: var(--bg);
-  border: 4px solid var(--text);
+  border: 0.2em solid var(--text);
   color: var(--text);
   font-family: 'Roboto Mono', monospace;
   font-weight: 400;
@@ -187,7 +176,7 @@ canvas {
   width: 65vh;
   height: auto;
   display: block;
-  border: 5px solid #222;
+  border: 0.2em solid #222;
   /* margin-top: 1em; */
 }
 
@@ -225,39 +214,33 @@ h4 {
   margin: 0px;
 }
 
+label {
+  user-select: none;
+}
+
 #seed-container {
-  margin-top: 3em;
-  width: 100%;
   flex-direction: row;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.5em;
   cursor: var(--script);
   user-select: all;
 }
 
-#seed-container label {
-  font-weight: bold;
-  font-family: sans-serif;
-  user-select: none;
-}
-
 #seed-input {
-  border: 0px;
   background-color: var(--bg);
   color: var(--text);
-  outline: none;
   font-family: 'Roboto Mono', monospace;
   font-weight: 400;
   font-size: 0.8em;
-  width: 80%;
-  border: 1px solid var(--text);
+  width: 100%;
+  border: 0.2em solid var(--text);
   cursor: var(--script);
   user-select: all;
 }
 
 #seed-input:focus {
-  border: 1px solid var(--thumb);
+  border: 0.2em solid var(--thumb);
   cursor: var(--script);
   user-select: all;
 }

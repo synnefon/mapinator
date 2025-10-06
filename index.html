@@ -16,23 +16,35 @@
 
 <body>
   <div class="toolbar">
-    <label for="resolution">resolution: <span id="resolutionValue"></span></label>
-    <input id="resolution" type="range" min="25" max="100" step="5" />
+    <div>
+        <label for="resolution">resolution: <span id="resolutionValue"></span></label>
+        <input id="resolution" type="range" min="0.25" max="1" step="0.01" />
+    </div>
 
-    <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
-    <input id="wavelength" type="range" min="0.0" max="1" step="0.01" />
+    <div>
+        <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
+        <input id="wavelength" type="range" min="0.0" max="1" step="0.01" />
+    </div>
 
-    <label for="shatter">shatter: <span id="shatterValue"></span></label>
-    <input id="shatter" type="range" min="0.0" max="1" step="0.01" />
+    <div>
+        <label for="shatter">shatter: <span id="shatterValue"></span></label>
+        <input id="shatter" type="range" min="0.0" max="1" step="0.01" />
+    </div>
 
-    <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
-    <input id="elevationContrast" type="range" min="0.0" max="1.0" step="0.01" />
+    <div>
+        <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
+        <input id="elevationContrast" type="range" min="0.0" max="1.0" step="0.01" />
+    </div>
 
-    <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
-    <input id="seaLevel" type="range" min="0.0" max="1.0" step="0.01" />
+    <div>
+        <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
+        <input id="seaLevel" type="range" min="0.0" max="1.0" step="0.01" />
+    </div>
 
-    <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
-    <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
+    <div>
+        <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
+        <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
+    </div>
 
     <div id="theme-select-container">
       <label for="colorScheme">theme:</label>
@@ -48,8 +60,8 @@
     <div id="seed-container">
       <label for="seed-input">map:</label>
       <input type="text" id="seed-input" placeholder="name" />
+      <button id="load-seed-btn">✅</button>
     </div>
-    <button id="load-seed-btn">✅</button>
   </div>
 
   <div id="map-container">
