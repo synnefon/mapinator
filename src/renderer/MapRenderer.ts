@@ -98,48 +98,6 @@ export class MapRenderer {
 	    return intersections;
 	};
 
-	// Calculate a circular windowed average around an index in a 1d array.
-	const windowAvg = (elements: number[], index: number, radius: number): number => {
-	    // Given a point's index, calculate its distance to the center index.
-	    const centerCoords = indexToCoords(index, resolution);
-	    const distanceFromCenter = (index: number): number => {
-	    	const coords = indexToCoords(index, resolution);
-		const dx = Math.pow(centerCoords.x - coords.x, 2);
-		const dy = Math.pow(centerCoords.y - coords.y, 2);
-		const d = Math.sqrt(dx + dy);
-		return d;
-	    };
-
-	    const xOffset = (steps) => { return steps * resolution; };
-	    const yOffset = (steps) => { return steps; };
-	    const topLeftIndex = Math.round(index - xOffset(radius) - yOffset(radius));
-
-	    const windowSideLength = ((2 * radius) + 1);
-	    const totalCellCount = Math.pow(windowSideLength, 2);
-
-	    let sum = 0;
-	    let totalSummed = 0;
-	    for (let i = 0; i < totalCellCount; i++) {
-		const coords = indexToCoords(i, windowSideLength);
-		const elementIndex = topLeftIndex + coords.x + coords.y;
-
-		const distance = distanceFromCenter(elementIndex) / resolution;
-		if (distance > radius) {
-                    continue;
-		}
-
-		if (elementIndex >= elements.length || elementIndex < 0) {
-                    continue;
-		}
-
-	        sum += elements[elementIndex];
-	        totalSummed++;
-	    }
-
-	    const avg = sum / totalSummed;
-	    return avg;
-	};
-
 	// Calculate a shadow intensity for each elevation we store.
         for (let i = 0; i < elevations.length; i++) {
 	    const shadowHex = darkenHexColor(biomes[i].color, 65);
@@ -150,7 +108,7 @@ export class MapRenderer {
 	    const shadowDarkness = Math.pow(spotBrightness, shadowCurve) * shadowIntensity;
 
 	    // Calculate a darkness value based on this cell and surrounding ones.
-	    const smoothElevation = elevations[i];// windowAvg(elevations, i, 3);
+	    const smoothElevation = elevations[i];
 	    const expElevation = Math.pow(smoothElevation, elevationCurve) / elevationIntensity;
 	    const correctedElevation = Math.min(Math.max(expElevation, 0), 1);
 	    const elevationDarkness = 255 - (correctedElevation * 255);

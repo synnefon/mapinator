@@ -159,6 +159,11 @@ select:focus {
 
 /* Map area */
 #map-container {
+  background-image:url("parchment-square.png");
+  background-size: 76vh;
+  background-position: center;
+  background-repeat: no-repeat;
+
   width: 100%;
   height: auto;
   display: flex;
