@@ -1,38 +1,39 @@
 export const Languages = [
-    // "EGYPTIC",
-    // "ROMANCE",
-    // "GERMANIC",
-    // "TURKIC",
-    // "SEMITIC",
-    // "BANTU_LIKE",
-    // "AFRICAN_WEST",
-    // "AFRICAN_HORN",
-    // "CN",
-    // "JP",
-    // "POLYNESIAN",
-    // "MONGOLIC",
-    // "GREEKIC",
-    // "RUSSIANIC",
-    // "LATINIC",
-    // "CELESTIC",
-    // "INFERNIC",
-    // "ARCANE",
-    // "DEEP_SPEECH",
-    // "GOBLINIC",
-    // "TECHNARCH",
+    "MESOPOTAMIC",
+    "EGYPTIC",
+    "ROMANCE",
+    "GERMANIC",
+    "TURKIC",
+    "SEMITIC",
+    "BANTU_LIKE",
+    "AFRICAN_WEST",
+    "AFRICAN_HORN",
+    "CN",
+    "JP",
+    "POLYNESIAN",
+    "MONGOLIC",
+    "GREEKIC",
+    "RUSSIANIC",
+    "LATINIC",
+    "CELESTIC",
+    "INFERNIC",
+    "ARCANE",
+    "DEEP_SPEECH",
+    "GOBLINIC",
+    "TECHNARCH",
     "FUEGIC",
-    // "SIRENIC",
-    // "OOGA_BOOGA",
-    // "DWARVISH",
-    // "HALFLING",
-    // "NOCTURNIC",
-    // "DERPTONGUE",
-    // "TOADISH",
-    // "BANANAIC",
-    // "LYRICIAN",
-    // "ANGLISHIC",
-    // "NEW_ANGLISHIC",
-    // "PHRASIC",
+    "SIRENIC",
+    "OOGA_BOOGA",
+    "DWARVISH",
+    "HALFLING",
+    "NOCTURNIC",
+    "DERPTONGUE",
+    "TOADISH",
+    "BANANAIC",
+    "LYRICIAN",
+    "ANGLISHIC",
+    "NEW_ANGLISHIC",
+    "PHRASIC",
 ] as const;
 
 export type Language = (typeof Languages)[number];
@@ -96,6 +97,27 @@ const V_SEMI = [
 ];
 
 export const languageConfigs: { [k: string]: LanguageConfig } = {
+    "MESOPOTAMIC": {
+        onsets: [
+            "an", "en", "in", "un", "ur", "ni", "ku", "lu", "mu", "nu", "su",
+            "ba", "da", "ga", "ka", "ra", "na", "pa", "ti", "zi",
+            "ash", "esh", "ish", "ush", "nin", "ding", "lil", "bel", "mar", "nab", "gil", "is", "tam", "sam"
+        ],
+        vowels: ["a", "e", "i", "u", "ia", "ai", "ua", "ei", "aa", "uu"],
+        codas: ["n", "m", "r", "l", "sh", "t", "k", "s", "b", "g", "z", "th", "ur"],
+        codaChance: 0.65,
+        medials: [
+            "lil", "bel", "ash", "esh", "nin", "ur", "ki", "zu", "ra", "an", "utu", "sin",
+            "tam", "nam", "gil", "lam", "esh", "dum", "ish", "mur", "sum", "zur", "mal", "kal"
+        ],
+        medialMorphChance: 0.55,
+        suffixes: [
+            "ra", "ur", "esh", "an", "en", "il", "im", "um", "nin", "lam", "tam", "bel", "duk", "zum", "mar"
+        ],
+        maxConsRun: 3, maxVowelRun: 2, minVowelRatio: 0.28,
+        treatYAsVowel: false, minSyllables: 2, maxSyllables: 5,
+        clusterLinker: "u", vowelLinker: "r"
+    },
     "EGYPTIC": {
         onsets: [
             "an", "am", "ba", "ka", "ra", "sa", "ma", "na", "pa", "te", "ne",
@@ -1331,7 +1353,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
         minVowelRatio: 0.25,
         treatYAsVowel: false,
         minSyllables: 2,
-        maxSyllables: 6,
+        maxSyllables: 5,
         clusterLinker: "e",
         vowelLinker: "y"
     },
@@ -1524,11 +1546,11 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
             "eth"
         ],
         maxConsRun: 2,
-        maxVowelRun: 3,
+        maxVowelRun: 2,
         minVowelRatio: 0.4,
         treatYAsVowel: true,
         minSyllables: 2,
-        maxSyllables: 6,
+        maxSyllables: 5,
         clusterLinker: "e",
         vowelLinker: "r"
     },
@@ -1699,7 +1721,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
         minVowelRatio: 0.3,
         treatYAsVowel: true,
         minSyllables: 2,
-        maxSyllables: 6,
+        maxSyllables: 5,
         clusterLinker: "e",
         vowelLinker: "r"
     },
