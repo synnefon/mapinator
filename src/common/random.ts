@@ -10,8 +10,10 @@ export function makeRNG(seed: string): RNG {
     };
 }
 
-export function randomChoice<T>(arr: T[]) {
-    const rng = makeRNG(`${Date.now()}`);
+export function randomChoice<T>(
+    arr: T[],
+    rng: RNG = makeRNG(`${Date.now()}`)
+) {
     return arr[Math.floor(rng() * arr.length)];
 }
 
