@@ -40,31 +40,32 @@ export class NameGenerator {
 
     private pickLanguage(): Language {
         const langs: Language[] = [
-            Language.ROMANCE,
-            Language.GERMANIC,
-            Language.SEMITIC,
-            Language.CN,
-            Language.JP,
-            Language.AFRICAN_WEST,
-            Language.AFRICAN_HORN,
-            Language.POLYNESIAN,
-            Language.LATINIC,
-            Language.CELESTIC,
-            Language.INFERNIC,
-            Language.ARCANE,
-            Language.DEEP_SPEECH,
-            Language.GOBLINIC,
-            Language.INFERNO,
-            Language.SIRENIC,
-            Language.OOGA_BOOGA,
-            Language.DWARVISH,
-            Language.HALFLING,
-            Language.NOCTURNIC,
-            Language.DERPTONGUE,
-            Language.TOADISH,
-            Language.BANANAIC,
-            Language.LYRICIAN,
-            Language.ANGLISHIC
+            // Language.ROMANCE,
+            // Language.GERMANIC,
+            // Language.SEMITIC,
+            // Language.CN,
+            // Language.JP,
+            // Language.AFRICAN_WEST,
+            // Language.AFRICAN_HORN,
+            // Language.POLYNESIAN,
+            // Language.LATINIC,
+            // Language.CELESTIC,
+            // Language.INFERNIC,
+            // Language.ARCANE,
+            // Language.DEEP_SPEECH,
+            // Language.GOBLINIC,
+            // Language.INFERNO,
+            // Language.SIRENIC,
+            // Language.OOGA_BOOGA,
+            // Language.DWARVISH,
+            // Language.HALFLING,
+            // Language.NOCTURNIC,
+            // Language.DERPTONGUE,
+            // Language.TOADISH,
+            // Language.BANANAIC,
+            // Language.LYRICIAN,
+            // Language.ANGLISHIC,
+            Language.NEW_ANGLISHIC,
         ];
         const lang = langs[Math.floor(this.rng() * langs.length)];
         console.log(`chosen language: ${lang}`)
@@ -78,49 +79,43 @@ export class NameGenerator {
 
     private buildStem(syllables: number, language: Language): string {
         const cfg = languageConfigs[language];
-        let out = "";
+        const out: string[] = [];
 
-        // Pre-pick the very first onset so we can do lookahead logic cleanly
-        let nextOnset = this.pick(cfg.onsets);
+        const clamp = (x: number, lo = 0, hi = 0.95) => Math.min(hi, Math.max(lo, x));
+
+        const pickCoda = (isLast: boolean, nextOnset: string): string => {
+            const base = cfg.codaChance ?? 0;
+            const chance = clamp(base * (isLast ? 1.2 : 0.6));
+            if (this.rng() >= chance) return "";
+
+            const picked = this.pick(cfg.codas) || "";
+            if (!picked) return "";
+
+            const makesCCC =
+                !isLast &&
+                nextOnset &&
+                this.endsWithConsonant(picked) &&
+                this.startsWithConsonant(nextOnset);
+
+            if (makesCCC && this.rng() < 0.60) return ""; // drop 60% to avoid ugly clusters
+            return picked;
+        };
+
+        let nextOnset = this.pick(cfg.onsets) || "";
 
         for (let i = 0; i < syllables; i++) {
             const isLast = i === syllables - 1;
             const onset = nextOnset;
-            const vowel = this.pick(cfg.vowels);
+            const vowel = this.pick(cfg.vowels) || "";
+            nextOnset = isLast ? "" : (this.pick(cfg.onsets) || "");
 
-            // Pre-pick the next onset (for the *next* loop), so we can coda-check against it
-            nextOnset = isLast ? "" : this.pick(cfg.onsets);
-
-            // Base coda chance, with a slight bias toward the final syllable
-            const baseChance = cfg.codaChance ?? 0;
-            const codaChance = Math.min(0.95, Math.max(0, baseChance * (isLast ? 1.2 : 0.6)));
-
-            let coda = "";
-            if (this.rng() < codaChance) {
-                const picked = this.pick(cfg.codas) ?? "";
-                // no-op if coda is empty
-                if (picked) {
-                    // If not last syllable, avoid ugly CCC clusters at the boundary (coda + next onset)
-                    // e.g., stem..."nd" + "kr"... => 4 consonants smashed; probabilistically soften
-                    const nextStartsWithCons = nextOnset && this.startsWithConsonant(nextOnset);
-                    const codaEndsWithCons = this.endsWithConsonant(picked);
-
-                    if (!isLast && nextStartsWithCons && codaEndsWithCons) {
-                        // 60% chance to drop the coda to keep it pronounceable
-                        if (this.rng() >= 0.60) {
-                            coda = picked;
-                        }
-                    } else {
-                        coda = picked;
-                    }
-                }
-            }
-
-            out += onset + vowel + coda;
+            const coda = pickCoda(isLast, nextOnset);
+            out.push(onset, vowel, coda);
         }
 
-        return out;
+        return out.join("");
     }
+
 
     // ----- helpers -----
     private isVowel(ch: string): boolean {

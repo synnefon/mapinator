@@ -1,4 +1,5 @@
 import { BANDS, BASE_LIGHTNESS, Biomes, MOISTURE_BY_FAMILY, THEME_OVERRIDES, type BandSpec, type BiomeKey, type ColorScheme, type ElevationBand } from "../common/biomes";
+import { clamp } from "../common/util";
 
 /** ===================== Engine with Controls ===================== */
 export class BiomeEngine {
@@ -93,8 +94,6 @@ function resolveTheme(scheme: ColorScheme) {
 }
 
 /** ===================== Hex/HSL utils ===================== */
-function clamp(x: number) { return x < 0 ? 0 : x > 1 ? 1 : x; }
-
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
     let c = hex.replace("#", "");
     if (c.length === 3) c = c.split("").map(x => x + x).join("");

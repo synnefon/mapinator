@@ -3,6 +3,7 @@ import type { MapGenSettings } from "../common/config";
 import type { BaseMap, Map } from "../common/map";
 import { makeRNG } from "../common/random";
 import { PointGenerator } from "./PointGenerator";
+import { lerp, clamp } from "../common/util";
 
 export class MapGenerator {
     private noise2D: NoiseFunction2D;
@@ -73,9 +74,6 @@ export class MapGenerator {
 
         const { points, numRegions, resolution } = baseMap;
         const elevations: number[] = new Array(numRegions);
-
-        const clamp = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
-        const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
         // 0 -> flat, 0.5 -> identity, 1 -> max contrast
         const applyElevationContrast = (e: number, c: number) => {

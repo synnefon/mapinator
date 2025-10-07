@@ -8,8 +8,12 @@ export type ColorScheme =
   | "default"
   | "oldAtlas"
   | "verdant"
+  | "rainbow"
   | "ashfall"
-  | "greyscale";
+  | "greyscale"
+  | "winter"
+  | "autumn"
+  ;
 
 // ===================== Palettes =====================
 export const Biomes = {
@@ -58,6 +62,33 @@ export const Biomes = {
     TUNDRA: { name: "tundra", color: "#B3CBB9" }, PERMAFROST: { name: "permafrost", color: "#DDE7E2" },
     GLACIER: { name: "glacier", color: "#E7EFEA" }
   },
+  rainbow: {
+    OCEAN: { name: "ocean", color: "#1E63EE" },                  // deep blue
+    SALT_FLATS: { name: "salt flats", color: "#FFF1C2" },        // pale yellow
+    SUBTROPICAL_DESERT: { name: "subtropical desert", color: "#FF8A33" }, // orange
+    SAVANNA: { name: "savanna", color: "#FFB433" },              // amber
+    GRASSLAND: { name: "grassland", color: "#B9E64D" },          // yellow-green
+    TROPICAL_DRY_FOREST: { name: "tropical dry forest", color: "#6EE16A" }, // green
+    TROPICAL_SEASONAL_FOREST: { name: "tropical seasonal forest", color: "#2FCC8B" }, // mint/teal
+    TROPICAL_RAIN_FOREST: { name: "tropical rain forest", color: "#00B7D4" }, // cyan
+    SWAMP: { name: "swamp", color: "#008C95" },                  // deep teal
+    SEMI_ARID_PLAINS: { name: "semi-arid plains", color: "#FFE1C6" }, // light peach (was white)
+    TEMPERATE_DESERT: { name: "temperate desert", color: "#FFD6B3" }, // light peach
+    STEPPE: { name: "steppe", color: "#EFD24E" },                // gold
+    PRAIRIE: { name: "prairie", color: "#A9E658" },              // chartreuse
+    DECIDUOUS_FOREST: { name: "deciduous forest", color: "#4FD56D" },  // emerald
+    MIXED_FOREST: { name: "mixed forest", color: "#2EC49B" },    // aqua-green
+    TEMPERATE_RAIN_FOREST: { name: "temperate rain forest", color: "#2CA7F8" }, // sky blue
+    ALPINE_MEADOW: { name: "alpine meadow", color: "#6DB5FF" },  // light blue
+    SHRUBLAND: { name: "shrubland", color: "#7E8BFF" },          // periwinkle
+    TAIGA: { name: "taiga", color: "#6C74FF" },                  // indigo-blue
+    BOREAL_FOREST: { name: "boreal forest", color: "#B07BFF" },  // soft violet (was white)
+    BARREN_ROCK: { name: "barren rock", color: "#D1B3FF" },      // lavender (was white)
+    TALUS_SLOPE: { name: "talus slope", color: "#FF63D2" },      // magenta
+    TUNDRA: { name: "tundra", color: "#FF9ACE" },                // pink
+    PERMAFROST: { name: "permafrost", color: "#FFD7F0" },        // pale pink
+    GLACIER: { name: "glacier", color: "#F0F4FF" },              // very light blue, not pure white
+  },
   ashfall: {
     OCEAN: { name: "ocean", color: "#2A2A2C" }, SALT_FLATS: { name: "salt flats", color: "#9A9189" },
     SUBTROPICAL_DESERT: { name: "subtropical desert", color: "#7A5E4D" }, SAVANNA: { name: "savanna", color: "#7A6A5C" },
@@ -88,6 +119,61 @@ export const Biomes = {
     TUNDRA: { name: "tundra", color: "#EAEAEA" }, PERMAFROST: { name: "permafrost", color: "#F5F5F5" },
     GLACIER: { name: "glacier", color: "#FFFFFF" }
   },
+  winter: {
+    OCEAN: { name: "ocean", color: "#0F3A5E" }, // unchanged sea
+    SALT_FLATS: { name: "salt flats", color: "#4A5158" },
+    SUBTROPICAL_DESERT: { name: "subtropical desert", color: "#58626A" },
+    SAVANNA: { name: "savanna", color: "#6A7880" },
+    GRASSLAND: { name: "grassland", color: "#7D9096" },
+    TROPICAL_DRY_FOREST: { name: "tropical dry forest", color: "#9CB2B8" },
+    TROPICAL_SEASONAL_FOREST: { name: "tropical seasonal forest", color: "#B5CDD4" },
+    TROPICAL_RAIN_FOREST: { name: "tropical rain forest", color: "#D1E6EE" },
+    SWAMP: { name: "swamp", color: "#E8F3F7" },
+    SEMI_ARID_PLAINS: { name: "semi-arid plains", color: "#515B63" },
+    STEPPE: { name: "steppe", color: "#64717A" },
+    PRAIRIE: { name: "prairie", color: "#7A8A93" },
+    DECIDUOUS_FOREST: { name: "deciduous forest", color: "#98B1BA" },
+    MIXED_FOREST: { name: "mixed forest", color: "#B7CFD7" },
+    TEMPERATE_RAIN_FOREST: { name: "temperate rain forest", color: "#D8EDF5" },
+    TEMPERATE_DESERT: { name: "temperate desert", color: "#4E5456" },
+    SHRUBLAND: { name: "shrubland", color: "#657074" },
+    ALPINE_MEADOW: { name: "alpine meadow", color: "#8DA8B0" },
+    TAIGA: { name: "taiga", color: "#B8D4DB" },
+    BOREAL_FOREST: { name: "boreal forest", color: "#DFF1F6" },
+    BARREN_ROCK: { name: "barren rock", color: "#59626B" },
+    TALUS_SLOPE: { name: "talus slope", color: "#77838C" },
+    TUNDRA: { name: "tundra", color: "#A7B7C1" },
+    PERMAFROST: { name: "permafrost", color: "#D0DEE6" },
+    GLACIER: { name: "glacier", color: "#EAF3F9" }, // not pure white
+  },
+  autumn: {
+    OCEAN: { name: "ocean", color: "#1F3A5F" },                 // cold lake blue
+    SALT_FLATS: { name: "salt flats", color: "#EAD9B0" },
+    SUBTROPICAL_DESERT: { name: "subtropical desert", color: "#C96A2B" }, // burnt orange
+    SAVANNA: { name: "savanna", color: "#D9902B" },             // amber
+    GRASSLAND: { name: "grassland", color: "#C3B04D" },         // mustard
+    TROPICAL_DRY_FOREST: { name: "tropical dry forest", color: "#C86C3B" },
+    TROPICAL_SEASONAL_FOREST: { name: "tropical seasonal forest", color: "#D45A24" },
+    TROPICAL_RAIN_FOREST: { name: "tropical rain forest", color: "#A8432E" },
+    SWAMP: { name: "swamp", color: "#2F5C4C" },                  // cedar/teal
+    SEMI_ARID_PLAINS: { name: "semi-arid plains", color: "#D6BF8A" },
+    TEMPERATE_DESERT: { name: "temperate desert", color: "#CFAF7A" },
+    STEPPE: { name: "steppe", color: "#C5B16A" },
+    PRAIRIE: { name: "prairie", color: "#B3B55E" },
+    DECIDUOUS_FOREST: { name: "deciduous forest", color: "#B73A2E" }, // maple red
+    MIXED_FOREST: { name: "mixed forest", color: "#8E4F2F" },         // russet
+    TEMPERATE_RAIN_FOREST: { name: "temperate rain forest", color: "#3E5F47" }, // deep evergreen
+    ALPINE_MEADOW: { name: "alpine meadow", color: "#9CAF7A" },
+    SHRUBLAND: { name: "shrubland", color: "#8C7A4E" },
+    TAIGA: { name: "taiga", color: "#2F513D" },
+    BOREAL_FOREST: { name: "boreal forest", color: "#244238" },
+    BARREN_ROCK: { name: "barren rock", color: "#8F8A84" },
+    TALUS_SLOPE: { name: "talus slope", color: "#A8A29A" },
+    TUNDRA: { name: "tundra", color: "#B79E7F" },
+    PERMAFROST: { name: "permafrost", color: "#E3D8C8" },
+    GLACIER: { name: "glacier", color: "#F6F2E9" },             // warm off-white
+  },
+
 } as const;
 
 
@@ -170,7 +256,10 @@ export const richBiomeRules: RichBiomeRule[] = BANDS.flatMap(band =>
       default: Biomes.default[key].color,
       oldAtlas: Biomes.oldAtlas[key].color,
       verdant: Biomes.verdant[key].color,
+      rainbow: Biomes.rainbow[key].color,
       ashfall: Biomes.ashfall[key].color,
+      winter: Biomes.winter[key].color,
+      autumn: Biomes.autumn[key].color,
       greyscale: Biomes.greyscale[key].color,
     },
   }))
@@ -196,16 +285,47 @@ export type ThemeAdjust = {
 export const THEME_OVERRIDES: Record<ColorScheme, ThemeAdjust> = {
   default: { saturationScale: 1.0 },
   oldAtlas: {
-    lightness: { LOW_1: +0.10, LOW_2: +0.05, MEDIUM_2: -0.02, HIGH_1: -0.05, HIGH_2: -0.08, VERY_HIGH: -0.12 },
+    lightness: {
+      LOW_1: +0.10, LOW_2: +0.05, MEDIUM_2: -0.02, HIGH_1: -0.05, HIGH_2: -0.08, VERY_HIGH: -0.12
+    },
     saturationScale: 0.92,
   },
   verdant: {
     lightness: { LOW_1: +0.10, LOW_2: +0.06, MEDIUM_1: +0.01, MEDIUM_2: -0.02, HIGH_1: -0.06, HIGH_2: -0.11, VERY_HIGH: -0.15 },
     saturationScale: 1.07,
   },
+  rainbow: {
+    saturationScale: 1.12,
+    lightness: {
+      LOW_1: +0.03, LOW_2: +0.02,
+      MEDIUM_1: +0.01, MEDIUM_2: +0.01,
+      HIGH_1: -0.02, HIGH_2: -0.04,  // slightly darker up high
+      VERY_HIGH: -0.05,              // avoids white-out on peaks
+    },
+  },
   ashfall: {
     lightness: { LOW_1: +0.04, LOW_2: +0.02, MEDIUM_1: -0.02, MEDIUM_2: -0.05, HIGH_1: -0.10, HIGH_2: -0.14, VERY_HIGH: -0.18 },
     saturationScale: 0.85,
+  },
+  winter: {
+    saturationScale: 0.95, // slightly muted overall
+    lightness: {
+      HIGH_1: -0.02,
+      HIGH_2: -0.03,
+      VERY_HIGH: -0.03, // dim peaks just a touch (was too bright)
+    },
+  },
+  autumn: {
+    saturationScale: 1.12, // punch up oranges/reds a bit
+    lightness: {
+      LOW_1: +0.05,
+      LOW_2: +0.03,
+      MEDIUM_1: +0.02,
+      MEDIUM_2: +0.00,
+      HIGH_1: -0.02,
+      HIGH_2: -0.05,
+      VERY_HIGH: -0.06,
+    },
   },
   greyscale: { saturationScale: 0.0, forceGreyscale: true },
 };

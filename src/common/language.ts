@@ -29,6 +29,7 @@ export enum Language {
     BANANAIC = "BANANAIC",
     LYRICIAN = "LYRICIAN",
     ANGLISHIC = "ANGLISHIC",
+    NEW_ANGLISHIC = "NEW_ANGLISHIC",
 };
 
 type LanguageConfig = {
@@ -379,6 +380,27 @@ export const languageConfigs: { [key: string]: LanguageConfig } = {
         medialMorphChance: 0.4,
         suffixes: [
             "ton", "ham", "worth", "wick", "well", "ford", "croft", "den", "fell", "bury", "brook", "mere", "stead"
+        ],
+    },
+    [Language.NEW_ANGLISHIC]: {
+        onsets: [
+            "a", "b", "br", "c", "cl", "cr", "d", "f", "fl", "fr", "g", "gl", "gr", "h", "j", "k", "kr",
+            "l", "m", "n", "p", "pl", "pr", "r", "s", "sl", "sm", "sp", "st", "t", "tr", "v", "w",
+            "well", "brook", "grove", "nex", "ever", "fair", "north", "east", "west", "green", "bright", "clear", "sil", "blue", "gold"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ai", "ea", "ie", "oa", "ou", "ar", "er", "or"],
+        codas: [
+            "n", "r", "s", "t", "m", "l", "d", "k", "x", "nd", "nt", "rd", "rn", "st", "ft", "den", "ton", "ford", "ly"
+        ],
+        codaChance: 0.5,
+        medials: [
+            "well", "brook", "vale", "fold", "ridge", "moor", "bank", "port", "field", "mill",
+            "crest", "grove", "point", "gate", "worth", "ford", "haven", "side", "wick", "holt", "mark"
+        ],
+        medialMorphChance: 0.4,
+        suffixes: [
+            "well", "fold", "worth", "ridge", "vale", "hill", "gate", "point", "mill", "brook",
+            "haven", "croft", "grove", "port", "ly", "ton", "den", "sy", "corp", "soft", "tek"
         ],
     },
 
