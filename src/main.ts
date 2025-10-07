@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const drawMap = () => {
     const map: Map = mapGenerator.generateMap(settings);
-    mapRenderer.drawCellColors(canvas, map);
+    mapRenderer.drawCellColors(canvas, map, settings);
   };
 
   const drawTitle = (n: string | undefined = undefined) => {

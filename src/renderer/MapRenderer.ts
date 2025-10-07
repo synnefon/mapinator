@@ -1,11 +1,15 @@
 import { Delaunay } from "d3-delaunay";
+import type { MapGenSettings } from "../common/config";
 import type { Map } from "../common/map";
+import { BiomeEngine } from "./BimeColor";
 
 export class MapRenderer {
-    public drawCellColors(canvas: HTMLCanvasElement, map: Map): void {
+    public drawCellColors(canvas: HTMLCanvasElement, map: Map, settings: MapGenSettings): void {
+        const engine = new BiomeEngine(settings.rainfall, settings.seaLevel);
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-        const { resolution, points, biomes } = map;
+
+        const { resolution, points } = map;
 
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
@@ -24,11 +28,11 @@ export class MapRenderer {
             for (let k = 1; k < poly.length; k++) ctx.lineTo(poly[k][0], poly[k][1]);
             ctx.closePath();
 
-            // Fill
-            const fill = biomes[i].color;
+            // --- Color ---
+            const fill = engine.colorAt(settings.colorScheme, map.elevations[i], map.moistures[i]);
+            ctx.fillStyle = fill;
             ctx.fillStyle = fill;
             ctx.fill();
-
             // Hairline same-color stroke to hide AA seams
             ctx.strokeStyle = fill;
             ctx.lineWidth = 0.05;

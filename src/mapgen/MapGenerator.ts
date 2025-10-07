@@ -1,9 +1,7 @@
 import { createNoise2D, type NoiseFunction2D } from "simplex-noise";
-import type { Biome } from "../common/biomes";
 import type { MapGenSettings } from "../common/config";
 import type { BaseMap, Map } from "../common/map";
 import { makeRNG } from "../common/random";
-import { BiomeManager } from "../renderer/BiomeManager";
 import { PointGenerator } from "./PointGenerator";
 
 export class MapGenerator {
@@ -42,32 +40,14 @@ export class MapGenerator {
 
         const elevations = this.genElevations(baseMap, settings);
         const moistures = this.genMoistures(baseMap, settings);
-        const biomes = this.calcBiomes(baseMap, elevations, moistures, settings);
 
         const map: Map = {
             ...baseMap,
             elevations,
             moistures,
-            biomes,
         }
 
         return map;
-    }
-
-    private calcBiomes(
-        baseMap: BaseMap,
-        elevations: number[],
-        moistures: number[],
-        settings: MapGenSettings
-    ): Biome[] {
-        const { numRegions } = baseMap;
-
-        const biomeManager = new BiomeManager(settings.rainfall, settings.seaLevel, settings.colorScheme);
-        const biomes: Biome[] = [];
-        for (let r = 0; r < numRegions; r++) {
-            biomes.push(biomeManager.getBiome(elevations[r], moistures[r]))
-        }
-        return biomes;
     }
 
     private genMoistures(baseMap: BaseMap, settings: MapGenSettings): number[] {

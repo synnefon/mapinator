@@ -52,20 +52,26 @@
       </select>
     </div>
 
-    <button id="regen">🔁 regenerate</button>
-
     <div id="seed-container">
       <label for="seed-input">name:</label>
       <input type="text" id="seed-input" />
+      <button id="load-seed-btn" class="img-button-container-small">
+        <img class="button-img-small" src="./assets/book.png"></img>
+      </button>
     </div>
-    <button id="load-seed-btn">⬆️ load by name</button>
+
   </div>
 
   <div id="map-container">
     <h4 id="map-title"></h4>
     <canvas id="map" width="1000" height="1000"></canvas>
     <div id="button-bar">
-      <button id="download">⬇️ download png</button>
+      <button id="regen" class="img-button-container">
+        <img class="button-img" src="./assets/regen.png"></img>
+      </button>
+      <button id="download" class="img-button-container">
+        <img class="button-img" src="./assets/download.png"></img>
+      </button>
     </div>
   </div>
 
