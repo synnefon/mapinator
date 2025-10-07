@@ -1,4 +1,10 @@
 export const Languages = [
+    "QUECHUA",
+    // "NAHUATL",
+    // "SANSKRITIC",
+    // "BABYLONIAN",
+    // "ETRUSCAN",
+    // "GAULISH",
     // "MESOPOTAMIC",
     // "EGYPTIC",
     // "ROMANCE",
@@ -18,7 +24,7 @@ export const Languages = [
     // "CELESTIC",
     // "INFERNIC",
     // "ARCANE",
-    "DEEP_SPEECH",
+    // "DEEP_SPEECH",
     // "GOBLINIC",
     // "TECHNARCH",
     // "FUEGIC",
@@ -97,6 +103,144 @@ const V_SEMI = [
 ];
 
 export const languageConfigs: { [k: string]: LanguageConfig } = {
+    "QUECHUA": {
+        onsets: [
+            "a", "i", "u",
+            "k", "q", "t", "p", "s", "m", "n", "l", "r", "y", "w", "ch",
+            "kh", "qh", "ll", "ny", "hu", "huam", "hua", "han", "hak", "yak", "yac", "sac", "sak"
+        ],
+        // Quechua core is a–i–u; allow some e/o from Spanish-era flavor sparingly
+        vowels: ["a", "i", "u", "ia", "ua", "ai", "iu", "au", "(e)", "(o)"],
+        // Mostly open syllables; light codas show up in toponyms
+        codas: ["", "n", "k", "q", "s"],
+        codaChance: 0.30,
+        medials: [
+            "pampa", "marka", "suyu", "tambo", "pata", "urcu", "urko", "qucha", "cocha",
+            "yaku", "sacha", "chakra", "wasi", "kancha", "suyu", "runa", "ayllu"
+        ],
+        medialMorphChance: 0.45,
+        suffixes: [
+            "suyu", "pampa", "marka", "pata", "tambo", "wasi", "qucha", "cocha", "yaku", "sacha", "kancha", "runa"
+        ],
+        // phonotactics
+        maxConsRun: 2,          // Quechuan avoids heavy clusters
+        maxVowelRun: 2,         // keeps the CV rhythm tight
+        minVowelRatio: 0.40,    // open, singable
+        treatYAsVowel: false,   // y ~ glide/consonant
+        minSyllables: 2,
+        maxSyllables: 5,
+        clusterLinker: "i",     // epenthetic i is common
+        vowelLinker: "y"        // glide between adjacent vowels
+    },
+    "NAHUATL": {
+        onsets: [
+            "a", "e", "i", "o",
+            "ka", "ke", "ki", "ko", "kwa", "kwe", "kwi", "kwo",
+            "ma", "me", "mi", "mo", "na", "ne", "ni", "no",
+            "pa", "pe", "pi", "po", "ta", "te", "ti", "to",
+            "tl", "tla", "tle", "tli", "tlo",
+            "ya", "ye", "yi", "yo", "hua", "hue", "hui", "huo",
+            "cu", "cue", "cui", "co", "qui", "que",
+            "za", "ze", "zi", "zo"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ia", "ua", "ui", "ei", "oa"],
+        codas: ["n", "t", "l", "tl", "lli", "pan", "can", "yan", "hua", "zin", "te", "co"],
+        codaChance: 0.65,
+        medials: [
+            "tlan", "hua", "co", "can", "pan", "te", "xi", "zo", "na", "ya", "otl", "atl", "mix", "tzon", "pilli", "mecatl", "quetz", "chol", "tonal"
+        ],
+        medialMorphChance: 0.5,
+        suffixes: [
+            "tlan", "tlal", "co", "can", "pan", "yan", "tepetl", "huacan", "miztli", "quetzal", "tonal", "nahuac", "zuma", "tlani", "teotl"
+        ],
+        maxConsRun: 2, // Nahuatl avoids huge clusters
+        maxVowelRun: 2,
+        minVowelRatio: 0.35,
+        treatYAsVowel: true,
+        minSyllables: 2,
+        maxSyllables: 4,
+        clusterLinker: "a", // common epenthesis vowel
+        vowelLinker: "h"    // soft breath between vowels
+    },
+    "SANSKRITIC": {
+        onsets: [
+            "a", "i", "u", "e", "o",
+            "ka", "kha", "ga", "gha", "cha", "ch", "ja", "jha", "ta", "tha", "da", "dha",
+            "pa", "pha", "ba", "bha", "ma", "na", "ra", "la", "sa", "sha", "sri", "va", "ya", "ha",
+            "tra", "dra", "pra", "bra", "kra", "gra", "pla", "gla", "kla", "ksha", "jna"
+        ],
+        vowels: ["a", "i", "u", "e", "o", "aa", "ii", "uu", "ai", "au", "ri", "ru"],
+        codas: ["", "m", "n", "s", "h", "r", "ya", "ra", "na"],
+        codaChance: 0.40,
+        medials: [
+            "indra", "deva", "raja", "pura", "nagara", "giri", "sar", "vara", "varta", "kuta",
+            "kaya", "maya", "yoga", "sena", "kashi", "tirtha", "ksetra", "alaya", "bhumi", "ratna"
+        ],
+        medialMorphChance: 0.50,
+        suffixes: [
+            "pura", "nagara", "sthana", "desa", "loka", "varsha", "ksetra", "alaya", "ashrama", "mandir", "grama"
+        ],
+        // phonotactics
+        maxConsRun: 3,        // allow clusters like 'ksh', 'str'
+        maxVowelRun: 2,
+        minVowelRatio: 0.33,
+        treatYAsVowel: false, // 'y' behaves as a glide/consonant
+        minSyllables: 2,
+        maxSyllables: 5,
+        clusterLinker: "a",   // Sanskrit loves schwa/‘a’ epenthesis
+        vowelLinker: "y"      // glide between vowels (aya/iya/…)
+    },
+    "BABYLONIAN": {
+        onsets: [
+            "ab", "ak", "am", "an", "ar", "as", "at", "ba", "bal", "bar", "bel", "bil", "da", "dar", "du",
+            "en", "es", "er", "ga", "gal", "gur", "ha", "hal", "ka", "kar", "ku", "la", "lam", "ma", "mar", "mu", "na", "nam",
+            "nar", "ni", "nu", "pa", "rab", "ram", "sar", "sha", "sham", "sin", "sum", "tar", "tam", "ur", "ush", "zal", "zim"
+        ],
+        vowels: ["a", "e", "i", "u", "ia", "ai", "ua", "aa", "ei"],
+        codas: ["n", "m", "r", "l", "sh", "t", "k", "s", "b", "g", "z", "th", "um", "il"],
+        codaChance: 0.7,
+        medials: [
+            "ash", "esh", "ish", "ush", "nin", "bel", "mar", "lam", "tam", "ur", "an", "en", "sin",
+            "ram", "sam", "bal", "nam", "gal", "dur", "zur", "esh", "mur", "lum", "sum"
+        ],
+        medialMorphChance: 0.55,
+        suffixes: [
+            "ra", "ur", "esh", "an", "en", "il", "im", "um", "nin", "lam", "tam", "bel", "duk", "zum", "mar"
+        ],
+        maxConsRun: 3, maxVowelRun: 2, minVowelRatio: 0.28,
+        treatYAsVowel: false, minSyllables: 2, maxSyllables: 5,
+        clusterLinker: "u", vowelLinker: "r"
+    },
+    "ETRUSCAN": {
+        onsets: [
+            "a", "e", "i", "o", "u",
+            "th", "ph", "ch", "cl", "fl", "tr", "vl", "ml", "pl", "vel", "lar", "tur", "uni", "ais", "seth", "arn", "mar"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ae", "ai", "ei", "ia", "io", "ui"],
+        codas: ["s", "n", "r", "th", "ch", "m", "l", "t", "sna", "ni", "ce"],
+        codaChance: 0.55,
+        medials: ["lar", "thur", "vel", "uni", "tur", "seth", "arn", "mar", "avl", "clan", "than", "ath", "aci", "nes"],
+        medialMorphChance: 0.5,
+        suffixes: ["th", "ce", "na", "le", "ra", "chi", "sna", "ni", "thil", "ate"],
+        maxConsRun: 2, maxVowelRun: 2, minVowelRatio: 0.35,
+        treatYAsVowel: true, minSyllables: 2, maxSyllables: 5,
+        clusterLinker: "a", vowelLinker: "l"
+    },
+    "GAULISH": {
+        onsets: [
+            "b", "br", "c", "cr", "d", "dr", "g", "gr", "k", "kr", "l", "m", "n", "p", "r", "s", "t", "tr", "v",
+            "bel", "bri", "cam", "tre", "gal", "ver", "dun", "mag", "kar", "tar", "pen", "mor"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "ai", "ei", "oi", "ou", "au"],
+        codas: ["n", "s", "r", "l", "m", "t", "c", "x", "th", "d", "os", "ix"],
+        codaChance: 0.6,
+        medials: ["rix", "mag", "gal", "bri", "treb", "dun", "kar", "tar", "pen", "mor", "vel", "tor", "cam", "mar", "nem"],
+        medialMorphChance: 0.45,
+        suffixes: ["rix", "on", "os", "ix", "et", "an", "ar", "en", "acos", "atis"],
+        maxConsRun: 3, maxVowelRun: 3, minVowelRatio: 0.3,
+        treatYAsVowel: true, minSyllables: 2, maxSyllables: 5,
+        clusterLinker: "e", vowelLinker: "n"
+    },
     "MESOPOTAMIC": {
         onsets: [
             "an", "en", "in", "un", "ur", "ni", "ku", "lu", "mu", "nu", "su",
@@ -112,7 +256,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
         ],
         medialMorphChance: 0.55,
         suffixes: [
-            "ra", "ur", "esh", "an", "en", "il", "im", "um", "nin", "lam", "tam", "bel", "duk", "zum", "mar"
+            "ra", "ur", "esh", "ish", "an", "en", "il", "im", "um", "nin", "lam", "tam", "bel", "duk", "zum", "mar"
         ],
         maxConsRun: 3, maxVowelRun: 2, minVowelRatio: 0.28,
         treatYAsVowel: false, minSyllables: 2, maxSyllables: 5,
