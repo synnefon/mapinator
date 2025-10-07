@@ -1,4 +1,5 @@
 export const Languages = [
+    "TAMILIC",
     "QUECHUA",
     "NAHUATL",
     "SANSKRITIC",
@@ -103,6 +104,39 @@ const V_SEMI = [
 ];
 
 export const languageConfigs: { [k: string]: LanguageConfig } = {
+    "TAMILIC": {
+        onsets: [
+            "", "k", "t", "p", "m", "n", "ñ", "ng", "y", "r", "l", "v",
+            "th", "sh", "ch", "j",
+            // Dravidian flavors (ASCII approximations)
+            "zh", "rr", "nn", "ll",
+            // common name/place starts
+            "tam", "kan", "kar", "mar", "sar", "sel", "ram", "lak", "mur", "bal", "pal", "pon", "mani"
+        ],
+        // long vowels via doubling; classic ai/au diphthongs
+        vowels: ["a", "e", "i", "o", "u", "aa", "ee", "ii", "oo", "uu", "ai", "au"],
+        // Mostly open syllables; Tamil keeps codas light (nasals/liquids)
+        codas: ["", "m", "n", "ng", "l", "r", "rr", "zh"],
+        codaChance: 0.25,
+        medials: [
+            // toponymic & lexical cores
+            "nadu", "pura", "puram", "patti", "kudi", "ur", "oor", "kottai", "malai", "mala",
+            "kulam", "thiru", "selva", "mani", "kannan", "murugan", "arun", "kumar", "vel", "amma"
+        ],
+        medialMorphChance: 0.45,
+        suffixes: [
+            "nadu", "puram", "pura", "patti", "ur", "oor", "kudi", "kulam", "malai", "kottai", "thiru", "nagar", "veli"
+        ],
+        // phonotactics
+        maxConsRun: 2,          // avoid heavy clusters; allows 'zh', 'rr'
+        maxVowelRun: 3,         // long vowels OK, but no vowel soup
+        minVowelRatio: 0.45,    // open and singable
+        treatYAsVowel: false,   // 'y' is a glide here
+        minSyllables: 2,
+        maxSyllables: 5,
+        clusterLinker: "u",     // epenthetic 'u' keeps CV rhythm
+        vowelLinker: "y"        // glide between adjacent vowels
+    },
     "QUECHUA": {
         onsets: [
             "a", "i", "u",
