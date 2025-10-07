@@ -15,31 +15,36 @@
 </head>
 
 <body>
-  <div id="mobile-warning" class="hidden">
-    <h2>⚠️ not supported</h2>
-    <p>
-      one day i'll get around to formatting this for small screens, but for now please use a big one.
-    </p>
-  </div>
-
   <div class="toolbar">
-    <label for="resolution">resolution: <span id="resolutionValue"></span></label>
-    <input id="resolution" type="range" min="0" max="1" step="0.01" />
+    <div>
+        <label for="resolution">resolution: <span id="resolutionValue"></span></label>
+        <input id="resolution" type="range" min="0.25" max="1" step="0.05" />
+    </div>
 
-    <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
-    <input id="wavelength" type="range" min="0.0" max="1" step="0.01" />
+    <div>
+        <label for="wavelength">wavelength: <span id="wavelengthValue"></span></label>
+        <input id="wavelength" type="range" min="0.0" max="1" step="0.01" />
+    </div>
 
-    <label for="shatter">shatter: <span id="shatterValue"></span></label>
-    <input id="shatter" type="range" min="0.0" max="1" step="0.01" />
+    <div>
+        <label for="shatter">shatter: <span id="shatterValue"></span></label>
+        <input id="shatter" type="range" min="0.0" max="1" step="0.01" />
+    </div>
 
-    <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
-    <input id="elevationContrast" type="range" min="0.0" max="1.0" step="0.01" />
+    <div>
+        <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
+        <input id="elevationContrast" type="range" min="0.0" max="1.0" step="0.01" />
+    </div>
 
-    <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
-    <input id="seaLevel" type="range" min="0.0" max="1.0" step="0.01" />
+    <div>
+        <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
+        <input id="seaLevel" type="range" min="0.0" max="1.0" step="0.01" />
+    </div>
 
-    <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
-    <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
+    <div>
+        <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
+        <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
+    </div>
 
     <div id="theme-select-container">
       <label for="colorScheme">theme:</label>
@@ -52,25 +57,24 @@
       </select>
     </div>
 
-    <button id="regen">🔁 regenerate</button>
-
     <div id="seed-container">
-      <label for="seed-input">name:</label>
-      <input type="text" id="seed-input" />
+      <label for="seed-input">map:</label>
+      <input type="text" id="seed-input" placeholder="name" />
+      <button id="load-seed-btn">✅</button>
     </div>
-    <button id="load-seed-btn">⬆️ load by name</button>
   </div>
 
   <div id="map-container">
-    <h4 id="map-title"></h4>
+    <h1 id="map-title"></h1>
     <canvas id="map" width="1000" height="1000"></canvas>
     <div id="button-bar">
-      <button id="download">⬇️ download png</button>
+      <!-- <button id="download">💾 Save</button> -->
+      <button id="regen">♻️</button>
+      <button id="download">💾</button>
     </div>
   </div>
 
-  <script type="module" src="./src/main.ts"></script>
-  <script type="module" src="./src/mobile-check.ts"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>

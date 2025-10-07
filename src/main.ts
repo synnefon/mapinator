@@ -23,9 +23,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const mapGenerator = new MapGenerator(mapName);
   const mapRenderer = new MapRenderer();
 
-  const drawMap = () => {
+  const drawMap = (canvas) => {
     const map: Map = mapGenerator.generateMap(settings);
+    mapRenderer.clearCells(canvas);
     mapRenderer.drawCellColors(canvas, map);
+    mapRenderer.drawPixelShadows(canvas, map);
   };
 
   const drawTitle = (n: string | undefined = undefined) => {
@@ -33,9 +35,9 @@ document.addEventListener("DOMContentLoaded", () => {
     mapTitle.textContent = name;
   }
 
-  const redraw = () => {
+  const redraw = (canvas) => {
     drawTitle(mapName);
-    drawMap();
+    drawMap(canvas);
   }
 
   const loadMap = (n: string) => {
@@ -47,7 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     mapName = n;
     mapGenerator.reSeed(n);
-    redraw();
+    redraw(canvas);
   }
 
   const canvas = fetchElement<HTMLCanvasElement>("map");
@@ -61,7 +63,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const seaLevelInput = fetchElement<HTMLInputElement>("seaLevel");
   const seaLevelLabel = fetchElement<HTMLSpanElement>("seaLevelValue");
-
+  
   const shatterInput = fetchElement<HTMLInputElement>("shatter");
   const shatterLabel = fetchElement<HTMLSpanElement>("shatterValue");
 
@@ -73,7 +75,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Color scheme dropdown
   const colorSchemeSelect = fetchElement<HTMLSelectElement>("colorScheme");
-
 
   const seedInput = fetchElement<HTMLInputElement>("seed-input");
   const loadBtn = fetchElement<HTMLButtonElement>("load-seed-btn");
@@ -105,42 +106,42 @@ document.addEventListener("DOMContentLoaded", () => {
   wavelengthInput.addEventListener("input", () => {
     settings.wavelength = Number(wavelengthInput.value);
     wavelengthLabel.textContent = settings.wavelength.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   rainfallInput.addEventListener("input", () => {
     settings.rainfall = Number(rainfallInput.value);
     rainfallLabel.textContent = settings.rainfall.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   seaLevelInput.addEventListener("input", () => {
     settings.seaLevel = Number(seaLevelInput.value);
     seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   shatterInput.addEventListener("input", () => {
     settings.shatter = Number(shatterInput.value);
     shatterLabel.textContent = settings.shatter.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   elevationContrastInput.addEventListener("input", () => {
     settings.elevationContrast = Number(elevationContrastInput.value);
     elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   resolutionInput.addEventListener("input", () => {
     settings.resolution = Number(resolutionInput.value);
     resolutionLabel.textContent = settings.resolution.toFixed(2);
-    drawMap();
+    drawMap(canvas);
   });
 
   colorSchemeSelect.addEventListener("change", () => {
     settings.colorScheme = colorSchemeSelect.value as MapGenSettings["colorScheme"];
-    drawMap();
+    drawMap(canvas);
   });
 
   // Render only on explicit click
@@ -149,11 +150,11 @@ document.addEventListener("DOMContentLoaded", () => {
     mapGenerator.reSeed(mapName);
     nameGenerator.reSeed(mapName);
 
-    redraw();
+    redraw(canvas);
   });
 
   // initial render
-  redraw();
+  redraw(canvas);
 
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
   downloadBtn.addEventListener("click", () => {
@@ -161,29 +162,38 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // create a temporary canvas with extra space for title
     const exportCanvas = document.createElement("canvas");
-    const padding = 60;
-    exportCanvas.width = canvas.width;
-    exportCanvas.height = canvas.height + padding;
+    const padding = 120;
+    exportCanvas.width = canvas.width * 2;
+    exportCanvas.height = (canvas.height * 2) + padding;
     const ctx = exportCanvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.fillStyle = "#dedede";
+    ctx.fillStyle = "#fcf5e5";
     ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
 
     // draw map
-    ctx.drawImage(canvas, 0, padding);
+    const mapCanvas = document.createElement("canvas");
+    mapCanvas.width = exportCanvas.width;
+    mapCanvas.height = exportCanvas.width;
+    drawMap(mapCanvas);
+    ctx.drawImage(mapCanvas, 0, padding);
 
     // draw title
-    ctx.font = "bold 36px 'Roboto Mono', monospace";
+    ctx.font = "bold 6.5em 'Roboto Mono', monospace";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
-    ctx.fillText(mapTitle, exportCanvas.width / 2, 40);
+    ctx.fillText(mapTitle, exportCanvas.width / 2, 80);
 
     // download
     const link = document.createElement("a");
-    link.download = `MAPINATOR_${mapTitle.replace(/\s+/g, "_")}.png`;
+    let map_name = fetchElement<HTMLParagraphElement>("map-title").textContent;
+    let date = new Date().toLocaleDateString('en-CA').replace(/-/g, "");
+    let filename = `map-${map_name.toLowerCase()}-${date}.png`;
+    link.download = filename;
     link.href = exportCanvas.toDataURL("image/png");
     link.click();
+
+    exportCanvas.remove();
   });
 
   loadBtn.addEventListener("click", () => {
