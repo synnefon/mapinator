@@ -22,7 +22,7 @@ export class MapGenerator {
     public generateMap(settings: MapGenSettings): Map {
         settings = {
             ...settings,
-            wavelength: settings.wavelength + 0.2,
+            zoom: settings.zoom + 0.2,
             resolution: 10 + settings.resolution * (150 - 10),
         }
         const { resolution } = settings;
@@ -52,13 +52,13 @@ export class MapGenerator {
     }
 
     private genMoistures(baseMap: BaseMap, settings: MapGenSettings): number[] {
-        const wavelength = settings.wavelength;
+        const zoom = settings.zoom;
         const { points, numRegions } = baseMap;
         let moisture = [];
         for (let r = 0; r < numRegions; r++) {
             const nx = points[r].x / baseMap.resolution - 1 / 2;
             const ny = points[r].y / baseMap.resolution - 1 / 2;
-            const m = (1 + this.noise2D(nx / wavelength, ny / wavelength)) / 2;
+            const m = (1 + this.noise2D(nx / zoom, ny / zoom)) / 2;
             // Clamp into [0,1]
             moisture[r] = Math.max(0, Math.min(1, m));
         }
@@ -66,8 +66,8 @@ export class MapGenerator {
     }
 
     private genElevations(baseMap: BaseMap, settings: MapGenSettings): number[] {
-        const { wavelength, edgeCurve, elevationContrast = 0.5 } = settings;
-        const shatter = 1 - settings.shatter;
+        const { zoom, edgeCurve, elevationContrast = 0.5 } = settings;
+        const fisheye = settings.fisheye;
         const minExp = 0.5;
         const maxExp = 3.0;
         const edgeExp = minExp + (maxExp - minExp) * edgeCurve;
@@ -98,14 +98,14 @@ export class MapGenerator {
 
             let e =
                 1 / 3 +
-                this.noise2D(nx / wavelength, ny / wavelength) / 2 +
-                this.noise2D((2 * nx) / wavelength, (2 * ny) / wavelength) / 3;
+                this.noise2D(nx / zoom, ny / zoom) / 2 +
+                this.noise2D((2 * nx) / zoom, (2 * ny) / zoom) / 3;
 
             let d = 2 * Math.max(Math.abs(nx), Math.abs(ny));
             d = Math.pow(d, edgeExp);
 
-            const shatterMasked = (1 + e - d) / 2;
-            e = lerp(e, shatterMasked, clamp(shatter));
+            const fisheyeMasked = (1 + e - d) / 2;
+            e = lerp(e, fisheyeMasked, clamp(fisheye));
 
             e = applyElevationContrast(clamp(e), elevationContrast);
             elevations[r] = clamp(e);

@@ -53,8 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const canvas = fetchElement<HTMLCanvasElement>("map");
   const regenBtn = fetchElement<HTMLButtonElement>("regen");
 
-  const wavelengthInput = fetchElement<HTMLInputElement>("wavelength");
-  const wavelengthLabel = fetchElement<HTMLSpanElement>("wavelengthValue");
+  const zoomInput = fetchElement<HTMLInputElement>("zoom");
+  const zoomLabel = fetchElement<HTMLSpanElement>("zoomValue");
 
   const rainfallInput = fetchElement<HTMLInputElement>("rainfall");
   const rainfallLabel = fetchElement<HTMLSpanElement>("rainfallValue");
@@ -62,8 +62,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const seaLevelInput = fetchElement<HTMLInputElement>("seaLevel");
   const seaLevelLabel = fetchElement<HTMLSpanElement>("seaLevelValue");
 
-  const shatterInput = fetchElement<HTMLInputElement>("shatter");
-  const shatterLabel = fetchElement<HTMLSpanElement>("shatterValue");
+  const fisheyeInput = fetchElement<HTMLInputElement>("fisheye");
+  const fisheyeLabel = fetchElement<HTMLSpanElement>("fisheyeValue");
 
   const elevationContrastInput = fetchElement<HTMLInputElement>("elevationContrast");
   const elevationContrastLabel = fetchElement<HTMLSpanElement>("elevationContrastValue");
@@ -81,8 +81,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
 
   // Initialize sliders + labels from DEFAULTS
-  wavelengthInput.value = String(settings.wavelength);
-  wavelengthLabel.textContent = settings.wavelength.toFixed(2);
+  zoomInput.value = String(settings.zoom);
+  zoomLabel.textContent = settings.zoom.toFixed(2);
 
   rainfallInput.value = String(settings.rainfall);
   rainfallLabel.textContent = settings.rainfall.toFixed(2);
@@ -90,8 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
   seaLevelInput.value = String(settings.seaLevel);
   seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
 
-  shatterInput.value = String(settings.shatter);
-  shatterLabel.textContent = settings.shatter.toFixed(2);
+  fisheyeInput.value = String(settings.fisheye);
+  fisheyeLabel.textContent = settings.fisheye.toFixed(2);
 
   elevationContrastInput.value = String(settings.elevationContrast);
   elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
@@ -102,9 +102,9 @@ document.addEventListener("DOMContentLoaded", () => {
   colorSchemeSelect.value = settings.colorScheme;
 
   // Update settings as the user moves sliders (then redraw)
-  wavelengthInput.addEventListener("input", () => {
-    settings.wavelength = Number(wavelengthInput.value);
-    wavelengthLabel.textContent = settings.wavelength.toFixed(2);
+  zoomInput.addEventListener("input", () => {
+    settings.zoom = Number(zoomInput.value);
+    zoomLabel.textContent = settings.zoom.toFixed(2);
     drawMap();
   });
 
@@ -120,9 +120,9 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
-  shatterInput.addEventListener("input", () => {
-    settings.shatter = Number(shatterInput.value);
-    shatterLabel.textContent = settings.shatter.toFixed(2);
+  fisheyeInput.addEventListener("input", () => {
+    settings.fisheye = Number(fisheyeInput.value);
+    fisheyeLabel.textContent = settings.fisheye.toFixed(2);
     drawMap();
   });
 
@@ -147,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
     nameGenerator.reSeed(`${Date.now()}`)
     mapName = nameGenerator.generate();
     mapGenerator.reSeed(mapName);
-    
+
 
     redraw();
   });

@@ -4,10 +4,10 @@ import type { ColorScheme } from "./biomes";
 export interface MapGenSettings {
   resolution: number;
   jitter: number;
-  wavelength: number;
+  zoom: number;
   rainfall: number;
   seaLevel: number;
-  shatter: number;
+  fisheye: number;
   edgeCurve: number;
   elevationContrast: number;
   colorScheme: ColorScheme;
@@ -16,10 +16,10 @@ export interface MapGenSettings {
 export const DEFAULTS: MapGenSettings = {
   resolution: 0.5,
   jitter: 0.5,
-  wavelength: 0.2,
+  zoom: 0.2,
   rainfall: 0.68,
   seaLevel: 0.5,
-  shatter: 0.1,
+  fisheye: 0.9,
   edgeCurve: 0.8,
   elevationContrast: 0.5,
   colorScheme: "default",
