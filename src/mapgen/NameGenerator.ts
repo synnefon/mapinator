@@ -24,7 +24,7 @@ export class NameGenerator {
     /** Generate a single country name */
     public generate(opts: CountryGenOptions = {}): string {
         const lang = opts.lang ?? this.pickLanguage();
-        const coreSylCount = randomChoice(opts.syllables ?? [1, 2], this.rng);
+        const coreSylCount = randomChoice(opts.syllables ?? [0, 1, 1, 1, 2], this.rng);
         const suffix = (opts.forceSuffix ?? this.pickSuffix(lang)).toLowerCase();
         const MAX_RETRIES = 8;
 
