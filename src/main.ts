@@ -143,12 +143,11 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
-  // Render only on explicit click
   regenBtn.addEventListener("click", () => {
     nameGenerator.reSeed(`${Date.now()}`)
     mapName = nameGenerator.generate();
     mapGenerator.reSeed(mapName);
-    nameGenerator.reSeed(mapName);
+    
 
     redraw();
   });
