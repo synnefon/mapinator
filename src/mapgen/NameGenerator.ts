@@ -1,4 +1,4 @@
-import { Language, languageConfigs } from "../common/language";
+import { type Language, languageConfigs, Languages } from "../common/language";
 import { makeRNG, randomChoice, type RNG } from "../common/random";
 
 export interface CountryGenOptions {
@@ -26,43 +26,28 @@ export class NameGenerator {
         const lang = opts.lang ?? this.pickLanguage();
         const coreSylCount = randomChoice(opts.syllables ?? [1, 2], this.rng);
         const suffix = (opts.forceSuffix ?? this.pickSuffix(lang)).toLowerCase();
-
         const MAX_RETRIES = 8;
-        let name = "";
 
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            let stem = this.buildStem(coreSylCount, lang);
-            stem = this.tidyStemVsSuffix(stem, suffix);
-            let raw = stem + suffix;
+            const stem = this.tidyStemVsSuffix(this.buildStem(coreSylCount, lang), suffix);
+            const raw = stem + suffix;
 
-            if (this.isPronounceable(raw, lang)) {
-                name = this.titleCase(raw);
-                break;
-            }
+            if (this.isPronounceable(raw, lang)) return this.titleCase(raw);
 
             const softened = this.softenClusters(raw, lang);
-            if (this.isPronounceable(softened, lang)) {
-                name = this.titleCase(softened);
-                break;
-            }
+            if (this.isPronounceable(softened, lang)) return this.titleCase(softened);
 
-            // new vowel smoother
             const vowelFixed = this.softenVowels(raw, lang);
-            if (this.isPronounceable(vowelFixed, lang)) {
-                name = this.titleCase(vowelFixed);
-                break;
-            }
+            if (this.isPronounceable(vowelFixed, lang)) return this.titleCase(vowelFixed);
 
-            if (attempt === MAX_RETRIES - 1)
-                name = this.titleCase(vowelFixed || softened || raw);
+            if (attempt === MAX_RETRIES - 1) return this.titleCase(vowelFixed || softened || raw);
         }
-
-        return name;
+        return "";
     }
 
     private softenClusters(s: string, language: Language): string {
         const cfg = languageConfigs[language];
-        const clusterLinker = cfg.phonotactics?.clusterLinker ?? "a";
+        const clusterLinker = cfg.clusterLinker;
 
         const allowedOnsets = new Set((cfg.onsets || []).map(x => x.toLowerCase()));
         const allowedCodas = new Set((cfg.codas || []).map(x => x.toLowerCase()));
@@ -107,14 +92,14 @@ export class NameGenerator {
 
     private softenVowels(s: string, language: Language): string {
         const cfg = languageConfigs[language];
-        const vowelLinker = cfg.phonotactics?.vowelLinker ?? "n";
+        const vowelLinker = cfg.vowelLinker;
         const chars = s.split("");
 
         let run = 0;
         for (let i = 0; i < chars.length; i++) {
             if (this.isVowel(chars[i])) {
                 run++;
-                if (run >= (cfg.phonotactics?.maxVowelRun ?? 3)) {
+                if (run >= (cfg.maxVowelRun)) {
                     chars.splice(i, 0, vowelLinker);
                     break;
                 }
@@ -156,12 +141,11 @@ export class NameGenerator {
         const maxConsRun = Math.max(0, ...consRuns);
         const maxVowelRun = Math.max(0, ...vowelRuns);
         const vowelRatio = (plain.match(/[aeiouy]/g) || []).length / plain.length;
-        
+
         // pull per-language knobs (with fallbacks)
-        const pt = cfg.phonotactics ?? {};
-        const maxConsAllowed = pt.maxConsRun ?? 3;
-        const maxVowelAllowed = pt.maxVowelRun ?? 3;
-        const minVowelRatio = pt.minVowelRatio ?? 0.30;
+        const maxConsAllowed = cfg.maxConsRun;
+        const maxVowelAllowed = cfg.maxVowelRun;
+        const minVowelRatio = cfg.minVowelRatio;
 
         if (maxConsRun > maxConsAllowed) return false;
         if (maxVowelRun > maxVowelAllowed) return false;
@@ -170,6 +154,7 @@ export class NameGenerator {
         // --- cluster sanity against allowed onset/coda inventory ---
         const allowedOnsets = new Set((cfg.onsets || []).map(x => x.toLowerCase()));
         const allowedCodas = new Set((cfg.codas || []).map(x => x.toLowerCase()));
+
         // scan each “word” for illegal interior clusters
         for (const word of w.split(/\s+/).filter(Boolean)) {
             const raw = word.replace(/[A-Z]/g, m => m.toLowerCase() + "_"); // mark digraph slots
@@ -198,12 +183,10 @@ export class NameGenerator {
             }
         }
 
-        const treatY = pt.treatYAsVowel ?? true;
-
         // syllable sanity
-        const syl = this.estimateSyllables(s, treatY);
-        if (pt.minSyllables && syl < pt.minSyllables) return false;
-        if (pt.maxSyllables && syl > pt.maxSyllables) return false;
+        const syl = this.estimateSyllables(s, cfg.treatYAsVowel);
+        if (cfg.minSyllables && syl < cfg.minSyllables) return false;
+        if (cfg.maxSyllables && syl > cfg.maxSyllables) return false;
 
         return true;
     }
@@ -212,39 +195,9 @@ export class NameGenerator {
     // ---------------- helpers ----------------
 
     private pickLanguage(): Language {
-        const langs: Language[] = [
-            Language.ROMANCE,
-            Language.GERMANIC,
-            Language.SEMITIC,
-            Language.CN,
-            Language.JP,
-            Language.AFRICAN_WEST,
-            Language.AFRICAN_HORN,
-            Language.POLYNESIAN,
-            Language.RUSSIANIC,
-            Language.LATINIC,
-            Language.CELESTIC,
-            Language.INFERNIC,
-            Language.ARCANE,
-            Language.DEEP_SPEECH,
-            Language.GOBLINIC,
-            Language.INFERNO,
-            Language.SIRENIC,
-            Language.OOGA_BOOGA,
-            Language.DWARVISH,
-            Language.HALFLING,
-            Language.NOCTURNIC,
-            Language.DERPTONGUE,
-            Language.TOADISH,
-            Language.BANANAIC,
-            Language.LYRICIAN,
-            Language.ANGLISHIC,
-            Language.NEW_ANGLISHIC,
-            Language.PHRASIC,
-        ];
-        const lang = randomChoice(langs, this.rng);
+        const lang = randomChoice(Languages as unknown as string[], this.rng);
         console.log(`chosen language: ${lang}`)
-        return lang;
+        return lang as Language;
     }
 
     private pickSuffix(f: Language): string {
@@ -259,7 +212,7 @@ export class NameGenerator {
         const clamp = (x: number, lo = 0, hi = 0.95) => Math.min(hi, Math.max(lo, x));
 
         const pickCoda = (isLast: boolean, nextOnset: string): string => {
-            const base = cfg.codaChance ?? 0;
+            const base = cfg.codaChance;
             const chance = clamp(base * (isLast ? 1.2 : 0.6));
             if (this.rng() >= chance) return "";
 
