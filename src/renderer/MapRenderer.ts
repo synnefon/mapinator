@@ -58,8 +58,8 @@ export class MapRenderer {
         ctx.scale(canvas.width / resolution, canvas.height / resolution);
 
 	const shadowScale = 1;
-	const shadowCurve = 1.25;
-	const shadowIntensity = 2;
+	const shadowCurve = 1.35;
+	const shadowIntensity = resolution / 15;
 	const shadowOffset = {x: 0.5 * shadowScale, y: 0.5 * shadowScale};
 
 	const elevationCurve = 0.45;
@@ -70,12 +70,12 @@ export class MapRenderer {
 	const coverEdges = true;
 
 	const coordsToIndex = (coords: Coord): number => {
-            return (coords.y * resolution) + coords.x;
+            return ~~((coords.y * resolution) + coords.x);
 	};
 
-	const indexToCoords = (i: number, resolution: number): Coord => {
-	    const x = Math.floor(i / resolution);
-	    const y = i % resolution;
+	const indexToCoords = (i: number, gridSize: number): Coord => {
+	    const x = ~~(i / ~~gridSize);
+	    const y = ~~(i % ~~gridSize);
 	    return {x: x, y: y};
 	}
 
@@ -115,7 +115,7 @@ export class MapRenderer {
 	    let shade = shadowDarkness + elevationDarkness;
 	    
 	    // Convert the final shade into a hex string and set the fill style.
-            const shadowOpacity = Math.round(Math.min(shade, 255));
+            const shadowOpacity = ~~(Math.min(shade, 255));
 	    const shadowAlpha = shadowOpacity.toString(16).padStart(2, "0");
 	    const shadowColor = shadowHex + shadowAlpha;
 	    ctx.fillStyle = shadowColor;
@@ -148,6 +148,7 @@ function bresenhamLine(src: Coord, dst: Coord): Coord[] {
     let err = dx - dy;
 
     while (true) {
+	    break;
       points.push({ x: src.x, y: src.y });
       // If we've reached the end point, break.
       if (src.x === dst.x && src.y === dst.y) {
@@ -183,9 +184,9 @@ function darkenHexColor(hex: string, percent: number): string {
      const factor = 1 - (percent / 100);
   
      // Darken each RGB component.
-     r = Math.max(0, Math.floor(r * factor));
-     g = Math.max(0, Math.floor(g * factor));
-     b = Math.max(0, Math.floor(b * factor));
+     r = Math.max(0, ~~(r * factor));
+     g = Math.max(0, ~~(g * factor));
+     b = Math.max(0, ~~(b * factor));
   
      // Convert RGB back to hex.
      const toHex = (c) => ('0' + c.toString(16)).slice(-2);
