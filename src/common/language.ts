@@ -1,4 +1,5 @@
 export const Languages = [
+    "SIMLISH",
     "TAMILIC",
     "QUECHUA",
     "NAHUATL",
@@ -104,6 +105,33 @@ const V_SEMI = [
 ];
 
 export const languageConfigs: { [k: string]: LanguageConfig } = {
+    "SIMLISH": {
+        onsets: [
+            "", "b", "d", "g", "k", "p", "t", "m", "n", "f", "s", "v", "z", "w", "l", "r",
+            "bl", "pl", "fr", "sn", "gl", "dr", "tr", "kl", "br", "fl",
+            // classic Simlish starters
+            "dag", "sul", "wub", "noob", "fraba", "zo", "plum", "gaba", "yibs", "laba"
+        ],
+        vowels: ["a", "e", "i", "o", "u", "oo", "ee", "uh", "ah", "ai", "oi", "ya", "wa"],
+        codas: [
+            "b", "g", "p", "m", "n", "t", "s", "sh", "z", "bo", "doo", "na", "ba", "loo", "rah", "gaba"
+        ],
+        codaChance: 0.6,
+        medials: [
+            "yaba", "doo", "plum", "laba", "yibs", "dag", "fraba", "nooboo", "soola", "woohoo",
+            "snarf", "wubba", "zo", "booba", "gooba", "weebs", "flarn", "snug", "vibsy"
+        ],
+        medialMorphChance: 0.5,
+        suffixes: ["boo", "loo", "bah", "gah", "yibs", "so", "la", "bana", "weeb", "flarn", "plum", "vaba"],
+        maxConsRun: 2,
+        maxVowelRun: 3,
+        minVowelRatio: 0.35,
+        treatYAsVowel: true,
+        minSyllables: 2,
+        maxSyllables: 6,
+        clusterLinker: "a",
+        vowelLinker: "oo"
+    },
     "TAMILIC": {
         onsets: [
             "", "k", "t", "p", "m", "n", "ñ", "ng", "y", "r", "l", "v",
