@@ -1,80 +1,80 @@
-import type { MapGenSettings } from "../common/settings";
 import type { Map } from "../common/map";
-import { BiomeEngine } from "./BimeColor";
-import { lerp } from "../common/util";
+import type { MapGenSettings } from "../common/settings";
+import { BiomeEngine } from "./BiomeColor";
 
 export class MapRenderer {
-    public drawCellColors(
-        canvas: HTMLCanvasElement,
-        map: Map,
-        settings: MapGenSettings,
-        panX: number = 0,
-        panY: number = 0,
-        viewScale: number = 1.0
-    ): void {
-        const engine = new BiomeEngine(settings.rainfall, settings.seaLevel);
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-
-        const { resolution, points, delaunay } = map;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-
-        // Apply pan offset first (in canvas pixel coordinates)
-        ctx.translate(panX, panY);
-
-        // Then apply view scale (camera zoom) and map scale
-        const scale = (canvas.width / resolution) * viewScale;
-        ctx.scale(scale, scale);
-
-        // Use cached Delaunay to build Voronoi with extended bounds to prevent edge clipping
-        const boundsPadding = resolution * 0.1;
-        const vor = delaunay.voronoi([
-            -boundsPadding,
-            -boundsPadding,
-            resolution + boundsPadding,
-            resolution + boundsPadding
-        ]);
-
-        // Calculate viewport bounds in map coordinates for culling
-        const margin = resolution * 0.1; // 10% margin
-        const viewMinX = -panX / scale - margin;
-        const viewMaxX = (canvas.width - panX) / scale + margin;
-        const viewMinY = -panY / scale - margin;
-        const viewMaxY = (canvas.height - panY) / scale + margin;
-
-        for (let i = 0; i < points.length; i++) {
-            // Skip points far outside viewport
-            if (points[i].x < viewMinX || points[i].x > viewMaxX ||
-                points[i].y < viewMinY || points[i].y > viewMaxY) {
-                continue;
-            }
-
-            // --- Color ---
-            const fill = engine.colorAt(settings.colorScheme, map.elevations[i], map.moistures[i]);
-            ctx.fillStyle = fill;
-
-            // Save context for per-cell transform
-            ctx.save();
-
-            // Translate to cell center, scale slightly larger, translate back
-            // This creates a tiny overdraw to eliminate gaps
-            const px = points[i].x;
-            const py = points[i].y;
-            ctx.translate(px, py);
-            const overdraw = lerp(1, 1.09, settings.resolution);
-            ctx.scale(overdraw, overdraw);
-            ctx.translate(-px, -py);
-
-            // Render cell
-            ctx.beginPath();
-            vor.renderCell(i, ctx);
-            ctx.fill();
-
-            ctx.restore();
-        }
-
-        ctx.restore();
+  // recommend: call this whenever sites or bbox change
+  private getVoronoi(map: Map) {
+    const { resolution, delaunay } = map;
+    const pad = resolution * 0.1;
+    // cache on the map to avoid O(n) rebuilds on every pan/zoom
+    if (!("voronoi" in map) || !map.voronoi) {
+      (map as any).voronoi = delaunay.voronoi([
+        -pad,
+        -pad,
+        resolution + pad,
+        resolution + pad,
+      ]);
     }
+    return (map as any).voronoi;
+  }
+
+  public drawCellColors(
+    canvas: HTMLCanvasElement,
+    map: Map,
+    settings: MapGenSettings,
+    panX = 0,
+    panY = 0,
+    viewScale = 1.0
+  ): void {
+    const engine = new BiomeEngine(settings.rainfall, settings.seaLevel);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const { resolution, points, elevations, moistures } = map;
+    const vor = this.getVoronoi(map);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+
+    // scale first (zoom), then translate (pan in pixels)
+    const scale = (canvas.width / resolution) * viewScale;
+    ctx.scale(scale, scale);
+    ctx.translate(panX / scale, panY / scale);
+
+    // compute view bounds in map coords (no funky divide-after-the-fact)
+    const margin = resolution * 0.1; // keep your safety margin
+    const minX = -panX / scale - margin;
+    const maxX = (canvas.width - panX) / scale + margin;
+    const minY = -panY / scale - margin;
+    const maxY = (canvas.height - panY) / scale + margin;
+
+    // pixel-based overdraw ~1 device px
+    const pixelOverdraw = 0.75; // tweak 0.5–1.0 px
+    const overdraw = 1 + pixelOverdraw / scale;
+
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
+
+      ctx.fillStyle = engine.colorAt(
+        settings.colorScheme,
+        elevations[i],
+        moistures[i]
+      );
+
+      // Cell-centered micro-scale to hide seams
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(overdraw, overdraw);
+      ctx.translate(-p.x, -p.y);
+
+      ctx.beginPath();
+      vor.renderCell(i, ctx); // API: traces the clipped polygon for cell i
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
 }

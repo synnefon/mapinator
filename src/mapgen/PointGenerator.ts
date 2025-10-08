@@ -1,194 +1,138 @@
-import Delaunator from "delaunator";
-import type { MapGenSettings } from "../common/settings";
+// PointGenerator.ts
+import { Delaunay, type Delaunay as DelaunayT } from "d3-delaunay";
 import type { Point } from "../common/map";
 import { makeRNG, type RNG } from "../common/random";
+import type { MapGenSettings } from "../common/settings";
 
 type PointGenReturn = {
-    centers: Point[];
-    delaunay: Delaunator<any>;
-}
+  centers: Point[];
+  delaunay: DelaunayT<Point>;
+};
 
 export class PointGenerator {
-    private rng: RNG = () => 0; // set in genPoints
-    private seed: string;
+  private rng: RNG = () => 0;
+  private seed: string;
 
-    constructor(seed: string) {
-        this.seed = seed;
+  constructor(seed: string) {
+    this.seed = seed;
+  }
+  public reSeed(seed: string) {
+    this.seed = seed;
+  }
+
+  public genPoints(settings: MapGenSettings): PointGenReturn {
+    // Make generation deterministic for a given resolution
+    this.rng = makeRNG(`${this.seed}-${settings.resolution}`);
+    const { resolution, jitter } = settings;
+
+    // Initial jittered grid
+    const points = this.initPoints(resolution, jitter);
+
+    // Lloyd relaxation (N steps) using Voronoi cell polygons
+    const { centers, delaunay } = this.relaxPoints(points, 4, resolution);
+
+    return { centers, delaunay };
+  }
+
+  public genPointsForRegion(
+    settings: MapGenSettings,
+    worldX: number,
+    worldY: number,
+    width: number,
+    height: number,
+    spacing: number
+  ): Point[] {
+    this.rng = makeRNG(
+      `${this.seed}-${settings.resolution}-${worldX}-${worldY}`
+    );
+    const { jitter } = settings;
+    const points: Point[] = [];
+
+    const startX = Math.floor(worldX / spacing) * spacing;
+    const startY = Math.floor(worldY / spacing) * spacing;
+    const endX = worldX + width;
+    const endY = worldY + height;
+
+    for (let x = startX; x <= endX; x += spacing) {
+      for (let y = startY; y <= endY; y += spacing) {
+        const jx = x + jitter * spacing * (this.rng() - this.rng());
+        const jy = y + jitter * spacing * (this.rng() - this.rng());
+        points.push({ x: jx, y: jy });
+      }
     }
+    return points;
+  }
 
-    public reSeed(seed: string) {
-        this.seed = seed;
+  // ---- Lloyd relaxation using d3-delaunay Voronoi ----
+  private relaxOnce(points: Point[], bbox: [number, number, number, number]) {
+    const delaunay = Delaunay.from(
+      points,
+      (p) => p.x,
+      (p) => p.y
+    ) as DelaunayT<Point>;
+    const vor = delaunay.voronoi(bbox); // clip to bounds so polygons are closed
+    const centers = new Array<Point>(points.length);
+
+    for (let i = 0; i < points.length; i++) {
+      const poly = vor.cellPolygon(i); // Array<[x, y]> for cell i
+      if (!poly || poly.length < 3) {
+        centers[i] = points[i]; // degenerate; keep original
+        continue;
+      }
+      const c = this.polygonCentroidXY(poly);
+      centers[i] = { x: c[0], y: c[1] };
     }
+    return { centers, delaunay };
+  }
 
-    public genPoints(settings: MapGenSettings): PointGenReturn {
-        // makes it deterministic :)
-        this.rng = makeRNG(`${this.seed}-${settings.resolution}`);
+  private relaxPoints(points: Point[], iterations: number, resolution: number) {
+    let pts = points;
+    let last: DelaunayT<Point> | undefined;
+    // Bound the Voronoi to your map plane; polygons get clipped and closed.
+    const bbox: [number, number, number, number] = [
+      0,
+      0,
+      resolution,
+      resolution,
+    ];
 
-        const { resolution, jitter } = settings;
-
-        const points = this.initPoints(resolution, jitter);
-        const { centers, delaunay } = this.relaxPoints(points, 4);
-
-        return { centers, delaunay };
+    for (let k = 0; k < iterations; k++) {
+      const step = this.relaxOnce(pts, bbox);
+      pts = step.centers;
+      last = step.delaunay;
     }
+    if (!last) throw new Error("No triangulation produced");
+    return { centers: pts, delaunay: last };
+  }
 
-    public genPointsForRegion(
-        settings: MapGenSettings,
-        worldX: number,
-        worldY: number,
-        width: number,
-        height: number,
-        spacing: number
-    ): Point[] {
-        // Seed includes world position for deterministic but unique generation
-        this.rng = makeRNG(`${this.seed}-${settings.resolution}-${worldX}-${worldY}`);
-
-        const { jitter } = settings;
-        const points: Point[] = [];
-
-        // Generate points in world coordinates
-        const startX = Math.floor(worldX / spacing) * spacing;
-        const startY = Math.floor(worldY / spacing) * spacing;
-        const endX = worldX + width;
-        const endY = worldY + height;
-
-        for (let x = startX; x <= endX; x += spacing) {
-            for (let y = startY; y <= endY; y += spacing) {
-                const jx = x + (jitter * spacing * (this.rng() - this.rng()));
-                const jy = y + (jitter * spacing * (this.rng() - this.rng()));
-                points.push({ x: jx, y: jy });
-            }
-        }
-
-        return points;
+  private initPoints(resolution: number, jitter: number): Point[] {
+    const points: Point[] = [];
+    for (let x = 0; x < resolution; x++) {
+      for (let y = 0; y < resolution; y++) {
+        const jx = x + jitter * (this.rng() - this.rng());
+        const jy = y + jitter * (this.rng() - this.rng());
+        points.push({ x: jx, y: jy });
+      }
     }
+    return points;
+  }
 
-    // --- Halfedge helpers ---
-    private nextHalfedge(e: number): number {
-        return e % 3 === 2 ? e - 2 : e + 1;
+  // Fast centroid for Array<[x,y]>
+  private polygonCentroidXY(verts: Array<[number, number]>): [number, number] {
+    let A = 0,
+      cx = 0,
+      cy = 0;
+    const n = verts.length;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const [x0, y0] = verts[j];
+      const [x1, y1] = verts[i];
+      const cross = x0 * y1 - x1 * y0;
+      A += cross;
+      cx += (x0 + x1) * cross;
+      cy += (y0 + y1) * cross;
     }
-    private triOfEdge(e: number): number {
-        return Math.floor(e / 3);
-    }
-
-    // Build an incident halfedge for each site i
-    private buildInedges(d: Delaunator<any>, n: number): Int32Array {
-        const inedge = new Int32Array(n).fill(-1);
-        const { triangles } = d;
-        for (let e = 0; e < triangles.length; e++) inedge[triangles[e]] = e;
-        return inedge;
-    }
-
-    // Walk around a site i via halfedges; returns ring or null if cell is open (on hull)
-    private halfedgesAroundSite(
-        d: Delaunator<any>,
-        inedge: Int32Array,
-        i: number
-    ): number[] | null {
-        const { triangles, halfedges } = d;
-        let e0 = inedge[i];
-        if (e0 === -1) return null;
-
-        const ring: number[] = [];
-        let e = e0;
-        do {
-            ring.push(e);
-            const eNext = this.nextHalfedge(e);
-            const opp = halfedges[eNext];
-            if (opp === -1) return null; // open cell
-            e = opp;
-
-            // rotate within this triangle until triangles[e] === i
-            if (triangles[e] !== i) {
-                e = this.nextHalfedge(e);
-                if (triangles[e] !== i) e = this.nextHalfedge(e);
-            }
-        } while (e !== e0);
-
-        return ring;
-    }
-
-    // Triangle circumcenter (Voronoi vertex); fallback to barycenter if degenerate
-    private circumcenterOfTri(points: ReadonlyArray<Point>, triIdx: number, d: Delaunator<any>): Point {
-        const { triangles } = d;
-        const a = points[triangles[3 * triIdx + 0]];
-        const b = points[triangles[3 * triIdx + 1]];
-        const c = points[triangles[3 * triIdx + 2]];
-
-        const dA = a.x * a.x + a.y * a.y;
-        const dB = b.x * b.x + b.y * b.y;
-        const dC = c.x * c.x + c.y * c.y;
-
-        const D = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
-        if (Math.abs(D) < 1e-12) {
-            return { x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3 };
-        }
-        const ux = (dA * (b.y - c.y) + dB * (c.y - a.y) + dC * (a.y - b.y)) / D;
-        const uy = (dA * (c.x - b.x) + dB * (a.x - c.x) + dC * (b.x - a.x)) / D;
-        return { x: ux, y: uy };
-    }
-
-    // Area-weighted polygon centroid with fallback
-    private polygonCentroid(verts: Point[], fallback: Point): Point {
-        let A = 0, cx = 0, cy = 0;
-        const n = verts.length;
-        for (let i = 0, j = n - 1; i < n; j = i++) {
-            const xi = verts[i].x, yi = verts[i].y;
-            const xj = verts[j].x, yj = verts[j].y;
-            const cross = xj * yi - xi * yj;
-            A += cross;
-            cx += (xj + xi) * cross;
-            cy += (yj + yi) * cross;
-        }
-        if (Math.abs(A) < 1e-12) return fallback;
-        const area = A / 2;
-        return { x: cx / (6 * area), y: cy / (6 * area) };
-    }
-
-    // One Lloyd step: move each site to the centroid of its Voronoi cell (closed cells only)
-    private relaxOnce(points: Point[]): { centers: Point[]; delaunay: Delaunator<any> } {
-        const d = Delaunator.from(points, p => p.x, p => p.y);
-        const inedge = this.buildInedges(d, points.length);
-        const centers = new Array<Point>(points.length);
-
-        for (let i = 0; i < points.length; i++) {
-            const ring = this.halfedgesAroundSite(d, inedge, i);
-            if (!ring) {
-                // hull: keep original (or nudge inward if desired)
-                centers[i] = points[i];
-                continue;
-            }
-            const verts = ring.map(e => this.circumcenterOfTri(points, this.triOfEdge(e), d));
-            centers[i] = this.polygonCentroid(verts, points[i]);
-        }
-        return { centers, delaunay: d };
-    }
-
-    // N iterations of Lloyd relaxation; returns final centers and last Delaunay
-    private relaxPoints(points: Point[], iterations: number) {
-        let pts = points;
-        let last: Delaunator<any> | undefined;
-
-        for (let k = 0; k < iterations; k++) {
-            const { centers, delaunay } = this.relaxOnce(pts);
-            pts = centers;
-            last = delaunay;
-        }
-        if (!last) throw new Error("iterations wrong");
-
-        return { centers: pts, delaunay: last };
-    }
-
-
-    private initPoints(resolution: number, jitter: number): Point[] {
-        const points = [];
-        for (let x = 0; x < resolution; x++) {
-            for (let y = 0; y < resolution; y++) {
-                const jx = x + (jitter * (this.rng() - this.rng()));
-                const jy = y + (jitter * (this.rng() - this.rng()));
-                points.push({ x: jx, y: jy });
-            }
-        }
-        return points;
-    }
+    if (Math.abs(A) < 1e-12) return verts[0]; // fallback
+    const area = A / 2;
+    return [cx / (6 * area), cy / (6 * area)];
+  }
 }
