@@ -87,7 +87,7 @@ export class MapGenerator {
 
     // 0 -> flat, 0.5 -> identity, 1 -> max contrast
     const applyElevationContrast = (e: number, c: number) => {
-      const u = 2 * e - 1; // shift to [-1,1]
+      const u = lerp(-1, 1, e);
 
       // Map c ∈ [0,1] into a gamma curve that's symmetric around c=0.5
       // 0.5 = gamma=1 (no change)

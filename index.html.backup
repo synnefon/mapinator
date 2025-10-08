@@ -48,9 +48,9 @@
 
   <div id="map-container">
     <div id="title-container">
-      <input type="text" id="map-title" spellcheck="false" />
+      <input type="text" id="map-title" />
       <button id="load-title-btn" class="img-button-container-small">
-        <img class="button-img-small" src="./assets/check.png"></img>
+        <img class="button-img-small" src="./assets/book.png"></img>
       </button>
     </div>
     <canvas id="map" width="1000" height="1000"></canvas>
@@ -72,7 +72,7 @@
       </div>
       <div id="language-checkbox-list">
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="modern" checked> modern</label>
+          <div class="category-label">modern</div>
           <label><input type="checkbox" class="language-checkbox" value="ANGLISH" checked> anglish</label>
           <label><input type="checkbox" class="language-checkbox" value="NEW_ANGLISH" checked> new anglish</label>
           <label><input type="checkbox" class="language-checkbox" value="ROMANCE" checked> romance</label>
@@ -89,7 +89,7 @@
           <label><input type="checkbox" class="language-checkbox" value="MONGOLIC" checked> mongolic</label>
         </div>
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="classic" checked> classic</label>
+          <div class="category-label">classic</div>
           <label><input type="checkbox" class="language-checkbox" value="TAMILIC" checked> tamilic</label>
           <label><input type="checkbox" class="language-checkbox" value="QUECHUA" checked> quechua</label>
           <label><input type="checkbox" class="language-checkbox" value="NAHUATL" checked> nahuatl</label>
@@ -104,7 +104,7 @@
           <label><input type="checkbox" class="language-checkbox" value="FUEGIC" checked> fuegic</label>
         </div>
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="fictional" checked> fictional</label>
+          <div class="category-label">fictional</div>
           <label><input type="checkbox" class="language-checkbox" value="CELESTIC" checked> celestic</label>
           <label><input type="checkbox" class="language-checkbox" value="INFERNIC" checked> infernic</label>
           <label><input type="checkbox" class="language-checkbox" value="ARCANE" checked> arcane</label>
@@ -118,7 +118,7 @@
           <label><input type="checkbox" class="language-checkbox" value="LYRICIAN" checked> lyrician</label>
         </div>
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="silly" checked> silly</label>
+          <div class="category-label">silly</div>
           <label><input type="checkbox" class="language-checkbox" value="SIMLISH" checked> simlish</label>
           <label><input type="checkbox" class="language-checkbox" value="OOGA_BOOGA" checked> ooga booga</label>
           <label><input type="checkbox" class="language-checkbox" value="DERPTONGUE" checked> derptongue</label>
@@ -129,17 +129,17 @@
       </div>
 
       <div id="theme-select-container">
-        <label>theme</label>
-        <div id="theme-radio-list">
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="default" checked> default</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="oldAtlas"> old atlas</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="verdant"> verdant</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="rainbow"> rainbow</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="ashfall"> ashfall</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="winter"> winter</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="autumn"> autumn</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="greyscale"> greyscale</label>
-        </div>
+        <label for="colorScheme">theme:</label>
+        <select id="colorScheme">
+          <option value="default">default</option>
+          <option value="oldAtlas">old atlas</option>
+          <option value="verdant">verdant</option>
+          <option value="rainbow">rainbow</option>
+          <option value="ashfall">ashfall</option>
+          <option value="winter">winter</option>
+          <option value="autumn">autumn</option>
+          <option value="greyscale">greyscale</option>
+        </select>
       </div>
     </div>
   </div>

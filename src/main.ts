@@ -1,5 +1,6 @@
 import type { Map } from "./common/map";
 import { DEFAULTS, type MapGenSettings } from "./common/settings";
+import type { Language } from "./common/language";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
@@ -19,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const settings: MapGenSettings = { ...DEFAULTS };
 
   const nameGenerator = new NameGenerator(`${Date.now()}`);
+  let selectedLanguages: Language[] = [];
   let mapName = nameGenerator.generate();
 
   const mapGenerator = new MapGenerator(mapName);
@@ -49,9 +51,37 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   };
 
+  // const updateTitleFontSize = () => {
+  //   const length = mapTitle.value.length;
+  //   let fontSize: number;
+
+  //   if (length <= 15) {
+  //     fontSize = 2.0;
+  //   } else if (length <= 25) {
+  //     fontSize = 2.0 - ((length - 15) / 10) * 0.6; // 2.0 -> 1.4
+  //   } else if (length <= 40) {
+  //     fontSize = 1.4 - ((length - 25) / 15) * 0.5; // 1.4 -> 0.9
+  //   } else {
+  //     fontSize = Math.max(0.6, 0.9 - ((length - 40) / 30) * 0.3); // 0.9 -> 0.6
+  //   }
+
+  //   mapTitle.style.fontSize = `${fontSize}em`;
+  // };
+
+  const updateButtonPosition = () => {
+    const titleWidth = mapTitle.offsetWidth;
+    loadTitleBtn.style.transform = `translate(${titleWidth / 2 + 16}px, -50%)`;
+  };
+
   const drawTitle = (n: string | undefined = undefined) => {
-    const name = n ?? nameGenerator.generate({});
-    mapTitle.textContent = name;
+    const name = n ?? nameGenerator.generate({
+      lang: selectedLanguages.length === 0
+        ? undefined
+        : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)]
+    });
+    mapTitle.value = name;
+    // updateTitleFontSize();
+    setTimeout(updateButtonPosition, 0);
   };
 
   const redraw = () => {
@@ -63,7 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!n.trim()) {
       alert("Please enter the name of a map to load in");
       mapName = "";
-      seedInput.textContent = "";
+      mapTitle.value = "";
       return;
     }
     mapName = n;
@@ -113,13 +143,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const noiseScaleInput = fetchElement<HTMLInputElement>("noiseScale");
   const noiseScaleLabel = fetchElement<HTMLSpanElement>("noiseScaleValue");
 
-  // Color scheme dropdown
-  const colorSchemeSelect = fetchElement<HTMLSelectElement>("colorScheme");
+  // Color scheme radio buttons
+  const themeRadios = document.querySelectorAll<HTMLInputElement>(".theme-radio");
 
-  const seedInput = fetchElement<HTMLInputElement>("seed-input");
-  const loadBtn = fetchElement<HTMLButtonElement>("load-seed-btn");
+  // Language checkboxes
+  const languageCheckboxes = document.querySelectorAll<HTMLInputElement>(".language-checkbox");
+  const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>("toggle-all-languages");
 
-  const mapTitle = fetchElement<HTMLParagraphElement>("map-title");
+  const mapTitle = fetchElement<HTMLInputElement>("map-title");
+  const loadTitleBtn = fetchElement<HTMLButtonElement>("load-title-btn");
 
   // Initialize sliders + labels from DEFAULTS
   zoomInput.value = String(settings.zoom);
@@ -144,7 +176,12 @@ document.addEventListener("DOMContentLoaded", () => {
   noiseScaleInput.value = String(settings.noiseScale);
   noiseScaleLabel.textContent = settings.noiseScale.toFixed(2);
 
-  colorSchemeSelect.value = settings.colorScheme;
+  // Initialize selected theme radio button
+  themeRadios.forEach(radio => {
+    if (radio.value === settings.colorScheme) {
+      radio.checked = true;
+    }
+  });
 
   // Update settings as the user moves sliders (then redraw)
   zoomInput.addEventListener("input", () => {
@@ -189,15 +226,88 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
-  colorSchemeSelect.addEventListener("change", () => {
-    settings.colorScheme =
-      colorSchemeSelect.value as MapGenSettings["colorScheme"];
-    drawMap();
+  themeRadios.forEach(radio => {
+    radio.addEventListener("change", () => {
+      if (radio.checked) {
+        settings.colorScheme = radio.value as MapGenSettings["colorScheme"];
+        drawMap();
+      }
+    });
+  });
+
+  // Update selected languages when checkboxes change
+  const updateSelectedLanguages = () => {
+    selectedLanguages = Array.from(languageCheckboxes)
+      .filter(cb => cb.checked)
+      .map(cb => cb.value as Language);
+  };
+
+  // Category checkbox logic
+  const categoryCheckboxes = document.querySelectorAll<HTMLInputElement>(".category-checkbox");
+
+  const getCategoryLanguages = (category: string) => {
+    return Array.from(languageCheckboxes).filter(cb => {
+      const parentCategory = cb.closest('.language-category');
+      const categoryCheckbox = parentCategory?.querySelector<HTMLInputElement>('.category-checkbox');
+      return categoryCheckbox?.dataset.category === category;
+    });
+  };
+
+  const updateCategoryCheckbox = (categoryCheckbox: HTMLInputElement) => {
+    const categoryLanguages = getCategoryLanguages(categoryCheckbox.dataset.category || '');
+    const allChecked = categoryLanguages.every(cb => cb.checked);
+    const noneChecked = categoryLanguages.every(cb => !cb.checked);
+
+    categoryCheckbox.checked = allChecked;
+    categoryCheckbox.indeterminate = !allChecked && !noneChecked;
+  };
+
+  categoryCheckboxes.forEach(categoryCheckbox => {
+    categoryCheckbox.addEventListener("change", () => {
+      const categoryLanguages = getCategoryLanguages(categoryCheckbox.dataset.category || '');
+      categoryLanguages.forEach(cb => {
+        cb.checked = categoryCheckbox.checked;
+      });
+      updateSelectedLanguages();
+    });
+  });
+
+  languageCheckboxes.forEach(checkbox => {
+    checkbox.addEventListener("change", () => {
+      updateSelectedLanguages();
+      // Update parent category checkbox state
+      const parentCategory = checkbox.closest('.language-category');
+      const categoryCheckbox = parentCategory?.querySelector<HTMLInputElement>('.category-checkbox');
+      if (categoryCheckbox) {
+        updateCategoryCheckbox(categoryCheckbox);
+      }
+    });
+  });
+
+  // Initialize selected languages on page load
+  updateSelectedLanguages();
+
+  // Toggle all languages button
+  toggleAllLanguagesBtn.addEventListener("click", () => {
+    const allChecked = Array.from(languageCheckboxes).every(cb => cb.checked);
+    languageCheckboxes.forEach(cb => {
+      cb.checked = !allChecked;
+    });
+    categoryCheckboxes.forEach(cb => {
+      cb.checked = !allChecked;
+      cb.indeterminate = false;
+    });
+    toggleAllLanguagesBtn.textContent = allChecked ? "select all" : "deselect all";
+    updateSelectedLanguages();
   });
 
   regenBtn.addEventListener("click", () => {
     nameGenerator.reSeed(`${Date.now()}`);
-    mapName = nameGenerator.generate();
+    mapName = nameGenerator.generate({
+      lang: selectedLanguages.length === 0
+        ? undefined
+        : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)]
+    });
     mapGenerator.reSeed(mapName);
     cachedMap = null;
     cachedSettingsKey = "";
@@ -209,11 +319,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // initial render
   redraw();
 
+  // Initialize button position after render
+  setTimeout(updateButtonPosition, 100);
+
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
   downloadBtn.addEventListener("click", () => {
-    const mapTitle =
-      (document.getElementById("map-title") as HTMLElement)?.innerText ||
-      "Untitled Map";
+    const mapTitleText = mapTitle.value || "Untitled Map";
 
     // create a temporary canvas with extra space for title
     const exportCanvas = document.createElement("canvas");
@@ -233,17 +344,33 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.font = "bold 36px 'Roboto Mono', monospace";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
-    ctx.fillText(mapTitle, exportCanvas.width / 2, 40);
+    ctx.fillText(mapTitleText, exportCanvas.width / 2, 40);
 
     // download
     const link = document.createElement("a");
-    link.download = `MAPINATOR_${mapTitle.replace(/\s+/g, "_")}.png`;
+    link.download = `MAPINATOR_${mapTitleText.replace(/\s+/g, "_")}.png`;
     link.href = exportCanvas.toDataURL("image/png");
     link.click();
   });
 
-  loadBtn.addEventListener("click", () => {
-    mapName = seedInput.value.trim();
+  loadTitleBtn.addEventListener("click", () => {
+    mapName = mapTitle.value.trim();
     loadMap(mapName);
   });
+
+  // Load seed on Enter key
+  mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      mapName = mapTitle.value.trim();
+      loadMap(mapName);
+      mapTitle.blur(); // Remove focus after loading
+    }
+  });
+
+  // Update button position as user types
+  mapTitle.addEventListener("input", updateButtonPosition);
+
+  // Update font size as user types
+  // mapTitle.addEventListener("input", updateTitleFontSize);
 });
