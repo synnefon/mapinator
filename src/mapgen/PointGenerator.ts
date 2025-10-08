@@ -1,5 +1,5 @@
 import Delaunator from "delaunator";
-import type { MapGenSettings } from "../common/config";
+import type { MapGenSettings } from "../common/settings";
 import type { Point } from "../common/map";
 import { makeRNG, type RNG } from "../common/random";
 
@@ -30,6 +30,37 @@ export class PointGenerator {
         const { centers, delaunay } = this.relaxPoints(points, 4);
 
         return { centers, delaunay };
+    }
+
+    public genPointsForRegion(
+        settings: MapGenSettings,
+        worldX: number,
+        worldY: number,
+        width: number,
+        height: number,
+        spacing: number
+    ): Point[] {
+        // Seed includes world position for deterministic but unique generation
+        this.rng = makeRNG(`${this.seed}-${settings.resolution}-${worldX}-${worldY}`);
+
+        const { jitter } = settings;
+        const points: Point[] = [];
+
+        // Generate points in world coordinates
+        const startX = Math.floor(worldX / spacing) * spacing;
+        const startY = Math.floor(worldY / spacing) * spacing;
+        const endX = worldX + width;
+        const endY = worldY + height;
+
+        for (let x = startX; x <= endX; x += spacing) {
+            for (let y = startY; y <= endY; y += spacing) {
+                const jx = x + (jitter * spacing * (this.rng() - this.rng()));
+                const jy = y + (jitter * spacing * (this.rng() - this.rng()));
+                points.push({ x: jx, y: jy });
+            }
+        }
+
+        return points;
     }
 
     // --- Halfedge helpers ---

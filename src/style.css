@@ -15,8 +15,6 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  user-select: none;
 }
 
 img.button-img {
@@ -189,6 +187,7 @@ canvas {
   height: auto;
   display: block;
   border: 5px solid #222;
+  cursor: grab;
   /* margin-top: 1em; */
 }
 
