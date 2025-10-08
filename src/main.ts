@@ -1,5 +1,5 @@
-import type { Map } from "./common/map";
-import { DEFAULTS, type MapGenSettings } from "./common/settings";
+import type { WorldMap } from "./common/map";
+import { DEFAULTS, type MapSettings } from "./common/settings";
 import type { Language } from "./common/language";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
@@ -17,7 +17,7 @@ const fetchElement = <T>(id: string): T => {
 
 document.addEventListener("DOMContentLoaded", () => {
   // Single source of truth
-  const settings: MapGenSettings = { ...DEFAULTS };
+  const settings: MapSettings = { ...DEFAULTS };
 
   const nameGenerator = new NameGenerator(`${Date.now()}`);
   let selectedLanguages: Language[] = [];
@@ -27,7 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const mapRenderer = new MapRenderer();
 
   // Cache for generated map to avoid regeneration
-  let cachedMap: Map | null = null;
+  let cachedMap: WorldMap | null = null;
   let cachedSettingsKey = "";
 
   const drawMap = () => {
@@ -229,7 +229,7 @@ document.addEventListener("DOMContentLoaded", () => {
   themeRadios.forEach(radio => {
     radio.addEventListener("change", () => {
       if (radio.checked) {
-        settings.colorScheme = radio.value as MapGenSettings["colorScheme"];
+        settings.colorScheme = radio.value as MapSettings["colorScheme"];
         drawMap();
       }
     });

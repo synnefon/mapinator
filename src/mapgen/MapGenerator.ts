@@ -1,8 +1,8 @@
 import { Delaunay } from "d3-delaunay";
 import { createNoise2D, type NoiseFunction2D } from "simplex-noise";
-import type { BaseMap, Map } from "../common/map";
+import type { BaseMap, WorldMap } from "../common/map";
 import { makeRNG, type RNG } from "../common/random";
-import type { MapGenSettings } from "../common/settings";
+import type { MapSettings } from "../common/settings";
 import { clamp, lerp } from "../common/util";
 import { PointGenerator } from "./PointGenerator";
 
@@ -22,8 +22,8 @@ export class MapGenerator {
     this.pointGenerator = new PointGenerator(seed);
   }
 
-  public generateMap(input: MapGenSettings): Map {
-    const settings: MapGenSettings = {
+  public generateMap(input: MapSettings): WorldMap {
+    const settings: MapSettings = {
       ...input,
       resolution: lerp(10, 200, input.resolution),
       noiseScale: lerp(0.1, 1.3, input.noiseScale),
@@ -67,7 +67,7 @@ export class MapGenerator {
     return { ...baseMap, elevations, moistures };
   }
 
-  private genMoistures(baseMap: BaseMap, settings: MapGenSettings): number[] {
+  private genMoistures(baseMap: BaseMap, settings: MapSettings): number[] {
     const { points, numRegions, resolution } = baseMap;
     const out = new Array<number>(numRegions);
     const s = settings.noiseScale;
@@ -80,7 +80,7 @@ export class MapGenerator {
     return out;
   }
 
-  private genElevations(baseMap: BaseMap, settings: MapGenSettings): number[] {
+  private genElevations(baseMap: BaseMap, settings: MapSettings): number[] {
     const { points, numRegions, resolution } = baseMap;
     const {
       edgeCurve,

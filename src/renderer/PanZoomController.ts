@@ -1,10 +1,10 @@
-import type { Map } from "../common/map";
+import type { WorldMap } from "../common/map";
 import { lerp } from "../common/util";
 
 interface PanZoomConfig {
   canvas: HTMLCanvasElement;
   onRedraw: () => void;
-  getCachedMap: () => Map | null;
+  getCachedMap: () => WorldMap | null;
   momentum?: number;
   onZoomChange?: (zoom: number, viewScale: number) => void;
 }
@@ -12,7 +12,7 @@ interface PanZoomConfig {
 export class PanZoomController {
   private canvas: HTMLCanvasElement;
   private onRedraw: () => void;
-  private getCachedMap: () => Map | null;
+  private getCachedMap: () => WorldMap | null;
   private onZoomChange?: (zoom: number, viewScale: number) => void;
   private momentum: number;
 

@@ -1,12 +1,13 @@
 // force a number between 0 and 1
-export const clamp = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const clamp = (x: number, min: number = 0, max: number = 1) =>
+  x < min ? min : x > max ? max : x;
 
 // linear interpolation
-// map t from [x, y] to [a,b]
+// map t from [srcMin, srcMax] to [dstMin, dstMax]
 export const lerp = (
-  a: number,
-  b: number,
+  dstMin: number,
+  dstMax: number,
   t: number,
-  x: number = 0,
-  y: number = 1
-) => a + ((b - a) * (t - x)) / (y - x);
+  srcMin: number = 0,
+  srcMax: number = 1
+) => dstMin + ((dstMax - dstMin) * (t - srcMin)) / (srcMax - srcMin);

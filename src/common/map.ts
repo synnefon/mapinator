@@ -16,7 +16,7 @@ export interface BaseMap {
     delaunay: Delaunay<Point>; // Cache d3-delaunay Delaunay (has .voronoi() method)
 }
 
-export interface Map extends BaseMap {
+export interface WorldMap extends BaseMap {
     elevations: number[];
     moistures: number[];
 }

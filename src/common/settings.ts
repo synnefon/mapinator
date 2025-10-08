@@ -1,7 +1,7 @@
 import type { ColorScheme } from "./biomes";
 
 
-export interface MapGenSettings {
+export interface MapSettings {
   resolution: number;
   jitter: number;
   zoom: number;
@@ -14,7 +14,7 @@ export interface MapGenSettings {
   noiseScale: number;
 }
 
-export const DEFAULTS: MapGenSettings = {
+export const DEFAULTS: MapSettings = {
   resolution: 0.5,
   jitter: 0.5,
   zoom: 0,
