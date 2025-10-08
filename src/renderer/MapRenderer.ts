@@ -59,11 +59,10 @@ export class MapRenderer {
             ctx.save();
 
             // Translate to cell center, scale slightly larger, translate back
-            // This creates a tiny overdraw to eliminate gaps.
+            // This creates a tiny overdraw to eliminate gaps
             const px = points[i].x;
             const py = points[i].y;
             ctx.translate(px, py);
-            // Adjust overdraw based on resolution. Higher resolution = more overdraw.
             const overdraw = lerp(1, 1.09, settings.resolution);
             ctx.scale(overdraw, overdraw);
             ctx.translate(-px, -py);
