@@ -1,6 +1,5 @@
 import type { Map } from "./common/map";
 import { DEFAULTS, type MapGenSettings } from "./common/settings";
-import { lerp } from "./common/util";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";

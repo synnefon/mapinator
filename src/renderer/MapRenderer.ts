@@ -1,4 +1,3 @@
-import { Delaunay } from "d3-delaunay";
 import type { MapGenSettings } from "../common/settings";
 import type { Map } from "../common/map";
 import { BiomeEngine } from "./BimeColor";
