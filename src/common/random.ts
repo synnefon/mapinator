@@ -11,10 +11,31 @@ export function makeRNG(seed: string): RNG {
 }
 
 export function randomChoice<T>(
-    arr: T[],
+    choices: T[],
     rng: RNG = makeRNG(`${Date.now()}`)
 ) {
-    return arr[Math.floor(rng() * arr.length)];
+    return choices[Math.floor(rng() * choices.length)];
+}
+
+export function weightedRandomChoice<T>(
+    choices: { val: T, prob: number }[],
+    rng: RNG = makeRNG(`${Date.now()}`),
+) {
+    const total = choices.reduce((sum, c) => sum + c.prob, 0);
+    if (total !== 1) {
+        throw new Error("weightedRandomChoice: total probability must be > 0");
+    }
+
+    const r = rng() * total;
+    let acc = 0;
+
+    for (const { val, prob } of choices) {
+        acc += prob;
+        if (r <= acc) return val;
+    }
+
+    // Fallback due to floating point rounding
+    return choices[choices.length - 1].val;
 }
 
 

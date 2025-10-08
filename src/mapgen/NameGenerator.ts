@@ -1,13 +1,9 @@
 import { type Language, languageConfigs, Languages } from "../common/language";
-import { makeRNG, randomChoice, type RNG } from "../common/random";
+import { makeRNG, randomChoice, weightedRandomChoice, type RNG } from "../common/random";
 
 export interface CountryGenOptions {
     seed?: string | number;
     lang?: Language;
-    syllables?: [min: number, max: number];
-    allowDiacritics?: boolean;
-    forceSuffix?: string;
-    useArticle?: boolean;
 }
 
 export class NameGenerator {
@@ -24,25 +20,40 @@ export class NameGenerator {
     /** Generate a single country name */
     public generate(opts: CountryGenOptions = {}): string {
         const lang = opts.lang ?? this.pickLanguage();
-        const coreSylCount = randomChoice(opts.syllables ?? [0, 1, 1, 1, 2, 2], this.rng);
-        const suffix = (opts.forceSuffix ?? this.pickSuffix(lang)).toLowerCase();
+        const syllableChoices = [
+            { val: 0, prob: 0.1 },
+            { val: 1, prob: 0.7 },
+            { val: 2, prob: 0.2 },
+        ];
+        const suffix = randomChoice(languageConfigs[lang].suffixes).toLowerCase();
         const MAX_RETRIES = 8;
 
+        let stem = "";
+        let raw = "";
+        let clusterSoftened = "";
+        let vowelSoftened = "";
         for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-            const stem = this.tidyStemVsSuffix(this.buildStem(coreSylCount, lang), suffix);
-            const raw = stem + suffix;
+            const coreSylCount = weightedRandomChoice(syllableChoices, this.rng);
 
-            if (this.isPronounceable(raw, lang)) return this.titleCase(raw);
+            stem = this.tidyStemVsSuffix(this.buildStem(coreSylCount, lang), suffix);
+            raw = stem + suffix;
 
-            const softened = this.softenClusters(raw, lang);
-            if (this.isPronounceable(softened, lang)) return this.titleCase(softened);
+            if (this.isPronounceable(raw, lang)) {
+                return this.titleCase(raw);
+            }
 
-            const vowelFixed = this.softenVowels(raw, lang);
-            if (this.isPronounceable(vowelFixed, lang)) return this.titleCase(vowelFixed);
+            clusterSoftened = this.softenClusters(raw, lang);
+            if (this.isPronounceable(clusterSoftened, lang)) {
+                return this.titleCase(clusterSoftened);
+            }
 
-            if (attempt === MAX_RETRIES - 1) return this.titleCase(vowelFixed || softened || raw);
+            const vowelSoftened = this.softenVowels(raw, lang);
+            if (this.isPronounceable(vowelSoftened, lang)) {
+                return this.titleCase(vowelSoftened);
+            }
         }
-        return "";
+
+        return this.titleCase(vowelSoftened || clusterSoftened || raw);
     }
 
     private softenClusters(s: string, language: Language): string {
@@ -142,14 +153,9 @@ export class NameGenerator {
         const maxVowelRun = Math.max(0, ...vowelRuns);
         const vowelRatio = (plain.match(/[aeiouy]/g) || []).length / plain.length;
 
-        // pull per-language knobs (with fallbacks)
-        const maxConsAllowed = cfg.maxConsRun;
-        const maxVowelAllowed = cfg.maxVowelRun;
-        const minVowelRatio = cfg.minVowelRatio;
-
-        if (maxConsRun > maxConsAllowed) return false;
-        if (maxVowelRun > maxVowelAllowed) return false;
-        if (vowelRatio < minVowelRatio) return false;
+        if (maxConsRun > cfg.maxConsRun) return false;
+        if (maxVowelRun > cfg.maxVowelRun) return false;
+        if (vowelRatio < cfg.minVowelRatio) return false;
 
         // --- cluster sanity against allowed onset/coda inventory ---
         const allowedOnsets = new Set((cfg.onsets || []).map(x => x.toLowerCase()));
@@ -198,11 +204,6 @@ export class NameGenerator {
         const lang = randomChoice(Languages as unknown as string[], this.rng);
         console.log(`chosen language: ${lang}`)
         return lang as Language;
-    }
-
-    private pickSuffix(f: Language): string {
-        const arr = languageConfigs[f].suffixes;
-        return arr[Math.floor(this.rng() * arr.length)];
     }
 
     private buildStem(syllables: number, language: Language): string {
@@ -310,6 +311,7 @@ export class NameGenerator {
     }
 
     private titleCase(s: string): string {
+        s = s.trim();
         return s.charAt(0).toUpperCase() + s.slice(1);
     }
 }
