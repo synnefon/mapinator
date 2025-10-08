@@ -31,9 +31,16 @@ export class MapGenerator {
     const { centers, delaunay: delaunator } =
       this.pointGenerator.genPoints(settings);
 
+    // Add tiny jitter to prevent floating-point precision gaps in Voronoi rendering
+    // See: https://github.com/d3/d3-delaunay/issues/79
+    const jitteredCenters = centers.map(p => ({
+      x: p.x + (Math.random() - 0.5) * 0.001,
+      y: p.y + (Math.random() - 0.5) * 0.001
+    }));
+
     // Build d3-delaunay Delaunay for caching (has .voronoi() method)
     const delaunay = Delaunay.from(
-      centers,
+      jitteredCenters,
       (p) => p.x,
       (p) => p.y
     );

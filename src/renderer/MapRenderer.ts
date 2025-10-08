@@ -1,6 +1,7 @@
 import type { MapGenSettings } from "../common/settings";
 import type { Map } from "../common/map";
 import { BiomeEngine } from "./BimeColor";
+import { lerp } from "../common/util";
 
 export class MapRenderer {
     public drawCellColors(
@@ -27,8 +28,14 @@ export class MapRenderer {
         const scale = (canvas.width / resolution) * viewScale;
         ctx.scale(scale, scale);
 
-        // Use cached Delaunay to build Voronoi (no rebuild!)
-        const vor = delaunay.voronoi([0, 0, resolution, resolution]);
+        // Use cached Delaunay to build Voronoi with extended bounds to prevent edge clipping
+        const boundsPadding = resolution * 0.1;
+        const vor = delaunay.voronoi([
+            -boundsPadding,
+            -boundsPadding,
+            resolution + boundsPadding,
+            resolution + boundsPadding
+        ]);
 
         // Calculate viewport bounds in map coordinates for culling
         const margin = resolution * 0.1; // 10% margin
@@ -38,31 +45,35 @@ export class MapRenderer {
         const viewMaxY = (canvas.height - panY) / scale + margin;
 
         for (let i = 0; i < points.length; i++) {
-            // Quick cull: skip points far outside viewport
+            // Skip points far outside viewport
             if (points[i].x < viewMinX || points[i].x > viewMaxX ||
                 points[i].y < viewMinY || points[i].y > viewMaxY) {
                 continue;
             }
 
-            const poly = vor.cellPolygon(i); // Array<[x,y]> (closed)
-            if (!poly || poly.length < 3) continue;
-
-            ctx.beginPath();
-            ctx.moveTo(poly[0][0], poly[0][1]);
-            for (let k = 1; k < poly.length; k++) ctx.lineTo(poly[k][0], poly[k][1]);
-            ctx.closePath();
-
             // --- Color ---
             const fill = engine.colorAt(settings.colorScheme, map.elevations[i], map.moistures[i]);
             ctx.fillStyle = fill;
-            ctx.fillStyle = fill;
+
+            // Save context for per-cell transform
+            ctx.save();
+
+            // Translate to cell center, scale slightly larger, translate back
+            // This creates a tiny overdraw to eliminate gaps.
+            const px = points[i].x;
+            const py = points[i].y;
+            ctx.translate(px, py);
+            // Adjust overdraw based on resolution. Higher resolution = more overdraw.
+            const overdraw = lerp(1, 1.09, settings.resolution);
+            ctx.scale(overdraw, overdraw);
+            ctx.translate(-px, -py);
+
+            // Render cell
+            ctx.beginPath();
+            vor.renderCell(i, ctx);
             ctx.fill();
-            // Hairline same-color stroke to hide AA seams
-            ctx.strokeStyle = fill;
-            ctx.lineWidth = 0.05;
-            ctx.lineJoin = "round";
-            ctx.miterLimit = 2;
-            ctx.stroke();
+
+            ctx.restore();
         }
 
         ctx.restore();
