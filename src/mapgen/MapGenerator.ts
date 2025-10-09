@@ -1,7 +1,7 @@
 import { Delaunay } from "d3-delaunay";
 import { createNoise2D, type NoiseFunction2D } from "simplex-noise";
-import type { BaseMap, WorldMap } from "../common/map";
-import { makeRNG, type RNG } from "../common/random";
+import type { BaseMap, River, WorldMap } from "../common/map";
+import { makeRNG, weightedRandomChoice, type RNG } from "../common/random";
 import type { MapSettings } from "../common/settings";
 import { clamp, lerp } from "../common/util";
 import { PointGenerator } from "./PointGenerator";
@@ -63,8 +63,9 @@ export class MapGenerator {
 
     const elevations = this.genElevations(baseMap, settings);
     const moistures = this.genMoistures(baseMap, settings);
+    const rivers = this.genRivers(baseMap, elevations);
 
-    return { ...baseMap, elevations, moistures };
+    return { ...baseMap, elevations, moistures, rivers };
   }
 
   private genMoistures(baseMap: BaseMap, settings: MapSettings): number[] {
@@ -121,5 +122,67 @@ export class MapGenerator {
       out[r] = applyContrast(clamp(e), elevationContrast);
     }
     return out;
+  }
+
+  private genRivers(baseMap: BaseMap, elevations: number[]): River[] {
+    const seaLevel = 0.5;
+    const minSourceElevation = 0.75;
+    const numOrigins = 20;
+    const maxSteps = 10_000;
+
+    const { delaunay, numRegions } = baseMap;
+    const rivers: River[] = [];
+
+    // Precompute neighbors for each region
+    const neighbors: number[][] = Array.from({ length: numRegions }, (_, i) =>
+      Array.from(delaunay.neighbors(i))
+    );
+
+    // Find shore cells: ocean cells (<= seaLevel) bordering land (> seaLevel)
+    const shore: number[] = [];
+    for (let i = 0; i < numRegions; i++) {
+      if (elevations[i] > seaLevel) continue;
+      if (neighbors[i].some((n) => elevations[n] > seaLevel)) {
+        shore.push(i);
+      }
+    }
+    if (shore.length === 0) return [];
+
+    for (let o = 0; o < numOrigins; o++) {
+      const segments: { startPointIdx: number; endPointIdx: number }[] = [];
+      const mouthIdx = shore[(this.rng() * shore.length) | 0];
+
+      let current = mouthIdx;
+      let currentElev = elevations[current];
+      const visited = new Set<number>([current]);
+      let steps = 0;
+
+      while (currentElev < minSourceElevation && steps++ < maxSteps) {
+        const nbrs = neighbors[current];
+        if (!nbrs.length) break;
+
+        const sortedNbrs = nbrs.sort((a, b) => elevations[b] - elevations[a]);
+        if (sortedNbrs.length < 3) break;
+        const weightedChoices = [
+          { val: sortedNbrs[0], prob: 0.75 },
+          { val: sortedNbrs[1], prob: 0.15 },
+          { val: sortedNbrs[2], prob: 0.1 },
+        ];
+        let nextIdx = weightedRandomChoice(weightedChoices, this.rng);
+
+        // Prevent self-loop or stuck river
+        if (nextIdx === current || visited.has(nextIdx)) break;
+
+        segments.push({ startPointIdx: current, endPointIdx: nextIdx });
+        visited.add(nextIdx);
+
+        current = nextIdx;
+        currentElev = elevations[current];
+      }
+
+      if (segments.length) rivers.push({ segments });
+    }
+
+    return rivers;
   }
 }

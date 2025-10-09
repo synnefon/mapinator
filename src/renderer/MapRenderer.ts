@@ -201,11 +201,7 @@ export class MapRenderer {
 
     for (let idx = 0; idx < visible.length; idx++) {
       const i = visible[idx];
-      const fill = engine.colorAt(
-        settings.theme,
-        elevations[i],
-        moistures[i]
-      );
+      const fill = engine.colorAt(settings.theme, elevations[i], moistures[i]);
 
       let bucket = buckets.get(fill);
       if (!bucket) {
@@ -229,6 +225,65 @@ export class MapRenderer {
       ctx.strokeStyle = fill;
       ctx.lineWidth = hairline;
       ctx.stroke(path);
+    }
+
+    ctx.restore();
+  }
+
+  public drawRiversCenterLines(
+    canvas: HTMLCanvasElement,
+    map: WorldMap,
+    panX = 0,
+    panY = 0,
+    viewScale = 1.0,
+    color = "#2b6cff", // pick your blue
+    alpha = 0.9
+  ): void {
+    const ctx = canvas.getContext("2d");
+    if (!ctx || !map.rivers || !map.rivers.length) return;
+
+    const { resolution } = map;
+    const scale = (canvas.width / resolution) * viewScale;
+
+    // build map-space viewport rect to cull offscreen segments
+    const margin = resolution * 0.05;
+    const x0 = Math.max(-resolution, -panX / scale - margin);
+    const y0 = Math.max(-resolution, -panY / scale - margin);
+    const x1 = Math.min(2 * resolution, (canvas.width - panX) / scale + margin);
+    const y1 = Math.min(
+      2 * resolution,
+      (canvas.height - panY) / scale + margin
+    );
+
+    ctx.save();
+    ctx.scale(scale, scale);
+    ctx.translate(panX / scale, panY / scale);
+
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineCap = "round";
+
+    // NOTE: we want line width in **screen pixels**, but we're already scaled
+    // so set lineWidth in map units = px / scale per segment.
+    for (const river of map.rivers) {
+      for (const seg of river.segments) {
+        const A = map.points[seg.startPointIdx];
+        const B = map.points[seg.endPointIdx];
+        if (!A || !B) continue;
+
+        // Cull quickly
+        const minX = Math.min(A.x, B.x),
+          maxX = Math.max(A.x, B.x);
+        const minY = Math.min(A.y, B.y),
+          maxY = Math.max(A.y, B.y);
+        if (maxX < x0 || minX > x1 || maxY < y0 || minY > y1) continue;
+
+        ctx.lineWidth = Math.max(0.5, 3) / scale;
+        ctx.beginPath();
+        ctx.moveTo(A.x, A.y);
+        ctx.lineTo(B.x, B.y);
+        ctx.stroke();
+      }
     }
 
     ctx.restore();

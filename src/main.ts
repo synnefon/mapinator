@@ -28,16 +28,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Load settings from URL or use defaults
   const settings: MapSettings = {
-    resolution: parseFloat(urlParams.get("resolution") || String(DEFAULTS.resolution)),
+    resolution: parseFloat(
+      urlParams.get("resolution") || String(DEFAULTS.resolution)
+    ),
     jitter: parseFloat(urlParams.get("jitter") || String(DEFAULTS.jitter)),
     zoom: parseFloat(urlParams.get("zoom") || String(DEFAULTS.zoom)),
-    rainfall: parseFloat(urlParams.get("rainfall") || String(DEFAULTS.rainfall)),
-    seaLevel: parseFloat(urlParams.get("seaLevel") || String(DEFAULTS.seaLevel)),
-    clumpiness: parseFloat(urlParams.get("clumpiness") || String(DEFAULTS.clumpiness)),
-    edgeCurve: parseFloat(urlParams.get("edgeCurve") || String(DEFAULTS.edgeCurve)),
-    elevationContrast: parseFloat(urlParams.get("elevationContrast") || String(DEFAULTS.elevationContrast)),
+    rainfall: parseFloat(
+      urlParams.get("rainfall") || String(DEFAULTS.rainfall)
+    ),
+    seaLevel: parseFloat(
+      urlParams.get("seaLevel") || String(DEFAULTS.seaLevel)
+    ),
+    clumpiness: parseFloat(
+      urlParams.get("clumpiness") || String(DEFAULTS.clumpiness)
+    ),
+    edgeCurve: parseFloat(
+      urlParams.get("edgeCurve") || String(DEFAULTS.edgeCurve)
+    ),
+    elevationContrast: parseFloat(
+      urlParams.get("elevationContrast") || String(DEFAULTS.elevationContrast)
+    ),
     theme: (urlParams.get("theme") as MapSettings["theme"]) || DEFAULTS.theme,
-    noiseScale: parseFloat(urlParams.get("noiseScale") || String(DEFAULTS.noiseScale)),
+    noiseScale: parseFloat(
+      urlParams.get("noiseScale") || String(DEFAULTS.noiseScale)
+    ),
   };
 
   const nameGenerator = new NameGenerator(`${Date.now()}`);
@@ -45,7 +59,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Load selected languages from URL
   const urlLanguages = urlParams.get("languages");
   let selectedLanguages: Language[] = urlLanguages
-    ? urlLanguages.split(",").filter(lang => Languages.includes(lang as Language)) as Language[]
+    ? (urlLanguages
+        .split(",")
+        .filter((lang) => Languages.includes(lang as Language)) as Language[])
     : [];
 
   let mapName = urlMapName || nameGenerator.generate();
@@ -62,7 +78,10 @@ document.addEventListener("DOMContentLoaded", () => {
     url.searchParams.set("seaLevel", String(settings.seaLevel));
     url.searchParams.set("clumpiness", String(settings.clumpiness));
     url.searchParams.set("edgeCurve", String(settings.edgeCurve));
-    url.searchParams.set("elevationContrast", String(settings.elevationContrast));
+    url.searchParams.set(
+      "elevationContrast",
+      String(settings.elevationContrast)
+    );
     url.searchParams.set("theme", settings.theme);
     url.searchParams.set("noiseScale", String(settings.noiseScale));
     url.searchParams.set("zoom", String(settings.zoom));
@@ -90,6 +109,13 @@ document.addEventListener("DOMContentLoaded", () => {
       canvas,
       cachedMap,
       settings,
+      panZoomController.panX,
+      panZoomController.panY,
+      panZoomController.viewScale
+    );
+    mapRenderer.drawRiversCenterLines(
+      canvas,
+      cachedMap,
       panZoomController.panX,
       panZoomController.panY,
       panZoomController.viewScale
@@ -284,7 +310,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // Update the toggle all button text
   const updateToggleAllButton = () => {
     const allChecked = Array.from(languageCheckboxes).every((cb) => cb.checked);
-    toggleAllLanguagesBtn.textContent = allChecked ? "deselect all" : "select all";
+    toggleAllLanguagesBtn.textContent = allChecked
+      ? "deselect all"
+      : "select all";
   };
 
   // Update selected languages when checkboxes change
