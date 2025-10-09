@@ -22,33 +22,57 @@
     </p>
   </div>
 
-  <div class="toolbar">
-    <label for="resolution">resolution: <span id="resolutionValue"></span></label>
-    <input id="resolution" type="range" min="0" max="1" step="0.05" />
+  <div>
+    <div class="toolbar">
 
-    <label for="zoom">zoom: <span id="zoomValue"></span></label>
-    <input id="zoom" type="range" min="0" max="1" step="0.01" />
+      <div class="toolbar-section">
+        <h4 class="toolbar-category">~~ map ~~</h3>
+          <label for="resolution">resolution: <span id="resolutionValue"></span></label>
+          <input id="resolution" type="range" min="0" max="1" step="0.05" />
 
-    <label for="noiseScale">noise scale: <span id="noiseScaleValue"></span></label>
-    <input id="noiseScale" type="range" min="0" max="1.0" step="0.01" />
+          <label for="zoom">zoom: <span id="zoomValue"></span></label>
+          <input id="zoom" type="range" min="0" max="1" step="0.01" />
 
-    <label for="clumpiness">clumpiness: <span id="clumpinessValue"></span></label>
-    <input id="clumpiness" type="range" min="-1" max="1" step="0.01" />
+          <label class="freq-header">lock frequencies:</label>
+          <input id="lock-frequencies" type="checkbox" checked aria-label="link sliders" />
+      </div>
 
-    <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
-    <input id="elevationContrast" type="range" min="0.0" max="1.0" step="0.01" />
+      <div class="toolbar-section">
+        <h4 class="toolbar-category">~~ terrain ~~</h3>
+          <label for="terrainFrequency">frequency: <span id="terrainFrequencyValue"></span></label>
+          <input id="terrainFrequency" type="range" min="0" max="1.0" step="0.01" />
 
-    <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
-    <input id="seaLevel" type="range" min="0.0" max="1.0" step="0.01" />
+          <label for="clumpiness">clumpiness: <span id="clumpinessValue"></span></label>
+          <input id="clumpiness" type="range" min="-1" max="1" step="0.01" />
 
-    <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
-    <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
+          <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
+          <input id="elevationContrast" type="range" min="0" max="1" step="0.01" />
+
+          <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
+          <input id="seaLevel" type="range" min="0" max="1" step="0.01" />
+      </div>
+
+
+      <div class="toolbar-section">
+        <h4 class="toolbar-category">~~ moisture ~~</h3>
+          <label for="weatherFrequency">frequency: <span id="weatherFrequencyValue"></span></label>
+          <input id="weatherFrequency" type="range" min="0" max="1.0" step="0.01" />
+
+          <label for="moistureContrast">moisture contrast: <span id="moistureContrastValue"></span></label>
+          <input id="moistureContrast" type="range" min="0" max="1" step="0.01" />
+
+          <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
+          <input id="rainfall" type="range" min="0" max="1" step="0.01" />
+      </div>
+
+    </div>
+
 
     <div class="reset-sliders-btn-container">
       <button id="reset-sliders">reset</button>
     </div>
-
   </div>
+
 
   <div id="map-container">
     <div id="title-container">
@@ -76,7 +100,8 @@
       </div>
       <div id="language-checkbox-list">
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="modern" checked> modern</label>
+          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="modern" checked>
+            modern</label>
           <label><input type="checkbox" class="language-checkbox" value="ANGLISH" checked> anglish</label>
           <label><input type="checkbox" class="language-checkbox" value="NEW_ANGLISH" checked> new anglish</label>
           <label><input type="checkbox" class="language-checkbox" value="ROMANCE" checked> romance</label>
@@ -93,7 +118,8 @@
           <label><input type="checkbox" class="language-checkbox" value="MONGOLIC" checked> mongolic</label>
         </div>
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="classic" checked> classic</label>
+          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="classic"
+              checked> classic</label>
           <label><input type="checkbox" class="language-checkbox" value="TAMILIC" checked> tamilic</label>
           <label><input type="checkbox" class="language-checkbox" value="QUECHUA" checked> quechua</label>
           <label><input type="checkbox" class="language-checkbox" value="NAHUATL" checked> nahuatl</label>
@@ -107,7 +133,8 @@
           <label><input type="checkbox" class="language-checkbox" value="LATINIC" checked> latinic</label>
         </div>
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="fictional" checked> fictional</label>
+          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="fictional"
+              checked> fictional</label>
           <label><input type="checkbox" class="language-checkbox" value="CELESTIC" checked> celestic</label>
           <label><input type="checkbox" class="language-checkbox" value="INFERNIC" checked> infernic</label>
           <label><input type="checkbox" class="language-checkbox" value="ARCANE" checked> arcane</label>
@@ -121,7 +148,8 @@
           <label><input type="checkbox" class="language-checkbox" value="LYRICIAN" checked> lyrician</label>
         </div>
         <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="silly" checked> silly</label>
+          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="silly" checked>
+            silly</label>
           <label><input type="checkbox" class="language-checkbox" value="SIMLISH" checked> simlish</label>
           <label><input type="checkbox" class="language-checkbox" value="OOGA_BOOGA" checked> ooga booga</label>
           <label><input type="checkbox" class="language-checkbox" value="DERPTONGUE" checked> derptongue</label>

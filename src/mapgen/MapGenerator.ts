@@ -26,7 +26,8 @@ export class MapGenerator {
     const settings: MapSettings = {
       ...input,
       resolution: lerp(10, 200, input.resolution),
-      noiseScale: lerp(0.1, 1.3, input.noiseScale),
+      terrainFrequency: lerp(0.1, 1.3, input.terrainFrequency),
+      weatherFrequency: lerp(0.1, 1.3, input.weatherFrequency),
       // clumpiness: lerp(-1, 1, input.clumpiness),
     };
     const { resolution } = settings;
@@ -70,23 +71,32 @@ export class MapGenerator {
 
   private genMoistures(baseMap: BaseMap, settings: MapSettings): number[] {
     const { points, numRegions, resolution } = baseMap;
+    const s = settings.weatherFrequency;
+    const moistureContrast = settings.moistureContrast ?? 0.5; // 0.5 = identity
+
     const out = new Array<number>(numRegions);
-    const s = settings.noiseScale;
+
     for (let r = 0; r < numRegions; r++) {
       const nx = points[r].x / resolution - 0.5;
       const ny = points[r].y / resolution - 0.5;
+
+      // base moisture from noise in [0,1]
       const m = (1 + this.noise2D(nx / s, ny / s)) / 2;
-      out[r] = clamp(m);
+
+      // apply contrast like elevationContrast does
+      out[r] = this.applyContrast(m, moistureContrast);
     }
+
     return out;
   }
+
 
   private genElevations(baseMap: BaseMap, settings: MapSettings): number[] {
     const { points, numRegions, resolution } = baseMap;
     const {
       edgeCurve,
       elevationContrast = 0.5,   // 0 = flat, 0.5 = identity, 1 = punchy
-      noiseScale,
+      terrainFrequency,
       clumpiness,                 // -1..1  (neg = Mediterranean, pos = Island)
     } = settings;
 
@@ -94,7 +104,7 @@ export class MapGenerator {
 
     // two-octave noise → ~[0,1]
     const fbm2 = (x: number, y: number) => {
-      const s = noiseScale;
+      const s = terrainFrequency;
       const n1 = this.noise2D(x / s, y / s);
       const n2 = this.noise2D((2 * x) / s, (2 * y) / s);
       return clamp(0.5 + 0.35 * n1 + 0.15 * n2);
@@ -105,17 +115,6 @@ export class MapGenerator {
       const d = 2 * Math.max(Math.abs(x), Math.abs(y));     // ~[0,1]
       const exp = lerp(0.5, 3.0, edgeCurve);
       return Math.pow(d, exp);
-    };
-
-    // contrast curve about 0.5, with 0.5 = identity
-    const applyContrast = (e: number) => {
-      const u = 2 * e - 1; // [-1,1]
-      const exp =
-        elevationContrast <= 0.5
-          ? lerp(3.0, 1.0, elevationContrast / 0.5)          // flatten
-          : lerp(1.0, 0.2, (elevationContrast - 0.5) / 0.5); // boost
-      const u2 = Math.sign(u) * Math.pow(Math.abs(u), exp);
-      return clamp((u2 + 1) * 0.5, 0, 1);
     };
 
     // ---- main ---------------------------------------------------------------
@@ -141,12 +140,19 @@ export class MapGenerator {
       //  When amt=0 ⇒ e=base; when amt=1 ⇒ e=average(base, C).
       const e = base + 0.5 * amt * (C - base);
 
-      out[r] = applyContrast(e);
+      out[r] = this.applyContrast(e, elevationContrast);
     }
 
     return out;
   }
 
-
-
+  private applyContrast(v: number, contrast: number): number {
+    const t = clamp(contrast, 0, 1);
+    const u = 2 * v - 1; // [-1,1] around 0
+    const exp = t <= 0.5
+      ? lerp(3.0, 1.0, t / 0.5)            // flatten
+      : lerp(1.0, 0.2, (t - 0.5) / 0.5);   // boost
+    const u2 = Math.sign(u) * Math.pow(Math.abs(u), exp);
+    return clamp((u2 + 1) * 0.5, 0, 1);
+  };
 }

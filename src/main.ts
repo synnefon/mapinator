@@ -6,76 +6,154 @@ import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
 import { PanZoomController } from "./renderer/PanZoomController";
 
-const fetchElement = <T>(id: string): T => {
-  const elem = document.getElementById(id) as T;
+const fetchElement = <T extends HTMLElement>(id: string): T => {
+  const elem = document.getElementById(id) as T | null;
   if (!elem) {
-    alert("UI init failed. Check element IDs.");
-    throw new Error("UI init failed. Check element IDs.");
+    alert(`UI init failed. Missing #${id}`);
+    throw new Error(`UI init failed. Missing #${id}`);
   }
   return elem;
 };
 
-const getCacheKey = (settings: MapSettings) => {
-  return `${settings.resolution}|${settings.rainfall}|${settings.seaLevel}|${settings.clumpiness}|${settings.elevationContrast}|${settings.noiseScale}`;
-};
-
 const mapCache = new Map<string, WorldMap>();
 
-document.addEventListener("DOMContentLoaded", () => {
-  // Check URL for parameters
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlMapName = urlParams.get("name") || urlParams.get("seed");
+// Numeric sliders we want to bind in a uniform way.
+type NumKey =
+  | "resolution"
+  | "rainfall"
+  | "seaLevel"
+  | "clumpiness"
+  | "elevationContrast"
+  | "moistureContrast"
+  | "terrainFrequency"
+  | "weatherFrequency";
 
-  // Load settings from URL or use defaults
-  const settings: MapSettings = {
-    resolution: parseFloat(urlParams.get("resolution") || String(DEFAULTS.resolution)),
-    jitter: parseFloat(urlParams.get("jitter") || String(DEFAULTS.jitter)),
-    zoom: parseFloat(urlParams.get("zoom") || String(DEFAULTS.zoom)),
-    rainfall: parseFloat(urlParams.get("rainfall") || String(DEFAULTS.rainfall)),
-    seaLevel: parseFloat(urlParams.get("seaLevel") || String(DEFAULTS.seaLevel)),
-    clumpiness: parseFloat(urlParams.get("clumpiness") || String(DEFAULTS.clumpiness)),
-    edgeCurve: parseFloat(urlParams.get("edgeCurve") || String(DEFAULTS.edgeCurve)),
-    elevationContrast: parseFloat(urlParams.get("elevationContrast") || String(DEFAULTS.elevationContrast)),
-    theme: (urlParams.get("theme") as MapSettings["theme"]) || DEFAULTS.theme,
-    noiseScale: parseFloat(urlParams.get("noiseScale") || String(DEFAULTS.noiseScale)),
+// Slider def now carries numericity + formatting
+type SliderDef = {
+  key: NumKey;
+  idBase: string;       // input id; label is `${idBase}Value`
+  min: number;
+  max: number;
+  step: number;
+  bound?: string;
+};
+
+// idBase is both the input id and label id with "Value" suffix.
+const sliderDefs: readonly SliderDef[] = [
+  { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.01 },
+  { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
+  { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
+  { key: "clumpiness", idBase: "clumpiness", min: -1, max: 1, step: 0.01 },
+  { key: "elevationContrast", idBase: "elevationContrast", min: 0, max: 1, step: 0.01 },
+  { key: "moistureContrast", idBase: "moistureContrast", min: 0, max: 1, step: 0.01 },
+  { key: "terrainFrequency", idBase: "terrainFrequency", min: 0, max: 1, step: 0.01 },
+  { key: "weatherFrequency", idBase: "weatherFrequency", min: 0, max: 1, step: 0.01 },
+];
+
+const SLIDER_KEYS = sliderDefs.map((d) => d.key) as readonly NumKey[];
+const URL_NUM_KEYS = [...SLIDER_KEYS, "zoom"] as const;
+
+const getCacheKey = (s: MapSettings) => SLIDER_KEYS.map((k) => s[k]).join("|");
+
+document.addEventListener("DOMContentLoaded", () => {
+  // --- URL helpers
+  const url = new URL(window.location.href);
+  const urlParams = url.searchParams;
+  const numFromUrl = (k: keyof MapSettings, d: number) =>
+    parseFloat(urlParams.get(String(k)) ?? String(d));
+
+  const lockFrequencies = (() => {
+    const el = document.getElementById("lock-frequencies") as HTMLInputElement | null;
+    return el ?? Object.assign(document.createElement("input"), { checked: true }); // default true if missing
+  })();
+
+  let syncingFreq = false; // guard to avoid loops
+
+  const syncFreq = (srcKey: "terrainFrequency" | "weatherFrequency", v: number) => {
+    if (!lockFrequencies.checked || syncingFreq) return;
+
+    syncingFreq = true;
+
+    const dstKey = srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
+
+    // Update settings
+    settings[dstKey] = v as any;
+
+    // Update UI label + input without triggering input handlers
+    const dst = bound[dstKey];
+    dst.input.value = String(v);
+    dst.label.textContent = v.toFixed(dst.decimals);
+
+    // Keep URL + map in sync once (we call draw once after both updates)
+    updateURL();
+    drawMap();
+
+    syncingFreq = false;
   };
 
+  // All numeric settings to load from URL or defaults
+  const NUMERIC_SETTING_KEYS = [...URL_NUM_KEYS, "edgeCurve", "jitter"] as const;
+  type NumericSettingKey = typeof NUMERIC_SETTING_KEYS[number];
+
+  const numericSettings = NUMERIC_SETTING_KEYS.reduce((acc, k) => {
+    (acc as any)[k] = numFromUrl(k, DEFAULTS[k]); // safe: both number
+    return acc;
+  }, {} as Pick<MapSettings, NumericSettingKey>);
+
+  const settings: Pick<MapSettings, NumericSettingKey> & { theme: MapSettings["theme"] } = {
+    ...numericSettings,
+    theme: (urlParams.get("theme") as MapSettings["theme"]) ?? DEFAULTS.theme,
+  };
+
+  console.log(urlParams.get("theme"))
+
+  const urlMapName = urlParams.get("name") || urlParams.get("seed");
   const nameGenerator = new NameGenerator(`${Date.now()}`);
-
-  // Initialize with all languages selected
   let selectedLanguages: Language[] = [...Languages];
-
   let mapName = urlMapName || nameGenerator.generate();
 
+  // --- Core objects
   const mapGenerator = new MapGenerator(mapName);
   const mapRenderer = new MapRenderer();
 
-  // Update URL with current map name and all settings
-  const updateURL = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("name", mapName);
-    url.searchParams.set("resolution", String(settings.resolution));
-    url.searchParams.set("rainfall", String(settings.rainfall));
-    url.searchParams.set("seaLevel", String(settings.seaLevel));
-    url.searchParams.set("clumpiness", String(settings.clumpiness));
-    url.searchParams.set("edgeCurve", String(settings.edgeCurve));
-    url.searchParams.set("elevationContrast", String(settings.elevationContrast));
-    url.searchParams.set("theme", settings.theme);
-    url.searchParams.set("noiseScale", String(settings.noiseScale));
-    url.searchParams.set("zoom", String(settings.zoom));
+  // --- Elements
+  const canvas = fetchElement<HTMLCanvasElement>("map");
+  const regenBtn = fetchElement<HTMLButtonElement>("regen");
+  const resetSlidersBtn = fetchElement<HTMLButtonElement>("reset-sliders");
+  const zoomInput = fetchElement<HTMLInputElement>("zoom");
+  const zoomLabel = fetchElement<HTMLSpanElement>("zoomValue");
 
+  const mapTitle = fetchElement<HTMLInputElement>("map-title");
+  const loadTitleBtn = fetchElement<HTMLButtonElement>("load-title-btn");
+  const downloadBtn = fetchElement<HTMLButtonElement>("download");
+
+  const themeRadios = document.querySelectorAll<HTMLInputElement>(".theme-radio");
+  const languageCheckboxes = document.querySelectorAll<HTMLInputElement>(".language-checkbox");
+  const categoryCheckboxes = document.querySelectorAll<HTMLInputElement>(".category-checkbox");
+  const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>("toggle-all-languages");
+
+  // --- URL updater (single source of truth)
+  const updateURL = () => {
+    url.searchParams.set("name", mapName);
+    URL_NUM_KEYS.forEach((k) => url.searchParams.set(k, String(settings[k])));
+    url.searchParams.set("theme", settings.theme);
     window.history.replaceState({}, "", url.toString());
   };
 
+  const updateURLParam = (param: string, value: string) => {
+    url.searchParams.set(param, value);
+    window.history.replaceState({}, "", url.toString());
+  };
+
+
+  // --- Renderers
   const drawMap = () => {
-    // Create settings cache key (zoom removed - it's now just camera scale)
     const cacheKey = getCacheKey(settings);
     let cachedMap = mapCache.get(cacheKey);
     if (!cachedMap) {
       cachedMap = mapGenerator.generateMap(settings);
       mapCache.set(cacheKey, cachedMap);
     }
-    // Render with current pan and camera zoom (viewport culling happens in renderer)
     mapRenderer.drawCellColors(
       canvas,
       cachedMap,
@@ -91,19 +169,16 @@ document.addEventListener("DOMContentLoaded", () => {
     loadTitleBtn.style.transform = `translate(${titleWidth / 2 + 16}px, -50%)`;
   };
 
-  const drawTitle = (n: string | undefined = undefined) => {
+  const drawTitle = (n?: string) => {
     const name =
       n ??
       nameGenerator.generate({
         lang:
           selectedLanguages.length === 0
             ? undefined
-            : selectedLanguages[
-                Math.floor(Math.random() * selectedLanguages.length)
-              ],
+            : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)],
       });
     mapTitle.value = name;
-    // updateTitleFontSize();
     setTimeout(updateButtonPosition, 0);
   };
 
@@ -122,19 +197,16 @@ document.addEventListener("DOMContentLoaded", () => {
     mapName = n;
     mapGenerator.reSeed(n);
     mapCache.clear();
+    
     panZoomController.resetPan();
     updateURL();
     redraw();
   };
 
-  const canvas = fetchElement<HTMLCanvasElement>("map");
-  const regenBtn = fetchElement<HTMLButtonElement>("regen");
-  const resetSlidersBtn = fetchElement<HTMLButtonElement>("reset-sliders");
-
-  // Create pan/zoom controller
+  // --- Pan/Zoom controller
   const panZoomController = new PanZoomController({
     canvas,
-    onRedraw: () => drawMap(),
+    onRedraw: drawMap,
     getCachedMap: () => mapCache.get(getCacheKey(settings)) ?? null,
     momentum: 0.3,
     onZoomChange: (zoom, viewScale) => {
@@ -143,293 +215,196 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   });
 
-  const zoomInput = fetchElement<HTMLInputElement>("zoom");
-  const zoomLabel = fetchElement<HTMLSpanElement>("zoomValue");
-
-  const rainfallInput = fetchElement<HTMLInputElement>("rainfall");
-  const rainfallLabel = fetchElement<HTMLSpanElement>("rainfallValue");
-
-  const seaLevelInput = fetchElement<HTMLInputElement>("seaLevel");
-  const seaLevelLabel = fetchElement<HTMLSpanElement>("seaLevelValue");
-
-  const clumpinessInput = fetchElement<HTMLInputElement>("clumpiness");
-  const clumpinessLabel = fetchElement<HTMLSpanElement>("clumpinessValue");
-
-  const elevationContrastInput =
-    fetchElement<HTMLInputElement>("elevationContrast");
-  const elevationContrastLabel = fetchElement<HTMLSpanElement>(
-    "elevationContrastValue"
-  );
-
-  const resolutionInput = fetchElement<HTMLInputElement>("resolution");
-  const resolutionLabel = fetchElement<HTMLSpanElement>("resolutionValue");
-
-  const noiseScaleInput = fetchElement<HTMLInputElement>("noiseScale");
-  const noiseScaleLabel = fetchElement<HTMLSpanElement>("noiseScaleValue");
-
-  // Color scheme radio buttons
-  const themeRadios =
-    document.querySelectorAll<HTMLInputElement>(".theme-radio");
-
-  // Language checkboxes
-  const languageCheckboxes =
-    document.querySelectorAll<HTMLInputElement>(".language-checkbox");
-  const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>(
-    "toggle-all-languages"
-  );
-
-  const mapTitle = fetchElement<HTMLInputElement>("map-title");
-  const loadTitleBtn = fetchElement<HTMLButtonElement>("load-title-btn");
-
-  // Initialize sliders + labels from DEFAULTS
+  // --- Initialize zoom
   zoomInput.value = String(settings.zoom);
-  panZoomController.setZoom(settings.zoom); // Initialize controller zoom
+  panZoomController.setZoom(settings.zoom);
   zoomLabel.textContent = panZoomController.viewScale.toFixed(2);
-
-  rainfallInput.value = String(settings.rainfall);
-  rainfallLabel.textContent = settings.rainfall.toFixed(2);
-
-  seaLevelInput.value = String(settings.seaLevel);
-  seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
-
-  clumpinessInput.value = String(settings.clumpiness);
-  clumpinessLabel.textContent = settings.clumpiness.toFixed(2);
-
-  elevationContrastInput.value = String(settings.elevationContrast);
-  elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
-
-  resolutionInput.value = String(settings.resolution);
-  resolutionLabel.textContent = settings.resolution.toFixed(2);
-
-  noiseScaleInput.value = String(settings.noiseScale);
-  noiseScaleLabel.textContent = settings.noiseScale.toFixed(2);
-
-  // Initialize selected theme radio button
-  themeRadios.forEach((radio) => {
-    if (radio.value === settings.theme) {
-      radio.checked = true;
-    }
-  });
-
-  // Update settings as the user moves sliders (then redraw)
   zoomInput.addEventListener("input", () => {
     settings.zoom = Number(zoomInput.value);
     panZoomController.setZoom(settings.zoom);
-    updateURL();
+    updateURLParam("zoom", String(settings.zoom));
     drawMap();
   });
 
-  rainfallInput.addEventListener("input", () => {
-    settings.rainfall = Number(rainfallInput.value);
-    rainfallLabel.textContent = settings.rainfall.toFixed(2);
-    updateURL();
-    drawMap();
+  // --- Generic slider binder (uses numericity from defs)
+  const bindSlider = (def: SliderDef) => {
+    const { key, idBase, min, max, step } = def;
+    const input = fetchElement<HTMLInputElement>(idBase);
+    const label = fetchElement<HTMLSpanElement>(`${idBase}Value`);
+
+    // Apply numeric constraints to the input element
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+
+    // Initialize from settings
+    const init = Number(settings[key]);
+    input.value = String(init);
+    label.textContent = init.toFixed(2);
+
+    input.addEventListener("input", () => {
+      let v = Number(input.value);
+      if (!Number.isFinite(v)) v = Number(DEFAULTS[key]);
+
+      if (v < min) v = min;
+      else if (v > max) v = max;
+
+      settings[key] = v as any;
+      input.value = String(v);
+      label.textContent = v.toFixed(2);
+
+      updateURLParam(key, String(settings[key]));
+      drawMap();
+    });
+
+    return { input, label, decimals: 2 };
+  };
+
+  // Bind all numeric sliders uniformly
+  const bound = Object.fromEntries(
+    sliderDefs.map((d) => [d.key, bindSlider(d)])
+  ) as Record<NumKey, { input: HTMLInputElement; label: HTMLSpanElement; decimals: number }>;
+
+
+  // When either slider moves, mirror the other if linked
+  bound.terrainFrequency.input.addEventListener("input", () => {
+    const v = Number(bound.terrainFrequency.input.value);
+    // its own bindSlider handler already set settings/label/URL/draw
+    // We only need to mirror the other one here:
+    syncFreq("terrainFrequency", v);
   });
 
-  seaLevelInput.addEventListener("input", () => {
-    settings.seaLevel = Number(seaLevelInput.value);
-    seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
-    updateURL();
-    drawMap();
+  bound.weatherFrequency.input.addEventListener("input", () => {
+    const v = Number(bound.weatherFrequency.input.value);
+    syncFreq("weatherFrequency", v);
   });
 
-  clumpinessInput.addEventListener("input", () => {
-    settings.clumpiness = Number(clumpinessInput.value);
-    clumpinessLabel.textContent = settings.clumpiness.toFixed(2);
-    updateURL();
-    drawMap();
-  });
-
-  elevationContrastInput.addEventListener("input", () => {
-    settings.elevationContrast = Number(elevationContrastInput.value);
-    elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
-    updateURL();
-    drawMap();
-  });
-
-  resolutionInput.addEventListener("input", () => {
-    settings.resolution = Number(resolutionInput.value);
-    resolutionLabel.textContent = settings.resolution.toFixed(2);
-    updateURL();
-    drawMap();
-  });
-
-  noiseScaleInput.addEventListener("input", () => {
-    settings.noiseScale = Number(noiseScaleInput.value);
-    noiseScaleLabel.textContent = settings.noiseScale.toFixed(2);
-    updateURL();
-    drawMap();
-  });
-
+  // --- Theme radios
   themeRadios.forEach((radio) => {
+    radio.checked = radio.value === settings.theme;
     radio.addEventListener("change", () => {
       if (radio.checked) {
         settings.theme = radio.value as MapSettings["theme"];
-        updateURL();
+        updateURLParam("theme", String(radio.value));
         drawMap();
       }
     });
   });
 
-  // Update the toggle all button text
-  const updateToggleAllButton = () => {
-    const allChecked = Array.from(languageCheckboxes).every((cb) => cb.checked);
-    toggleAllLanguagesBtn.textContent = allChecked ? "deselect all" : "select all";
+  // --- Language selection helpers
+  const getCategoryLanguages = (category: string) =>
+    Array.from(languageCheckboxes).filter((cb) => {
+      const parent = cb.closest(".language-category");
+      const catCb = parent?.querySelector<HTMLInputElement>(".category-checkbox");
+      return catCb?.dataset.category === category;
+    });
+
+  const updateCategoryCheckbox = (categoryCheckbox: HTMLInputElement) => {
+    const langs = getCategoryLanguages(categoryCheckbox.dataset.category ?? "");
+    const all = langs.every((cb) => cb.checked);
+    const none = langs.every((cb) => !cb.checked);
+    categoryCheckbox.checked = all;
+    categoryCheckbox.indeterminate = !all && !none;
   };
 
-  // Update selected languages when checkboxes change
   const updateSelectedLanguages = () => {
     selectedLanguages = Array.from(languageCheckboxes)
       .filter((cb) => cb.checked)
       .map((cb) => cb.value as Language);
-    updateToggleAllButton();
-  };
-
-  // Category checkbox logic
-  const categoryCheckboxes =
-    document.querySelectorAll<HTMLInputElement>(".category-checkbox");
-
-  const getCategoryLanguages = (category: string) => {
-    return Array.from(languageCheckboxes).filter((cb) => {
-      const parentCategory = cb.closest(".language-category");
-      const categoryCheckbox =
-        parentCategory?.querySelector<HTMLInputElement>(".category-checkbox");
-      return categoryCheckbox?.dataset.category === category;
-    });
-  };
-
-  const updateCategoryCheckbox = (categoryCheckbox: HTMLInputElement) => {
-    const categoryLanguages = getCategoryLanguages(
-      categoryCheckbox.dataset.category || ""
-    );
-    const allChecked = categoryLanguages.every((cb) => cb.checked);
-    const noneChecked = categoryLanguages.every((cb) => !cb.checked);
-
-    categoryCheckbox.checked = allChecked;
-    categoryCheckbox.indeterminate = !allChecked && !noneChecked;
-  };
-
-  categoryCheckboxes.forEach((categoryCheckbox) => {
-    categoryCheckbox.addEventListener("change", () => {
-      const categoryLanguages = getCategoryLanguages(
-        categoryCheckbox.dataset.category || ""
-      );
-      categoryLanguages.forEach((cb) => {
-        cb.checked = categoryCheckbox.checked;
-      });
-      updateSelectedLanguages();
-    });
-  });
-
-  languageCheckboxes.forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      updateSelectedLanguages();
-      // Update parent category checkbox state
-      const parentCategory = checkbox.closest(".language-category");
-      const categoryCheckbox =
-        parentCategory?.querySelector<HTMLInputElement>(".category-checkbox");
-      if (categoryCheckbox) {
-        updateCategoryCheckbox(categoryCheckbox);
-      }
-    });
-  });
-
-  // Initialize language checkboxes from URL
-  languageCheckboxes.forEach((checkbox) => {
-    checkbox.checked = selectedLanguages.includes(checkbox.value as Language);
-  });
-
-  // Initialize category checkboxes based on language selections
-  categoryCheckboxes.forEach((categoryCheckbox) => {
-    updateCategoryCheckbox(categoryCheckbox);
-  });
-
-  // Initialize selected languages on page load
-  updateSelectedLanguages();
-  updateToggleAllButton();
-
-  // Toggle all languages button
-  toggleAllLanguagesBtn.addEventListener("click", () => {
     const allChecked = Array.from(languageCheckboxes).every((cb) => cb.checked);
-    languageCheckboxes.forEach((cb) => {
-      cb.checked = !allChecked;
+    toggleAllLanguagesBtn.textContent = allChecked ? "deselect all" : "select all";
+  };
+
+  // Wire category checkboxes
+  categoryCheckboxes.forEach((catCb) => {
+    catCb.addEventListener("change", () => {
+      getCategoryLanguages(catCb.dataset.category ?? "").forEach((cb) => (cb.checked = catCb.checked));
+      updateSelectedLanguages();
     });
+  });
+
+  // Wire individual language checkboxes
+  languageCheckboxes.forEach((cb) => {
+    cb.checked = selectedLanguages.includes(cb.value as Language);
+    cb.addEventListener("change", () => {
+      updateSelectedLanguages();
+      const parent = cb.closest(".language-category");
+      const catCb = parent?.querySelector<HTMLInputElement>(".category-checkbox");
+      if (catCb) updateCategoryCheckbox(catCb);
+    });
+  });
+
+  // Initialize category states
+  categoryCheckboxes.forEach(updateCategoryCheckbox as any);
+  updateSelectedLanguages();
+
+  // Toggle-all button
+  toggleAllLanguagesBtn.addEventListener("click", () => {
+    const all = Array.from(languageCheckboxes).every((cb) => cb.checked);
+    languageCheckboxes.forEach((cb) => (cb.checked = !all));
     categoryCheckboxes.forEach((cb) => {
-      cb.checked = !allChecked;
+      cb.checked = !all;
       cb.indeterminate = false;
     });
     updateSelectedLanguages();
   });
 
+  // --- Buttons
   regenBtn.addEventListener("click", () => {
     nameGenerator.reSeed(`${Date.now()}`);
     mapName = nameGenerator.generate({
       lang:
         selectedLanguages.length === 0
           ? undefined
-          : selectedLanguages[
-              Math.floor(Math.random() * selectedLanguages.length)
-            ],
+          : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)],
     });
     mapGenerator.reSeed(mapName);
     mapCache.clear();
     panZoomController.resetPan();
-    updateURL();
-
+    updateURLParam("name", mapName);
     redraw();
   });
 
   resetSlidersBtn.addEventListener("click", () => {
-    // Reset all settings to defaults
-    settings.resolution = DEFAULTS.resolution;
-    settings.rainfall = DEFAULTS.rainfall;
-    settings.seaLevel = DEFAULTS.seaLevel;
-    settings.clumpiness = DEFAULTS.clumpiness;
-    settings.edgeCurve = DEFAULTS.edgeCurve;
-    settings.elevationContrast = DEFAULTS.elevationContrast;
-    settings.noiseScale = DEFAULTS.noiseScale;
-    settings.zoom = DEFAULTS.zoom;
+    lockFrequencies.checked = true;
+    
+    // Reset settings to defaults
+    URL_NUM_KEYS.forEach((k) => {
+      settings[k] = DEFAULTS[k] as any;
+    });
 
-    // Update UI
-    resolutionInput.value = String(settings.resolution);
-    resolutionLabel.textContent = settings.resolution.toFixed(2);
+    // Sync UI for sliders (respect per-slider decimals)
+    SLIDER_KEYS.forEach((k) => {
+      const { input, label, decimals } = bound[k];
+      const v = Number(settings[k]);
+      input.value = String(v);
+      label.textContent = v.toFixed(decimals);
+    });
 
-    rainfallInput.value = String(settings.rainfall);
-    rainfallLabel.textContent = settings.rainfall.toFixed(2);
-
-    seaLevelInput.value = String(settings.seaLevel);
-    seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
-
-    clumpinessInput.value = String(settings.clumpiness);
-    clumpinessLabel.textContent = settings.clumpiness.toFixed(2);
-
-    elevationContrastInput.value = String(settings.elevationContrast);
-    elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
-
-    noiseScaleInput.value = String(settings.noiseScale);
-    noiseScaleLabel.textContent = settings.noiseScale.toFixed(2);
-
+    // Sync zoom separately
     zoomInput.value = String(settings.zoom);
     panZoomController.setZoom(settings.zoom);
+    panZoomController.resetPan();
 
-    // Clear cache and redraw
     mapCache.clear();
     updateURL();
     drawMap();
   });
 
-  // initial render
-  updateURL();
-  redraw();
+  loadTitleBtn.addEventListener("click", () => loadMap(mapTitle.value.trim()));
 
-  // Initialize button position after render
-  setTimeout(updateButtonPosition, 100);
+  mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      loadMap(mapTitle.value.trim());
+      mapTitle.blur();
+    }
+  });
 
-  const downloadBtn = fetchElement<HTMLButtonElement>("download");
+  mapTitle.addEventListener("input", updateButtonPosition);
+
   downloadBtn.addEventListener("click", () => {
     const mapTitleText = mapTitle.value || "Untitled Map";
-
-    // create a temporary canvas with extra space for title
     const exportCanvas = document.createElement("canvas");
     const padding = 60;
     exportCanvas.width = canvas.width;
@@ -439,41 +414,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
     ctx.fillStyle = "#dedede";
     ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-
-    // draw map
     ctx.drawImage(canvas, 0, padding);
 
-    // draw title
     ctx.font = "bold 36px 'Roboto Mono', monospace";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
     ctx.fillText(mapTitleText, exportCanvas.width / 2, 40);
 
-    // download
     const link = document.createElement("a");
     link.download = `MAPINATOR_${mapTitleText.replace(/\s+/g, "_")}.png`;
     link.href = exportCanvas.toDataURL("image/png");
     link.click();
   });
 
-  loadTitleBtn.addEventListener("click", () => {
-    mapName = mapTitle.value.trim();
-    loadMap(mapName);
-  });
-
-  // Load seed on Enter key
-  mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      mapName = mapTitle.value.trim();
-      loadMap(mapName);
-      mapTitle.blur(); // Remove focus after loading
-    }
-  });
-
-  // Update button position as user types
-  mapTitle.addEventListener("input", updateButtonPosition);
-
-  // Update font size as user types
-  // mapTitle.addEventListener("input", updateTitleFontSize);
+  // --- Initial render
+  updateURL();
+  redraw();
+  setTimeout(updateButtonPosition, 100);
 });
