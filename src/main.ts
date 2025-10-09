@@ -119,12 +119,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Elements
   const canvas = fetchElement<HTMLCanvasElement>("map");
   const regenBtn = fetchElement<HTMLButtonElement>("regen");
+  const regenBtnImg = fetchElement<HTMLImageElement>('regen-btn-img');
   const resetSlidersBtn = fetchElement<HTMLButtonElement>("reset-sliders");
   const zoomInput = fetchElement<HTMLInputElement>("zoom");
   const zoomLabel = fetchElement<HTMLSpanElement>("zoomValue");
 
   const mapTitle = fetchElement<HTMLInputElement>("map-title");
   const loadTitleBtn = fetchElement<HTMLButtonElement>("load-title-btn");
+  const loadTitleBtnImg = fetchElement<HTMLImageElement>("load-title-btn-img");
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
 
   const themeRadios = document.querySelectorAll<HTMLInputElement>(".theme-radio");
@@ -197,7 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
     mapName = n;
     mapGenerator.reSeed(n);
     mapCache.clear();
-    
+
     panZoomController.resetPan();
     updateURL();
     redraw();
@@ -351,6 +353,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- Buttons
   regenBtn.addEventListener("click", () => {
+    playEffect(regenBtnImg, "spin");
     nameGenerator.reSeed(`${Date.now()}`);
     mapName = nameGenerator.generate({
       lang:
@@ -365,9 +368,32 @@ document.addEventListener("DOMContentLoaded", () => {
     redraw();
   });
 
+  const fadeOut = (btn: HTMLButtonElement) => {
+    btn.classList.add('clicked');
+    // 2) In the next frame, enable transitions
+    requestAnimationFrame(() => {
+      btn.classList.add('enable-transition');
+
+      // 3) After a short display, remove highlight -> will fade back
+      setTimeout(() => {
+        btn.classList.remove('clicked');
+        // optional cleanup after it finishes fading
+        const off = (e: { propertyName: string; }) => {
+          if (e.propertyName === 'background-color') {
+            btn.classList.remove('enable-transition');
+            btn.removeEventListener('transitionend', off);
+          }
+        };
+        btn.addEventListener('transitionend', off);
+      }, 222);
+    });
+  }
+
   resetSlidersBtn.addEventListener("click", () => {
+    fadeOut(resetSlidersBtn);
+
     lockFrequencies.checked = true;
-    
+
     // Reset settings to defaults
     URL_NUM_KEYS.forEach((k) => {
       settings[k] = DEFAULTS[k] as any;
@@ -391,7 +417,10 @@ document.addEventListener("DOMContentLoaded", () => {
     drawMap();
   });
 
-  loadTitleBtn.addEventListener("click", () => loadMap(mapTitle.value.trim()));
+  loadTitleBtn.addEventListener("click", () => {
+    playEffect(loadTitleBtnImg, "bounce")
+    loadMap(mapTitle.value.trim());
+  });
 
   mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -403,7 +432,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   mapTitle.addEventListener("input", updateButtonPosition);
 
+  const playEffect = (btn: HTMLElement, effect: "bounce" | "spin") => {
+    btn.classList.remove(effect);
+    void btn.offsetWidth; // reflow so animation restarts
+    btn.classList.add(effect);
+  }
+
   downloadBtn.addEventListener("click", () => {
+    playEffect(downloadBtn, "bounce");
+
     const mapTitleText = mapTitle.value || "Untitled Map";
     const exportCanvas = document.createElement("canvas");
     const padding = 60;

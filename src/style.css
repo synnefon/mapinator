@@ -23,6 +23,32 @@ img.button-img {
   width: min(3vh, 3vw);
 }
 
+*.spin {
+  animation: spin 0.4s linear;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+*.bounce {
+  animation: bounce 0.4s ease;
+}
+
+@keyframes bounce {
+  0%   { transform: translateY(0); }
+  30%  { transform: translateY(-8px); }
+  60%  { transform: translateY(0); }
+  80%  { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
+}
+
 button.img-button-container:hover img.button-img {
   filter: invert(100%);
 }
@@ -65,6 +91,14 @@ body {
 #reset-sliders {
   width: 100%;
   margin-left: 1em;
+}
+
+*.enable-transition {
+  transition: background-color 0.8s ease;
+}
+*.clicked {
+  background-color: var(--highlight);
+  color: var(--bg);
 }
 
 .toolbar label {
@@ -211,9 +245,12 @@ input[type="checkbox"] {
   background-color: var(--bg);
 }
 
+input[type="checkbox"]:active {
+  background-color: var(--highlight);
+}
+
 input[type="checkbox"]:checked {
   background-color: var(--highlight);
-  color: var(--text);
 }
 
 input[type="checkbox"]:indeterminate {
@@ -271,6 +308,11 @@ input[type="checkbox"]:indeterminate::after {
 
 #theme-radio-list label:has(input[type="radio"]:checked) {
   background-color: var(--highlight);
+  color: var(--bg);
+}
+
+#theme-radio-list label:has(input[type="radio"]:active) {
+  background: var(--highlight);
   color: var(--bg);
 }
 
