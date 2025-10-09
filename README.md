@@ -24,7 +24,7 @@ Then open your browser at [http://localhost:5173](http://localhost:5173).
 
 - **TypeScript**  
 - **Vite** (bundler + dev server)  
-- **Delaunator** (mesh)  
+- **D3-Delaunay** (mesh)  
 - **Simplex-Noise** (elevation & moisture)  
 
 ---
