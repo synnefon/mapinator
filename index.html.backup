@@ -129,8 +129,8 @@
       </div>
 
       <div id="theme-select-container">
-        <label for="colorScheme">theme:</label>
-        <select id="colorScheme">
+        <label for="theme">theme:</label>
+        <select id="theme">
           <option value="default">default</option>
           <option value="oldAtlas">old atlas</option>
           <option value="verdant">verdant</option>

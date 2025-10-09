@@ -44,11 +44,19 @@ body {
   flex-direction: column;
   gap: 1.5vh;
   margin-left: 1em;
-  margin-top: 1em;  
+  margin-top: 1em;
   border: 4px solid var(--text);
   padding: 1em;
   box-sizing: border-box;
   overflow-y: scroll;
+}
+
+.reset-sliders-btn-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 1em;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
 }
 
 .toolbar label {

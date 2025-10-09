@@ -24,7 +24,7 @@
 
   <div class="toolbar">
     <label for="resolution">resolution: <span id="resolutionValue"></span></label>
-    <input id="resolution" type="range" min="0" max="1" step="0.01" />
+    <input id="resolution" type="range" min="0" max="1" step="0.05" />
 
     <label for="zoom">zoom: <span id="zoomValue"></span></label>
     <input id="zoom" type="range" min="0" max="1" step="0.01" />
@@ -43,6 +43,10 @@
 
     <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
     <input id="rainfall" type="range" min="0.0" max="1.0" step="0.01" />
+
+    <div class="reset-sliders-btn-container">
+      <button id="reset-sliders">reset</button>
+    </div>
 
   </div>
 
@@ -130,14 +134,14 @@
       <div id="theme-select-container">
         <label>theme</label>
         <div id="theme-radio-list">
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="default" checked> default</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="oldAtlas"> old atlas</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="verdant"> verdant</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="rainbow"> rainbow</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="ashfall"> ashfall</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="winter"> winter</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="autumn"> autumn</label>
-          <label><input type="radio" class="theme-radio" name="colorScheme" value="greyscale"> greyscale</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="default" checked> default</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="oldAtlas"> old atlas</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="verdant"> verdant</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> rainbow</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="ashfall"> ashfall</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="winter"> winter</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="autumn"> autumn</label>
+          <label><input type="radio" class="theme-radio" name="theme" value="greyscale"> greyscale</label>
         </div>
       </div>
     </div>

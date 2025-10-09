@@ -1,4 +1,4 @@
-import type { Language } from "./common/language";
+import { Languages, type Language } from "./common/language";
 import type { WorldMap } from "./common/map";
 import { DEFAULTS, type MapSettings } from "./common/settings";
 import { MapGenerator } from "./mapgen/MapGenerator";
@@ -22,15 +22,60 @@ const getCacheKey = (settings: MapSettings) => {
 const mapCache = new Map<string, WorldMap>();
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Single source of truth
-  const settings: MapSettings = { ...DEFAULTS };
+  // Check URL for parameters
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlMapName = urlParams.get("name") || urlParams.get("seed");
+
+  // Load settings from URL or use defaults
+  const settings: MapSettings = {
+    resolution: parseFloat(urlParams.get("resolution") || String(DEFAULTS.resolution)),
+    jitter: parseFloat(urlParams.get("jitter") || String(DEFAULTS.jitter)),
+    zoom: parseFloat(urlParams.get("zoom") || String(DEFAULTS.zoom)),
+    rainfall: parseFloat(urlParams.get("rainfall") || String(DEFAULTS.rainfall)),
+    seaLevel: parseFloat(urlParams.get("seaLevel") || String(DEFAULTS.seaLevel)),
+    clumpiness: parseFloat(urlParams.get("clumpiness") || String(DEFAULTS.clumpiness)),
+    edgeCurve: parseFloat(urlParams.get("edgeCurve") || String(DEFAULTS.edgeCurve)),
+    elevationContrast: parseFloat(urlParams.get("elevationContrast") || String(DEFAULTS.elevationContrast)),
+    theme: (urlParams.get("theme") as MapSettings["theme"]) || DEFAULTS.theme,
+    noiseScale: parseFloat(urlParams.get("noiseScale") || String(DEFAULTS.noiseScale)),
+  };
 
   const nameGenerator = new NameGenerator(`${Date.now()}`);
-  let selectedLanguages: Language[] = [];
-  let mapName = nameGenerator.generate();
+
+  // Load selected languages from URL
+  const urlLanguages = urlParams.get("languages");
+  let selectedLanguages: Language[] = urlLanguages
+    ? urlLanguages.split(",").filter(lang => Languages.includes(lang as Language)) as Language[]
+    : [];
+
+  let mapName = urlMapName || nameGenerator.generate();
 
   const mapGenerator = new MapGenerator(mapName);
   const mapRenderer = new MapRenderer();
+
+  // Update URL with current map name and all settings
+  const updateURL = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("name", mapName);
+    url.searchParams.set("resolution", String(settings.resolution));
+    url.searchParams.set("rainfall", String(settings.rainfall));
+    url.searchParams.set("seaLevel", String(settings.seaLevel));
+    url.searchParams.set("clumpiness", String(settings.clumpiness));
+    url.searchParams.set("edgeCurve", String(settings.edgeCurve));
+    url.searchParams.set("elevationContrast", String(settings.elevationContrast));
+    url.searchParams.set("theme", settings.theme);
+    url.searchParams.set("noiseScale", String(settings.noiseScale));
+    url.searchParams.set("zoom", String(settings.zoom));
+
+    // Store selected languages
+    if (selectedLanguages.length > 0) {
+      url.searchParams.set("languages", selectedLanguages.join(","));
+    } else {
+      url.searchParams.delete("languages");
+    }
+
+    window.history.replaceState({}, "", url.toString());
+  };
 
   const drawMap = () => {
     // Create settings cache key (zoom removed - it's now just camera scale)
@@ -88,11 +133,13 @@ document.addEventListener("DOMContentLoaded", () => {
     mapGenerator.reSeed(n);
     mapCache.clear();
     panZoomController.resetPan();
+    updateURL();
     redraw();
   };
 
   const canvas = fetchElement<HTMLCanvasElement>("map");
   const regenBtn = fetchElement<HTMLButtonElement>("regen");
+  const resetSlidersBtn = fetchElement<HTMLButtonElement>("reset-sliders");
 
   // Create pan/zoom controller
   const panZoomController = new PanZoomController({
@@ -169,7 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Initialize selected theme radio button
   themeRadios.forEach((radio) => {
-    if (radio.value === settings.colorScheme) {
+    if (radio.value === settings.theme) {
       radio.checked = true;
     }
   });
@@ -178,59 +225,75 @@ document.addEventListener("DOMContentLoaded", () => {
   zoomInput.addEventListener("input", () => {
     settings.zoom = Number(zoomInput.value);
     panZoomController.setZoom(settings.zoom);
+    updateURL();
     drawMap();
   });
 
   rainfallInput.addEventListener("input", () => {
     settings.rainfall = Number(rainfallInput.value);
     rainfallLabel.textContent = settings.rainfall.toFixed(2);
+    updateURL();
     drawMap();
   });
 
   seaLevelInput.addEventListener("input", () => {
     settings.seaLevel = Number(seaLevelInput.value);
     seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
+    updateURL();
     drawMap();
   });
 
   clumpinessInput.addEventListener("input", () => {
     settings.clumpiness = Number(clumpinessInput.value);
     clumpinessLabel.textContent = settings.clumpiness.toFixed(2);
+    updateURL();
     drawMap();
   });
 
   elevationContrastInput.addEventListener("input", () => {
     settings.elevationContrast = Number(elevationContrastInput.value);
     elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
+    updateURL();
     drawMap();
   });
 
   resolutionInput.addEventListener("input", () => {
     settings.resolution = Number(resolutionInput.value);
     resolutionLabel.textContent = settings.resolution.toFixed(2);
+    updateURL();
     drawMap();
   });
 
   noiseScaleInput.addEventListener("input", () => {
     settings.noiseScale = Number(noiseScaleInput.value);
     noiseScaleLabel.textContent = settings.noiseScale.toFixed(2);
+    updateURL();
     drawMap();
   });
 
   themeRadios.forEach((radio) => {
     radio.addEventListener("change", () => {
       if (radio.checked) {
-        settings.colorScheme = radio.value as MapSettings["colorScheme"];
+        settings.theme = radio.value as MapSettings["theme"];
+        updateURL();
         drawMap();
       }
     });
   });
+
+  // Update the toggle all button text
+  const updateToggleAllButton = () => {
+    const allChecked = Array.from(languageCheckboxes).every((cb) => cb.checked);
+    toggleAllLanguagesBtn.textContent = allChecked ? "deselect all" : "select all";
+  };
 
   // Update selected languages when checkboxes change
   const updateSelectedLanguages = () => {
     selectedLanguages = Array.from(languageCheckboxes)
       .filter((cb) => cb.checked)
       .map((cb) => cb.value as Language);
+    updateToggleAllButton();
+    updateURL();
   };
 
   // Category checkbox logic
@@ -282,8 +345,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // Initialize language checkboxes from URL
+  languageCheckboxes.forEach((checkbox) => {
+    checkbox.checked = selectedLanguages.includes(checkbox.value as Language);
+  });
+
+  // Initialize category checkboxes based on language selections
+  categoryCheckboxes.forEach((categoryCheckbox) => {
+    updateCategoryCheckbox(categoryCheckbox);
+  });
+
   // Initialize selected languages on page load
   updateSelectedLanguages();
+  updateToggleAllButton();
 
   // Toggle all languages button
   toggleAllLanguagesBtn.addEventListener("click", () => {
@@ -295,9 +369,6 @@ document.addEventListener("DOMContentLoaded", () => {
       cb.checked = !allChecked;
       cb.indeterminate = false;
     });
-    toggleAllLanguagesBtn.textContent = allChecked
-      ? "select all"
-      : "deselect all";
     updateSelectedLanguages();
   });
 
@@ -314,11 +385,52 @@ document.addEventListener("DOMContentLoaded", () => {
     mapGenerator.reSeed(mapName);
     mapCache.clear();
     panZoomController.resetPan();
+    updateURL();
 
     redraw();
   });
 
+  resetSlidersBtn.addEventListener("click", () => {
+    // Reset all settings to defaults
+    settings.resolution = DEFAULTS.resolution;
+    settings.rainfall = DEFAULTS.rainfall;
+    settings.seaLevel = DEFAULTS.seaLevel;
+    settings.clumpiness = DEFAULTS.clumpiness;
+    settings.edgeCurve = DEFAULTS.edgeCurve;
+    settings.elevationContrast = DEFAULTS.elevationContrast;
+    settings.noiseScale = DEFAULTS.noiseScale;
+    settings.zoom = DEFAULTS.zoom;
+
+    // Update UI
+    resolutionInput.value = String(settings.resolution);
+    resolutionLabel.textContent = settings.resolution.toFixed(2);
+
+    rainfallInput.value = String(settings.rainfall);
+    rainfallLabel.textContent = settings.rainfall.toFixed(2);
+
+    seaLevelInput.value = String(settings.seaLevel);
+    seaLevelLabel.textContent = settings.seaLevel.toFixed(2);
+
+    clumpinessInput.value = String(settings.clumpiness);
+    clumpinessLabel.textContent = settings.clumpiness.toFixed(2);
+
+    elevationContrastInput.value = String(settings.elevationContrast);
+    elevationContrastLabel.textContent = settings.elevationContrast.toFixed(2);
+
+    noiseScaleInput.value = String(settings.noiseScale);
+    noiseScaleLabel.textContent = settings.noiseScale.toFixed(2);
+
+    zoomInput.value = String(settings.zoom);
+    panZoomController.setZoom(settings.zoom);
+
+    // Clear cache and redraw
+    mapCache.clear();
+    updateURL();
+    drawMap();
+  });
+
   // initial render
+  updateURL();
   redraw();
 
   // Initialize button position after render

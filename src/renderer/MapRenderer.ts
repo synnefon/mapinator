@@ -202,7 +202,7 @@ export class MapRenderer {
     for (let idx = 0; idx < visible.length; idx++) {
       const i = visible[idx];
       const fill = engine.colorAt(
-        settings.colorScheme,
+        settings.theme,
         elevations[i],
         moistures[i]
       );

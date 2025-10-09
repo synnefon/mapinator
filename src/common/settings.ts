@@ -1,4 +1,4 @@
-import type { ColorScheme } from "./biomes";
+import type { theme } from "./biomes";
 
 
 export interface MapSettings {
@@ -10,7 +10,7 @@ export interface MapSettings {
   clumpiness: number;
   edgeCurve: number;
   elevationContrast: number;
-  colorScheme: ColorScheme;
+  theme: theme;
   noiseScale: number;
 }
 
@@ -24,5 +24,5 @@ export const DEFAULTS: MapSettings = {
   clumpiness: 0.9,
   edgeCurve: 0.8,
   elevationContrast: 0.5,
-  colorScheme: "default",
+  theme: "default",
 };

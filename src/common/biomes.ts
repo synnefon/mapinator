@@ -4,7 +4,7 @@ export interface Biome {
   color: string;
 }
 
-export type ColorScheme =
+export type theme =
   | "default"
   | "oldAtlas"
   | "verdant"
@@ -244,7 +244,7 @@ export interface BiomeRule {
 
 // Rich rules = base colors embedded per scheme (so you can avoid looking up Biomes later)
 export interface RichBiomeRule extends BiomeRule {
-  base: Record<ColorScheme, string>;
+  base: Record<theme, string>;
 }
 
 export const richBiomeRules: RichBiomeRule[] = BANDS.flatMap(band =>
@@ -282,7 +282,7 @@ export type ThemeAdjust = {
   forceGreyscale?: boolean;
 };
 
-export const THEME_OVERRIDES: Record<ColorScheme, ThemeAdjust> = {
+export const THEME_OVERRIDES: Record<theme, ThemeAdjust> = {
   default: { saturationScale: 1.0 },
   oldAtlas: {
     lightness: {

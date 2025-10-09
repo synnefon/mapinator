@@ -1,4 +1,4 @@
-import { BANDS, BASE_LIGHTNESS, Biomes, MOISTURE_BY_FAMILY, THEME_OVERRIDES, type BandSpec, type BiomeKey, type ColorScheme, type ElevationBand } from "../common/biomes";
+import { BANDS, BASE_LIGHTNESS, Biomes, MOISTURE_BY_FAMILY, THEME_OVERRIDES, type BandSpec, type BiomeKey, type theme, type ElevationBand } from "../common/biomes";
 import { clamp } from "../common/util";
 
 /** ===================== Engine with Controls ===================== */
@@ -58,7 +58,7 @@ export class BiomeEngine {
     }
 
     /** Theme-aware color; uses RAW elevation for shading (no vertical “rise/drop”) */
-    public colorForBiome(scheme: ColorScheme, biomeKey: BiomeKey, rawElevation: number): string {
+    public colorForBiome(scheme: theme, biomeKey: BiomeKey, rawElevation: number): string {
         const base = Biomes[scheme][biomeKey].color;
         if (biomeKey === "OCEAN" || rawElevation < 0) return base;
 
@@ -74,7 +74,7 @@ export class BiomeEngine {
     }
 
     /** One-stop: elevation+moisture -> themed color */
-    public colorAt(scheme: ColorScheme, elevation: number, moisture: number): string {
+    public colorAt(scheme: theme, elevation: number, moisture: number): string {
         const key = this.biomeAt(elevation, moisture);
         return this.colorForBiome(scheme, key, elevation);
     }
@@ -85,7 +85,7 @@ export function getElevationBandRaw(e: number): BandSpec | null {
     return null;
 }
 
-function resolveTheme(scheme: ColorScheme) {
+function resolveTheme(scheme: theme) {
     const o = THEME_OVERRIDES[scheme] ?? {};
     const lightness: Record<ElevationBand, number> = { ...BASE_LIGHTNESS, ...(o.lightness ?? {}) };
     const saturationScale = o.saturationScale ?? 1.0;
