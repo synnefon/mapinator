@@ -27,6 +27,7 @@ export class MapGenerator {
       ...input,
       resolution: lerp(10, 200, input.resolution),
       noiseScale: lerp(0.1, 1.3, input.noiseScale),
+      // clumpiness: lerp(-1, 1, input.clumpiness),
     };
     const { resolution } = settings;
 
@@ -38,9 +39,9 @@ export class MapGenerator {
       jitterAmplitude === 0
         ? centers
         : centers.map((p) => ({
-            x: p.x + (this.rng() - 0.5) * jitterAmplitude,
-            y: p.y + (this.rng() - 0.5) * jitterAmplitude,
-          }));
+          x: p.x + (this.rng() - 0.5) * jitterAmplitude,
+          y: p.y + (this.rng() - 0.5) * jitterAmplitude,
+        }));
 
     // Single source of truth: d3-delaunay for both arrays + voronoi()
     const delaunay = Delaunay.from(
@@ -84,42 +85,68 @@ export class MapGenerator {
     const { points, numRegions, resolution } = baseMap;
     const {
       edgeCurve,
-      elevationContrast = 0.5,
+      elevationContrast = 0.5,   // 0 = flat, 0.5 = identity, 1 = punchy
       noiseScale,
-      clumpiness,
+      clumpiness,                 // -1..1  (neg = Mediterranean, pos = Island)
     } = settings;
 
-    const edgeExp = lerp(0.5, 3.0, edgeCurve);
-    const out = new Array<number>(numRegions);
+    // ---- helpers -------------------------------------------------------------
 
-    // contrast curve
-    const applyContrast = (e: number, c: number) => {
-      const u = lerp(-1, 1, e);
-      const gamma =
-        c < 0.5 ? lerp(3.0, 1.0, c / 0.5) : lerp(1.0, 0.2, (c - 0.5) / 0.5);
-      const uMod = Math.sign(u) * Math.pow(Math.abs(u), gamma);
-      return clamp((uMod + 1) / 2);
+    // two-octave noise → ~[0,1]
+    const fbm2 = (x: number, y: number) => {
+      const s = noiseScale;
+      const n1 = this.noise2D(x / s, y / s);
+      const n2 = this.noise2D((2 * x) / s, (2 * y) / s);
+      return clamp(0.5 + 0.35 * n1 + 0.15 * n2);
     };
 
+    // 0 at center, →1 near edges (Chebyshev-ish)
+    const edgeMask = (x: number, y: number) => {
+      const d = 2 * Math.max(Math.abs(x), Math.abs(y));     // ~[0,1]
+      const exp = lerp(0.5, 3.0, edgeCurve);
+      return Math.pow(d, exp);
+    };
+
+    // contrast curve about 0.5, with 0.5 = identity
+    const applyContrast = (e: number) => {
+      const u = 2 * e - 1; // [-1,1]
+      const exp =
+        elevationContrast <= 0.5
+          ? lerp(3.0, 1.0, elevationContrast / 0.5)          // flatten
+          : lerp(1.0, 0.2, (elevationContrast - 0.5) / 0.5); // boost
+      const u2 = Math.sign(u) * Math.pow(Math.abs(u), exp);
+      return clamp((u2 + 1) * 0.5, 0, 1);
+    };
+
+    // ---- main ---------------------------------------------------------------
+
+    const out = new Array<number>(numRegions);
+    const c = clamp(clumpiness, -1, 1);   // -1..1
+    const amt = Math.abs(c);               // 0..1
+
     for (let r = 0; r < numRegions; r++) {
-      const nx = points[r].x / resolution - 0.5;
-      const ny = points[r].y / resolution - 0.5;
+      const x = lerp(-0.5, 0.5, points[r].x / resolution);
+      const y = lerp(-0.5, 0.5, points[r].y / resolution);
 
-      // two-octave FBM-ish
-      let e =
-        1 / 3 +
-        this.noise2D(nx / noiseScale, ny / noiseScale) / 2 +
-        this.noise2D((2 * nx) / noiseScale, (2 * ny) / noiseScale) / 3;
+      const base = fbm2(x, y);
+      const mask = edgeMask(x, y);         // 0 center → 1 edges
 
-      // try Math.hypot(nx, ny) for rounder masks
-      let d = 2 * Math.max(Math.abs(nx), Math.abs(ny));
-      d = Math.pow(d, edgeExp);
+      // Unified coast field C(c):
+      //  c = +1 ⇒ C = (1 - mask)  (islandy: land center, water edges)
+      //  c = -1 ⇒ C = mask        (Mediterranean: water center, land edges)
+      //  c =  0 ⇒ C = 0.5         (neutral)
+      const C = ((1 - c) * mask + (1 + c) * (1 - mask)) * 0.5;
 
-      const clumpinessMasked = (1 + e - d) / 2;
-      e = lerp(e, clumpinessMasked, clamp(clumpiness));
+      //  amt = |c| controls strength; c’s sign picked via C above.
+      //  When amt=0 ⇒ e=base; when amt=1 ⇒ e=average(base, C).
+      const e = base + 0.5 * amt * (C - base);
 
-      out[r] = applyContrast(clamp(e), elevationContrast);
+      out[r] = applyContrast(e);
     }
+
     return out;
   }
+
+
+
 }

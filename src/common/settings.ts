@@ -20,9 +20,9 @@ export const DEFAULTS: MapSettings = {
   zoom: 0,
   noiseScale: 0.35,
   rainfall: 0.65,
-  seaLevel: 0.5,
-  clumpiness: 0.9,
+  seaLevel: 0.51,
+  clumpiness: 0.8,
   edgeCurve: 0.8,
-  elevationContrast: 0.5,
+  elevationContrast: 0.7,
   theme: "default",
 };
