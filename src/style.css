@@ -39,7 +39,7 @@ body {
 
 /* Toolbar */
 .toolbar {
-  width: 100%;
+  width: 95%;
   height: 75vh;
   display: flex;
   flex-direction: column;
@@ -47,19 +47,19 @@ body {
   margin-left: 1em;
   margin-top: 1em;
   border: 4px solid var(--text);
-  padding: 1em;
+  padding: 0.5em;
   box-sizing: border-box;
   overflow-y: scroll;
 }
 
 .reset-sliders-btn-container {
   display: flex;
-  align-self: left;
-  justify-content: center;
+  align-items: left;
+  left: 0px;
+  width: 95%;
   margin-top: 1em;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  width: 100%;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 #reset-sliders {
@@ -72,6 +72,7 @@ body {
   margin-top: 0.5rem;
   width: 90%;
   align-self: center;
+  margin-left: 1em;
 }
 
 /* Group: narrow left column for lock, wide right column for stacked sliders */
@@ -117,7 +118,8 @@ body {
   width: 24px;
   height: 24px;
   border: 2px solid var(--text);
-  flex-shrink: 0;           /* keeps the checkbox from collapsing */
+  flex-shrink: 0;
+  /* keeps the checkbox from collapsing */
 }
 
 #lock-frequencies:checked {
@@ -144,6 +146,7 @@ body {
   /* Indicate it's interactive */
   border: none;
   /* Remove default border */
+  margin-left: 1em;
 }
 
 /* WebKit browsers */
@@ -417,7 +420,7 @@ canvas {
   width: 65%;
   height: auto;
   display: block;
-  border: 5px solid #222;
+  border: 6px solid var(--text);
   cursor: grab;
   /* margin-top: 1em; */
 }
@@ -528,7 +531,7 @@ img.button-img-small {
 }
 
 *::-webkit-scrollbar {
-  width: 12px;
+  width: 10px;
 }
 
 *::-webkit-scrollbar-track {
@@ -543,11 +546,20 @@ img.button-img-small {
 
 *::-webkit-scrollbar-thumb:hover {
   background: var(--highlight);
+  border-top: none;
+  border-bottom: none;
   cursor: grab;
 }
 
 *::-webkit-scrollbar-thumb:active {
   cursor: grabbing;
+}
+
+hr {
+  height: 2px;
+  border-top: 2px dashed var(--text);
+  /* Red dashed line */
+  width: stretch;
 }
 
 .language-category {
