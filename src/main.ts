@@ -42,11 +42,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const nameGenerator = new NameGenerator(`${Date.now()}`);
 
-  // Load selected languages from URL
-  const urlLanguages = urlParams.get("languages");
-  let selectedLanguages: Language[] = urlLanguages
-    ? urlLanguages.split(",").filter(lang => Languages.includes(lang as Language)) as Language[]
-    : [];
+  // Initialize with all languages selected
+  let selectedLanguages: Language[] = [...Languages];
 
   let mapName = urlMapName || nameGenerator.generate();
 
@@ -66,13 +63,6 @@ document.addEventListener("DOMContentLoaded", () => {
     url.searchParams.set("theme", settings.theme);
     url.searchParams.set("noiseScale", String(settings.noiseScale));
     url.searchParams.set("zoom", String(settings.zoom));
-
-    // Store selected languages
-    if (selectedLanguages.length > 0) {
-      url.searchParams.set("languages", selectedLanguages.join(","));
-    } else {
-      url.searchParams.delete("languages");
-    }
 
     window.history.replaceState({}, "", url.toString());
   };
@@ -293,7 +283,6 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter((cb) => cb.checked)
       .map((cb) => cb.value as Language);
     updateToggleAllButton();
-    updateURL();
   };
 
   // Category checkbox logic
