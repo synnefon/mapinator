@@ -26,8 +26,8 @@ export class MapGenerator {
     const settings: MapSettings = {
       ...input,
       resolution: lerp(10, 200, input.resolution),
-      terrainFrequency: lerp(0.1, 1.3, input.terrainFrequency),
-      weatherFrequency: lerp(0.1, 1.3, input.weatherFrequency),
+      terrainFrequency: lerp(0.1, 1.3, 1 - input.terrainFrequency),
+      weatherFrequency: lerp(0.1, 1.3, 1 - input.weatherFrequency),
       // clumpiness: lerp(-1, 1, input.clumpiness),
     };
     const { resolution } = settings;
