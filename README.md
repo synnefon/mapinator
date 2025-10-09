@@ -1,7 +1,11 @@
 # Mapinator  
 **Live demo:** [https://synnefon.github.io/mapinator/](https://synnefon.github.io/mapinator/)
 
-Mapinator is a lightweight procedural terrain generator that uses **Delaunay triangulation**, **Voronoi cells**, and **Simplex noise** to generate colorful biome maps — all in the browser.
+Mapinator is a lightweight, in-browser procedural terrain generator.
+
+It leverages Delaunay triangulation, Voronoi cells, and Simplex noise to generate colorful biome maps, and lets you customize them with various dials.
+
+Each map gets a “unique” name from Mapinator’s built-in word generator. Punch in a name you’ve seen before (or just make one up), and Mapinator will create that world for you.
 
 ---
 
