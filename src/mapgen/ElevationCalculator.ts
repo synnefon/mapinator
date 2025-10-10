@@ -36,7 +36,12 @@ export class ElevationCalculator {
             {val: 3, prob: 0.05},
         ])
 
-        this.settings.baseRadius = n > 1 ? 0.25 : this.settings.baseRadius;
+        this.settings.baseRadius = {
+            1: 0.35,
+            2: 0.25,
+            3: 0.15,
+            4: 0.1
+        }[n] || 0.35
 
         // spawn N random “poses” (offset + rotation) within centerDrift envelope
         for (let i = 0; i < n; i++) {
