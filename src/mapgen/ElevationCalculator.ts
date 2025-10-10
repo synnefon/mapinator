@@ -15,6 +15,29 @@ type ClumpCenter = {
     rotC: number;
 };
 
+const radiusMap: { [key: number]: (rng: RNG) => number } = {
+    1: (rng: RNG) => randomContinuousChoice(0.3, 0.4, rng),
+    2: (rng: RNG) => randomContinuousChoice(0.25, 0.35, rng),
+    3: (rng: RNG) => randomContinuousChoice(0.2, 0.3, rng),
+    4: (rng: RNG) => randomContinuousChoice(0.15, 0.25, rng),
+    5: (rng: RNG) => randomContinuousChoice(0.1, 0.15, rng),
+};
+const driftMap: { [key: number]: (rng: RNG) => number } = {
+    1: (rng: RNG) => randomContinuousChoice(0.1, 0.15, rng),
+    2: (rng: RNG) => randomContinuousChoice(0.1, 0.4, rng),
+    3: (rng: RNG) => randomContinuousChoice(0.3, 0.5, rng),
+    4: (rng: RNG) => randomContinuousChoice(0.3, 0.6, rng),
+    5: (rng: RNG) => randomContinuousChoice(0.4, 0.8, rng),
+};
+
+const blobNumberProbs = [
+    { val: 1, prob: 0.5 },
+    { val: 2, prob: 0.2 },
+    { val: 3, prob: 0.1 },
+    { val: 4, prob: 0.1 },
+    { val: 5, prob: 0.1 },
+]
+
 export class ElevationCalculator {
     private settings: ElevationSettings;
 
@@ -24,35 +47,18 @@ export class ElevationCalculator {
     private noise2D: NoiseFunction2D;
 
     constructor(rng: RNG, noise2D: NoiseFunction2D, opts?: Partial<ElevationSettings>) {
-        this.settings = { ...ELEVATION_SETTINGS_DEFAULTS, ...(opts ?? {}) };
         this.noise2D = noise2D;
 
+        this.settings = { ...ELEVATION_SETTINGS_DEFAULTS, ...(opts ?? {}) };
         // how many blobs to union together
-        const n = weightedRandomChoice([
-            { val: 1, prob: 0.5 },
-            { val: 2, prob: 0.2 },
-            { val: 3, prob: 0.1 },
-            { val: 4, prob: 0.1 },
-            { val: 5, prob: 0.1 },
-        ], rng);
+        const n = weightedRandomChoice(blobNumberProbs, rng);
 
-        this.settings.baseRadius = {
-            1: randomContinuousChoice(0.3, 0.4, rng),
-            2: randomContinuousChoice(0.25, 0.35, rng),
-            3: randomContinuousChoice(0.2, 0.3, rng),
-            4: randomContinuousChoice(0.15, 0.25, rng),
-            5: randomContinuousChoice(0.1, 0.15, rng),
-        }[n] || this.settings.baseRadius;
-
-        this.settings.centerDrift = {
-            1: randomContinuousChoice(0.1, 0.15, rng),
-            2: randomContinuousChoice(0.1, 0.4, rng),
-            3: randomContinuousChoice(0.3, 0.5, rng),
-            4: randomContinuousChoice(0.3, 0.6, rng),
-            5: randomContinuousChoice(0.4, 0.8, rng),
-        }[n] || this.settings.centerDrift;
-
-        this.settings.ripple = randomContinuousChoice(0.2, 0.4, rng);
+        this.settings = {
+            ...this.settings,
+            baseRadius: (radiusMap[n] || (() => this.settings.baseRadius))(rng),
+            centerDrift: (driftMap[n] || (() => this.settings.centerDrift))(rng),
+            ripple: randomContinuousChoice(0.2, 0.4, rng),
+        };
 
         // spawn N random “poses” (offset + rotation) within centerDrift envelope
         for (let i = 0; i < n; i++) {
@@ -117,8 +123,6 @@ export class ElevationCalculator {
     }
 
     private compositeSignedDistance(x: number, y: number, terrainFrequency: number): number {
-        // pull hardness from settings or default
-        // const k = this.settings.unionHardness ?? 10.0;
         const k = 1_000;
         let sd = Infinity;
         for (let i = 0; i < this.centers.length; i++) {
