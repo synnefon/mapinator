@@ -106,7 +106,7 @@ export class ElevationCalculator {
      *  c =  0 ⇒ C = 0.5
      */
     public coastField(maskVal: number, clumpiness: number): number {
-        return lerp(0.5 * (1 + clumpiness), 0.5 * (1 - clumpiness), maskVal);
+        return lerp((1 + clumpiness), (1 - clumpiness), maskVal) * 0.5;
     }
 
     /** amt=|clumpiness|; pulls base toward C by half, scaled by amt */

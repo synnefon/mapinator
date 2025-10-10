@@ -88,7 +88,7 @@ export class MapGenerator {
       const ny = points[r].y / resolution - 0.5;
 
       // base moisture from noise in [0,1]
-      const m = (1 + this.noise2D(nx / s, ny / s)) / 2;
+      const m = lerp(0, 1, this.noise2D(nx / s, ny / s), -1, 1);
 
       // apply contrast like elevationContrast does
       out[r] = this.applyContrast(m, moistureContrast);
