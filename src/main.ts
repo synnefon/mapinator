@@ -92,7 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // All numeric settings to load from URL or defaults
-  const NUMERIC_SETTING_KEYS = [...URL_NUM_KEYS, "edgeCurve", "jitter"] as const;
+  const NUMERIC_SETTING_KEYS = [...URL_NUM_KEYS, "jitter"] as const;
   type NumericSettingKey = typeof NUMERIC_SETTING_KEYS[number];
 
   const numericSettings = NUMERIC_SETTING_KEYS.reduce((acc, k) => {

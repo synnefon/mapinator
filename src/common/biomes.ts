@@ -186,11 +186,11 @@ export const BANDS = [
   { name: "OCEAN", family: "OCEAN", range: [-1.0, 0.0] as number[] },
   { name: "LOW_1", family: "LOW", range: [0.0, 0.125] as number[] },
   { name: "LOW_2", family: "LOW", range: [0.125, 0.25] as number[] },
-  { name: "MEDIUM_1", family: "MEDIUM", range: [0.25, 0.35] as number[] },
-  { name: "MEDIUM_2", family: "MEDIUM", range: [0.35, 0.45] as number[] },
-  { name: "HIGH_1", family: "HIGH", range: [0.45, 0.525] as number[] },
-  { name: "HIGH_2", family: "HIGH", range: [0.525, 0.6] as number[] },
-  { name: "VERY_HIGH", family: "VERY_HIGH", range: [0.6, 1.0] as number[] },
+  { name: "MEDIUM_1", family: "MEDIUM", range: [0.25, 0.4] as number[] },
+  { name: "MEDIUM_2", family: "MEDIUM", range: [0.4, 0.55] as number[] },
+  { name: "HIGH_1", family: "HIGH", range: [0.55, 0.6] as number[] },
+  { name: "HIGH_2", family: "HIGH", range: [0.6, 0.75] as number[] },
+  { name: "VERY_HIGH", family: "VERY_HIGH", range: [0.75, 1.0] as number[] },
 ] as const;
 
 export type BandSpec = typeof BANDS[number];

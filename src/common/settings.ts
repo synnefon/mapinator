@@ -1,5 +1,15 @@
 import type { theme } from "./biomes";
 
+export type ElevationSettings = {
+    centerDrift: number;   // random center offset range
+    baseRadius: number;    // nominal blob radius
+    warpStrength: number;  // domain-warp amplitude
+    ripple: number;        // boundary ripple amplitude
+    kWarp: number;         // domain-warp frequency
+    kRip: number;          // ripple frequency
+    softness: number;      // feather width for smoothstep
+    aaRadius: number;      // AA sample radius in world units (≈ cell size)
+};
 
 export interface MapSettings {
   resolution: number;
@@ -8,7 +18,6 @@ export interface MapSettings {
   rainfall: number;
   seaLevel: number;
   clumpiness: number;
-  edgeCurve: number;
   elevationContrast: number;
   moistureContrast: number;
   theme: theme;
@@ -25,7 +34,6 @@ export const DEFAULTS: MapSettings = {
   rainfall: 0.65,
   seaLevel: 0.51,
   clumpiness: 0.8,
-  edgeCurve: 0.8,
   elevationContrast: 0.7,
   moistureContrast: 0.5,
   theme: "default",
