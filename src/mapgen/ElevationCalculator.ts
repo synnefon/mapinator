@@ -119,7 +119,7 @@ export class ElevationCalculator {
     private compositeSignedDistance(x: number, y: number, terrainFrequency: number): number {
         // pull hardness from settings or default
         // const k = this.settings.unionHardness ?? 10.0;
-        const k = 100;
+        const k = 1_000;
         let sd = Infinity;
         for (let i = 0; i < this.centers.length; i++) {
             const c = this.centers[i];
