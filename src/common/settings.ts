@@ -40,7 +40,7 @@ export type ElevationSettings = {
 };
 
 export const ELEVATION_SETTINGS_DEFAULTS: ElevationSettings = {
-  centerDrift: 0.22,
+  centerDrift: 0.62,
   baseRadius: 0.35,
   warpStrength: 0.5,
   ripple: 0.5,

@@ -1,5 +1,5 @@
 import type { NoiseFunction2D } from "simplex-noise";
-import { type RNG } from "../common/random";
+import { weightedRandomChoice, type RNG } from "../common/random";
 import { ELEVATION_SETTINGS_DEFAULTS, type ElevationSettings } from "../common/settings";
 import { clamp, lerp } from "../common/util";
 
@@ -8,25 +8,43 @@ const smoothstep = (a: number, b: number, x: number) => {
     return t * t * (3 - 2 * t);
 };
 
+type ClumpCenter = {
+    cx: number;
+    cy: number;
+    rotS: number;
+    rotC: number;
+};
+
 export class ElevationCalculator {
     private settings: ElevationSettings;
 
-    private cx: number;
-    private cy: number;
-    private rotS: number;
-    private rotC: number;
+    // multiple centers:
+    private centers: ClumpCenter[] = [];
+
     private noise2D: NoiseFunction2D;
 
     constructor(rng: RNG, noise2D: NoiseFunction2D, opts?: Partial<ElevationSettings>) {
         this.settings = { ...ELEVATION_SETTINGS_DEFAULTS, ...(opts ?? {}) };
-
         this.noise2D = noise2D;
 
-        this.cx = (rng() - 0.5) * this.settings.centerDrift;
-        this.cy = (rng() - 0.5) * this.settings.centerDrift;
-        const theta = rng() * Math.PI * 2;
-        this.rotS = Math.sin(theta);
-        this.rotC = Math.cos(theta);
+        // how many blobs to union together
+        // const n = Math.max(1, Math.floor(this.settings.numCenters ?? 2));
+        const n = weightedRandomChoice([
+            {val: 1, prob: 0.5},
+            {val: 2, prob: 0.25},
+            {val: 3, prob: 0.2},
+            {val: 3, prob: 0.05},
+        ])
+
+        this.settings.baseRadius = n > 1 ? 0.25 : this.settings.baseRadius;
+
+        // spawn N random “poses” (offset + rotation) within centerDrift envelope
+        for (let i = 0; i < n; i++) {
+            const cx = (rng() - 0.5) * this.settings.centerDrift;
+            const cy = (rng() - 0.5) * this.settings.centerDrift;
+            const theta = rng() * Math.PI * 2;
+            this.centers.push({ cx, cy, rotS: Math.sin(theta), rotC: Math.cos(theta) });
+        }
     }
 
     public maskedElevation(
@@ -36,20 +54,19 @@ export class ElevationCalculator {
         clumpiness: number,
     ): number {
         const base = this.fbm2(x, y, terrainFrequency);
-        const mask = this.sampleAA(x, y, terrainFrequency);           // stable mask, 0 center → 1 edges
+        const mask = this.sampleAA(x, y, terrainFrequency);          // 0 center → 1 edges (now multi-blob)
         const C = this.coastField(mask, clumpiness);
         const elevation = this.blendElevation(base, C, Math.abs(clumpiness));
         return elevation;
     }
 
-    /** 0 inside blob → 1 outside (single sample, smooth edge) */
+    /** 0 inside any blob → 1 outside all (smooth union) */
     public sample(x: number, y: number, terrainFrequency: number): number {
-        const { wx, wy } = this.warped(x, y, terrainFrequency);
-        const sd = this.signedDistance(wx, wy, terrainFrequency);
+        const sd = this.compositeSignedDistance(x, y, terrainFrequency);
         return smoothstep(-this.settings.softness, +this.settings.softness, sd);
     }
 
-    /** 4-tap rotated-grid AA to kill raster stair-steps */
+    /** 4-tap rotated-grid AA */
     public sampleAA(x: number, y: number, terrainFrequency: number): number {
         const e = this.settings.aaRadius;
         let sum = 0;
@@ -62,8 +79,8 @@ export class ElevationCalculator {
 
     /**
      * Unified coast field C(c):
-     *  c = +1 ⇒ C = (1 - mask)  (island: land center, water edges)
-     *  c = -1 ⇒ C = mask        (Med:   water center, land edges)
+     *  c = +1 ⇒ C = (1 - mask)   (islands: land center(s), water edges)
+     *  c = -1 ⇒ C = mask         (Med:    water center(s), land edges)
      *  c =  0 ⇒ C = 0.5
      */
     public coastField(maskVal: number, clumpiness: number): number {
@@ -77,12 +94,34 @@ export class ElevationCalculator {
 
     // --- internals --- //
 
-    private warped(x: number, y: number, terrainFrequency: number) {
+    /** Smooth-min (log-sum-exp) for stable unions of SDFs */
+    private sminExp(a: number, b: number, k: number) {
+        const kk = Math.max(1e-3, k);
+        return -Math.log(Math.exp(-kk * a) + Math.exp(-kk * b)) / kk;
+    }
+
+    private compositeSignedDistance(x: number, y: number, terrainFrequency: number): number {
+        // pull hardness from settings or default
+        // const k = this.settings.unionHardness ?? 10.0;
+        const k = 100;
+        let sd = Infinity;
+        for (let i = 0; i < this.centers.length; i++) {
+            const c = this.centers[i];
+            const { wx, wy } = this.warpedWithCenter(x, y, terrainFrequency, c);
+            const d = this.signedDistance(wx, wy, terrainFrequency);
+            sd = (i === 0) ? d : this.sminExp(sd, d, k);
+        }
+        return sd;
+    }
+
+    /** translate+rotate by a specific center’s pose, then domain-warp */
+    private warpedWithCenter(x: number, y: number, terrainFrequency: number, c: ClumpCenter) {
         const { warpStrength, kWarp } = this.settings;
-        // translate + rotate (frozen pose)
-        const xt = x - this.cx, yt = y - this.cy;
-        const xr = xt * this.rotC + yt * this.rotS;
-        const yr = -xt * this.rotS + yt * this.rotC;
+
+        // local space around this center
+        const xt = x - c.cx, yt = y - c.cy;
+        const xr = xt * c.rotC + yt * c.rotS;
+        const yr = -xt * c.rotS + yt * c.rotC;
 
         // domain warp (frozen amps/freqs)
         const wx = xr + warpStrength * (this.fbm2(kWarp * xr, kWarp * yr, terrainFrequency) - 0.5);
