@@ -18,10 +18,6 @@ export class NameGenerator {
     this.rng = makeRNG(seed);
   }
 
-  public reSeed(seed: string) {
-    this.rng = makeRNG(seed);
-  }
-
   /** Generate a single country name */
   public generate(opts: CountryGenOptions = {}): string {
     const lang = opts.lang ?? this.pickLanguage();
@@ -29,6 +25,7 @@ export class NameGenerator {
     const cleanedName = rawName.trim().replace(/\s+/g, " ");
     const capitalizedName = this.titleCase(cleanedName);
     console.log(`${lang} -> ${capitalizedName}`);
+    this.rng = makeRNG(`${Date.now()}`);
     return capitalizedName;
   }
 
@@ -38,7 +35,7 @@ export class NameGenerator {
       { val: 1, prob: 0.7 },
       { val: 2, prob: 0.2 },
     ];
-    const suffix = randomChoice(languageConfigs[lang].suffixes).toLowerCase();
+    const suffix = randomChoice(languageConfigs[lang].suffixes, this.rng).toLowerCase();
     const MAX_RETRIES = 8;
 
     let stem = "";

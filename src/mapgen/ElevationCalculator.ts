@@ -1,5 +1,5 @@
 import type { NoiseFunction2D } from "simplex-noise";
-import { weightedRandomChoice, type RNG } from "../common/random";
+import { randomContinuousChoice, weightedRandomChoice, type RNG } from "../common/random";
 import { ELEVATION_SETTINGS_DEFAULTS, type ElevationSettings } from "../common/settings";
 import { clamp, lerp } from "../common/util";
 
@@ -28,20 +28,31 @@ export class ElevationCalculator {
         this.noise2D = noise2D;
 
         // how many blobs to union together
-        // const n = Math.max(1, Math.floor(this.settings.numCenters ?? 2));
         const n = weightedRandomChoice([
-            {val: 1, prob: 0.5},
-            {val: 2, prob: 0.25},
-            {val: 3, prob: 0.2},
-            {val: 3, prob: 0.05},
-        ])
+            { val: 1, prob: 0.5 },
+            { val: 2, prob: 0.2 },
+            { val: 3, prob: 0.1 },
+            { val: 4, prob: 0.1 },
+            { val: 5, prob: 0.1 },
+        ], rng);
 
         this.settings.baseRadius = {
-            1: 0.35,
-            2: 0.25,
-            3: 0.15,
-            4: 0.1
-        }[n] || 0.35
+            1: randomContinuousChoice(0.3, 0.4, rng),
+            2: randomContinuousChoice(0.25, 0.35, rng),
+            3: randomContinuousChoice(0.2, 0.3, rng),
+            4: randomContinuousChoice(0.15, 0.25, rng),
+            5: randomContinuousChoice(0.1, 0.15, rng),
+        }[n] || this.settings.baseRadius;
+
+        this.settings.centerDrift = {
+            1: randomContinuousChoice(0.1, 0.3, rng),
+            2: randomContinuousChoice(0.2, 0.4, rng),
+            3: randomContinuousChoice(0.3, 0.5, rng),
+            4: randomContinuousChoice(0.4, 0.6, rng),
+            5: randomContinuousChoice(0.6, 0.8, rng),
+        }[n] || this.settings.centerDrift;
+
+        this.settings.ripple = randomContinuousChoice(0.2, 0.4, rng);
 
         // spawn N random “poses” (offset + rotation) within centerDrift envelope
         for (let i = 0; i < n; i++) {

@@ -10,21 +10,21 @@ export function makeRNG(seed: string): RNG {
     };
 }
 
+export function randomContinuousChoice(min: number, max: number, rng: RNG): number {
+    return min + rng() * (max - min);
+}
 
-export function randomChoice<T>(
-    choices: T[],
-    rng: RNG = makeRNG(`${Date.now()}`)
-) {
+export function randomChoice<T>(choices: T[], rng: RNG) {
     return choices[Math.floor(rng() * choices.length)];
 }
 
 export function weightedRandomChoice<T>(
     choices: { val: T, prob: number }[],
-    rng: RNG = makeRNG(`${Date.now()}`),
+    rng: RNG,
 ) {
     const total = choices.reduce((sum, c) => sum + c.prob, 0);
-    if (total !== 1) {
-        throw new Error("weightedRandomChoice: total probability must be > 0");
+    if (Math.abs(total - 1) > 1e-5) {
+        throw new Error(`weightedRandomChoice: total probability must be exactly 1. got ${total}`);
     }
 
     const r = rng() * total;

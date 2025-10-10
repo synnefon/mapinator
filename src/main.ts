@@ -85,7 +85,7 @@ document.addEventListener("DOMContentLoaded", () => {
     dst.label.textContent = v.toFixed(dst.decimals);
 
     // Keep URL + map in sync once (we call draw once after both updates)
-    updateURL();
+    // updateURL();
     drawMap();
 
     syncingFreq = false;
@@ -201,7 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
     mapCache.clear();
 
     panZoomController.resetPan();
-    updateURL();
+    // updateURL();
     redraw();
   };
 
@@ -224,7 +224,7 @@ document.addEventListener("DOMContentLoaded", () => {
   zoomInput.addEventListener("input", () => {
     settings.zoom = Number(zoomInput.value);
     panZoomController.setZoom(settings.zoom);
-    updateURLParam("zoom", String(settings.zoom));
+    // updateURLParam("zoom", String(settings.zoom));
     drawMap();
   });
 
@@ -255,7 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
       input.value = String(v);
       label.textContent = v.toFixed(2);
 
-      updateURLParam(key, String(settings[key]));
+      // updateURLParam(key, String(settings[key]));
       drawMap();
     });
 
@@ -287,7 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     radio.addEventListener("change", () => {
       if (radio.checked) {
         settings.theme = radio.value as MapSettings["theme"];
-        updateURLParam("theme", String(radio.value));
+        // updateURLParam("theme", String(radio.value));
         drawMap();
       }
     });
@@ -354,17 +354,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Buttons
   regenBtn.addEventListener("click", () => {
     playEffect(regenBtnImg, "spin");
-    nameGenerator.reSeed(`${Date.now()}`);
     mapName = nameGenerator.generate({
       lang:
         selectedLanguages.length === 0
           ? undefined
           : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)],
     });
-    mapGenerator.reSeed(mapName);
+    mapGenerator.reSeed(`${Date.now()}`);
     mapCache.clear();
     panZoomController.resetPan();
-    updateURLParam("name", mapName);
+    // updateURLParam("name", mapName);
     redraw();
   });
 
@@ -413,7 +412,7 @@ document.addEventListener("DOMContentLoaded", () => {
     panZoomController.resetPan();
 
     mapCache.clear();
-    updateURL();
+    // updateURL();
     drawMap();
   });
 
@@ -465,7 +464,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // --- Initial render
-  updateURL();
+  // updateURL();
   redraw();
   setTimeout(updateButtonPosition, 100);
 });
