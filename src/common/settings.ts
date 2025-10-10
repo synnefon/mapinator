@@ -47,5 +47,5 @@ export const ELEVATION_SETTINGS_DEFAULTS: ElevationSettings = {
   kWarp: 2,
   kRip: 2.2,
   softness: 0.3,
-  aaRadius: 0.1,
+  aaRadius: 0.05,
 };

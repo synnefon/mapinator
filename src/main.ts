@@ -135,18 +135,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>("toggle-all-languages");
 
   // --- URL updater (single source of truth)
-  const updateURL = () => {
-    url.searchParams.set("name", mapName);
-    URL_NUM_KEYS.forEach((k) => url.searchParams.set(k, String(settings[k])));
-    url.searchParams.set("theme", settings.theme);
-    window.history.replaceState({}, "", url.toString());
-  };
+  // const updateURL = () => {
+  //   url.searchParams.set("name", mapName);
+  //   URL_NUM_KEYS.forEach((k) => url.searchParams.set(k, String(settings[k])));
+  //   url.searchParams.set("theme", settings.theme);
+  //   window.history.replaceState({}, "", url.toString());
+  // };
 
-  const updateURLParam = (param: string, value: string) => {
-    url.searchParams.set(param, value);
-    window.history.replaceState({}, "", url.toString());
-  };
-
+  // const updateURLParam = (param: string, value: string) => {
+  //   url.searchParams.set(param, value);
+  //   window.history.replaceState({}, "", url.toString());
+  // };
 
   // --- Renderers
   const drawMap = () => {
