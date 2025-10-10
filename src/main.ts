@@ -1,6 +1,6 @@
 import { Languages, type Language } from "./common/language";
 import type { WorldMap } from "./common/map";
-import { DEFAULTS, type MapSettings } from "./common/settings";
+import { MAP_DEFAULTS, type MapSettings } from "./common/settings";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
@@ -96,13 +96,13 @@ document.addEventListener("DOMContentLoaded", () => {
   type NumericSettingKey = typeof NUMERIC_SETTING_KEYS[number];
 
   const numericSettings = NUMERIC_SETTING_KEYS.reduce((acc, k) => {
-    (acc as any)[k] = numFromUrl(k, DEFAULTS[k]); // safe: both number
+    (acc as any)[k] = numFromUrl(k, MAP_DEFAULTS[k]); // safe: both number
     return acc;
   }, {} as Pick<MapSettings, NumericSettingKey>);
 
   const settings: Pick<MapSettings, NumericSettingKey> & { theme: MapSettings["theme"] } = {
     ...numericSettings,
-    theme: (urlParams.get("theme") as MapSettings["theme"]) ?? DEFAULTS.theme,
+    theme: (urlParams.get("theme") as MapSettings["theme"]) ?? MAP_DEFAULTS.theme,
   };
 
   console.log(urlParams.get("theme"))
@@ -246,7 +246,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     input.addEventListener("input", () => {
       let v = Number(input.value);
-      if (!Number.isFinite(v)) v = Number(DEFAULTS[key]);
+      if (!Number.isFinite(v)) v = Number(MAP_DEFAULTS[key]);
 
       if (v < min) v = min;
       else if (v > max) v = max;
@@ -396,7 +396,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Reset settings to defaults
     URL_NUM_KEYS.forEach((k) => {
-      settings[k] = DEFAULTS[k] as any;
+      settings[k] = MAP_DEFAULTS[k] as any;
     });
 
     // Sync UI for sliders (respect per-slider decimals)

@@ -1,18 +1,7 @@
 import type { NoiseFunction2D } from "simplex-noise";
 import { type RNG } from "../common/random";
-import type { ElevationSettings } from "../common/settings";
+import { ELEVATION_SETTINGS_DEFAULTS, type ElevationSettings } from "../common/settings";
 import { clamp, lerp } from "../common/util";
-
-export const DEFAULT_ELEVATION_SETTINGS: ElevationSettings = {
-    centerDrift: 0.22,
-    baseRadius: 0.35,
-    warpStrength: 0.5,
-    ripple: 0.5,
-    kWarp: 2,
-    kRip: 2.2,
-    softness: 0.3,
-    aaRadius: 0.015,
-};
 
 const smoothstep = (a: number, b: number, x: number) => {
     const t = clamp((x - a) / (b - a));
@@ -22,7 +11,6 @@ const smoothstep = (a: number, b: number, x: number) => {
 export class ElevationCalculator {
     private settings: ElevationSettings;
 
-    // frozen per-map pose
     private cx: number;
     private cy: number;
     private rotS: number;
@@ -30,7 +18,7 @@ export class ElevationCalculator {
     private noise2D: NoiseFunction2D;
 
     constructor(rng: RNG, noise2D: NoiseFunction2D, opts?: Partial<ElevationSettings>) {
-        this.settings = { ...DEFAULT_ELEVATION_SETTINGS, ...(opts ?? {}) };
+        this.settings = { ...ELEVATION_SETTINGS_DEFAULTS, ...(opts ?? {}) };
 
         this.noise2D = noise2D;
 
