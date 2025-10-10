@@ -45,7 +45,7 @@ export class ElevationCalculator {
         }[n] || this.settings.baseRadius;
 
         this.settings.centerDrift = {
-            1: randomContinuousChoice(0.1, 0.3, rng),
+            1: randomContinuousChoice(0.1, 0.15, rng),
             2: randomContinuousChoice(0.2, 0.4, rng),
             3: randomContinuousChoice(0.3, 0.5, rng),
             4: randomContinuousChoice(0.4, 0.6, rng),
