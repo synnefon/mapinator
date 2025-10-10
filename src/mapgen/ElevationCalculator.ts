@@ -46,10 +46,10 @@ export class ElevationCalculator {
 
         this.settings.centerDrift = {
             1: randomContinuousChoice(0.1, 0.15, rng),
-            2: randomContinuousChoice(0.2, 0.4, rng),
+            2: randomContinuousChoice(0.1, 0.4, rng),
             3: randomContinuousChoice(0.3, 0.5, rng),
-            4: randomContinuousChoice(0.4, 0.6, rng),
-            5: randomContinuousChoice(0.6, 0.8, rng),
+            4: randomContinuousChoice(0.3, 0.6, rng),
+            5: randomContinuousChoice(0.4, 0.8, rng),
         }[n] || this.settings.centerDrift;
 
         this.settings.ripple = randomContinuousChoice(0.2, 0.4, rng);
