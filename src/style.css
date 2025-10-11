@@ -468,13 +468,24 @@ canvas {
 }
 
 /* Button bar under the map */
-.button-bar {
-  width: 100%;
+#button-bar {
+  width: 65%;
   display: flex;
   gap: 0.6rem;
-  justify-content: flex-start;
-  /* 👈 align buttons left */
+  justify-content: space-between;
+  /* 👈 regen on left, download/upload on right */
   flex-direction: row;
+}
+
+.right-buttons {
+  display: flex;
+  gap: 0.6rem;
+  flex-direction: row;
+  align-items: center;
+}
+
+.right-buttons button {
+  flex-shrink: 0;
 }
 
 button {
@@ -519,6 +530,55 @@ h4 {
 #mobile-warning.show {
   display: flex;
   /* shown via class toggle */
+}
+
+.popup-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+}
+
+.popup-backdrop.show {
+  display: flex;
+}
+
+.popup {
+  background-color: var(--text);
+  color: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  /* background: var(--bg); */
+  border: 4px solid var(--text);
+  padding: 1rem;
+}
+
+.popup h3 {
+  margin: 0;
+  font-size: 1.2em;
+}
+
+.popup button {
+  background-color: var(--text);
+  border: 4px solid var(--bg);
+  color: var(--bg);
+}
+
+.popup button:hover {
+  background-color: var(--highlight);
+}
+
+.popup button:last-child {
+  margin-bottom: 0;
+}
+
+.popup button {
+  margin: 0.5em 0;
+  width: 100%;
+}
+
+.popup button:last-child {
+  margin-bottom: 0;
 }
 
 /* Right Sidebar */

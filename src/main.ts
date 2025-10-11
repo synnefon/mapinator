@@ -1,6 +1,6 @@
 import { Languages, type Language } from "./common/language";
 import type { WorldMap } from "./common/map";
-import { MAP_DEFAULTS, type MapSettings } from "./common/settings";
+import { isMapSettings, MAP_DEFAULTS, type MapSettings } from "./common/settings";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
@@ -31,7 +31,7 @@ type NumKey =
 // Slider def now carries numericity + formatting
 type SliderDef = {
   key: NumKey;
-  idBase: string;       // input id; label is `${idBase}Value`
+  idBase: string; // input id; label is `${idBase}Value`
   min: number;
   max: number;
   step: number;
@@ -44,10 +44,34 @@ const sliderDefs: readonly SliderDef[] = [
   { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
   { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
   { key: "clumpiness", idBase: "clumpiness", min: -1, max: 1, step: 0.01 },
-  { key: "elevationContrast", idBase: "elevationContrast", min: 0, max: 1, step: 0.01 },
-  { key: "moistureContrast", idBase: "moistureContrast", min: 0, max: 1, step: 0.01 },
-  { key: "terrainFrequency", idBase: "terrainFrequency", min: 0, max: 1, step: 0.01 },
-  { key: "weatherFrequency", idBase: "weatherFrequency", min: 0, max: 1, step: 0.01 },
+  {
+    key: "elevationContrast",
+    idBase: "elevationContrast",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "moistureContrast",
+    idBase: "moistureContrast",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "terrainFrequency",
+    idBase: "terrainFrequency",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "weatherFrequency",
+    idBase: "weatherFrequency",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
 ];
 
 const SLIDER_KEYS = sliderDefs.map((d) => d.key) as readonly NumKey[];
@@ -63,18 +87,26 @@ document.addEventListener("DOMContentLoaded", () => {
     parseFloat(urlParams.get(String(k)) ?? String(d));
 
   const lockFrequencies = (() => {
-    const el = document.getElementById("lock-frequencies") as HTMLInputElement | null;
-    return el ?? Object.assign(document.createElement("input"), { checked: true }); // default true if missing
+    const el = document.getElementById(
+      "lock-frequencies"
+    ) as HTMLInputElement | null;
+    return (
+      el ?? Object.assign(document.createElement("input"), { checked: true })
+    ); // default true if missing
   })();
 
   let syncingFreq = false; // guard to avoid loops
 
-  const syncFreq = (srcKey: "terrainFrequency" | "weatherFrequency", v: number) => {
+  const syncFreq = (
+    srcKey: "terrainFrequency" | "weatherFrequency",
+    v: number
+  ) => {
     if (!lockFrequencies.checked || syncingFreq) return;
 
     syncingFreq = true;
 
-    const dstKey = srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
+    const dstKey =
+      srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
 
     // Update settings
     settings[dstKey] = v as any;
@@ -84,8 +116,6 @@ document.addEventListener("DOMContentLoaded", () => {
     dst.input.value = String(v);
     dst.label.textContent = v.toFixed(dst.decimals);
 
-    // Keep URL + map in sync once (we call draw once after both updates)
-    // updateURL();
     drawMap();
 
     syncingFreq = false;
@@ -93,19 +123,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // All numeric settings to load from URL or defaults
   const NUMERIC_SETTING_KEYS = [...URL_NUM_KEYS, "jitter"] as const;
-  type NumericSettingKey = typeof NUMERIC_SETTING_KEYS[number];
+  type NumericSettingKey = (typeof NUMERIC_SETTING_KEYS)[number];
 
   const numericSettings = NUMERIC_SETTING_KEYS.reduce((acc, k) => {
     (acc as any)[k] = numFromUrl(k, MAP_DEFAULTS[k]); // safe: both number
     return acc;
   }, {} as Pick<MapSettings, NumericSettingKey>);
 
-  const settings: Pick<MapSettings, NumericSettingKey> & { theme: MapSettings["theme"] } = {
+  let settings: Pick<MapSettings, NumericSettingKey> & {
+    theme: MapSettings["theme"];
+  } = {
     ...numericSettings,
-    theme: (urlParams.get("theme") as MapSettings["theme"]) ?? MAP_DEFAULTS.theme,
+    theme:
+      (urlParams.get("theme") as MapSettings["theme"]) ?? MAP_DEFAULTS.theme,
   };
 
-  console.log(urlParams.get("theme"))
+  console.log(urlParams.get("theme"));
 
   const urlMapName = urlParams.get("name") || urlParams.get("seed");
   const nameGenerator = new NameGenerator(`${Date.now()}`);
@@ -119,7 +152,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Elements
   const canvas = fetchElement<HTMLCanvasElement>("map");
   const regenBtn = fetchElement<HTMLButtonElement>("regen");
-  const regenBtnImg = fetchElement<HTMLImageElement>('regen-btn-img');
+  const regenBtnImg = fetchElement<HTMLImageElement>("regen-btn-img");
   const resetSlidersBtn = fetchElement<HTMLButtonElement>("reset-sliders");
   const zoomInput = fetchElement<HTMLInputElement>("zoom");
   const zoomLabel = fetchElement<HTMLSpanElement>("zoomValue");
@@ -128,24 +161,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const loadTitleBtn = fetchElement<HTMLButtonElement>("load-title-btn");
   const loadTitleBtnImg = fetchElement<HTMLImageElement>("load-title-btn-img");
   const downloadBtn = fetchElement<HTMLButtonElement>("download");
+  const uploadBtn = fetchElement<HTMLButtonElement>("upload");
+  const downloadPNGBtn = fetchElement<HTMLButtonElement>("downloadPNG");
+  const downloadSaveBtn = fetchElement<HTMLButtonElement>("downloadSave");
+  const cancelPopupBtn = fetchElement<HTMLButtonElement>("cancelPopup");
 
-  const themeRadios = document.querySelectorAll<HTMLInputElement>(".theme-radio");
-  const languageCheckboxes = document.querySelectorAll<HTMLInputElement>(".language-checkbox");
-  const categoryCheckboxes = document.querySelectorAll<HTMLInputElement>(".category-checkbox");
-  const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>("toggle-all-languages");
-
-  // --- URL updater (single source of truth)
-  // const updateURL = () => {
-  //   url.searchParams.set("name", mapName);
-  //   URL_NUM_KEYS.forEach((k) => url.searchParams.set(k, String(settings[k])));
-  //   url.searchParams.set("theme", settings.theme);
-  //   window.history.replaceState({}, "", url.toString());
-  // };
-
-  // const updateURLParam = (param: string, value: string) => {
-  //   url.searchParams.set(param, value);
-  //   window.history.replaceState({}, "", url.toString());
-  // };
+  const themeRadios =
+    document.querySelectorAll<HTMLInputElement>(".theme-radio");
+  const languageCheckboxes =
+    document.querySelectorAll<HTMLInputElement>(".language-checkbox");
+  const categoryCheckboxes =
+    document.querySelectorAll<HTMLInputElement>(".category-checkbox");
+  const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>(
+    "toggle-all-languages"
+  );
 
   // --- Renderers
   const drawMap = () => {
@@ -177,7 +206,9 @@ document.addEventListener("DOMContentLoaded", () => {
         lang:
           selectedLanguages.length === 0
             ? undefined
-            : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)],
+            : selectedLanguages[
+                Math.floor(Math.random() * selectedLanguages.length)
+              ],
       });
     mapTitle.value = name;
     setTimeout(updateButtonPosition, 0);
@@ -200,7 +231,6 @@ document.addEventListener("DOMContentLoaded", () => {
     mapCache.clear();
 
     panZoomController.resetPan();
-    // updateURL();
     redraw();
   };
 
@@ -223,7 +253,6 @@ document.addEventListener("DOMContentLoaded", () => {
   zoomInput.addEventListener("input", () => {
     settings.zoom = Number(zoomInput.value);
     panZoomController.setZoom(settings.zoom);
-    // updateURLParam("zoom", String(settings.zoom));
     drawMap();
   });
 
@@ -254,7 +283,6 @@ document.addEventListener("DOMContentLoaded", () => {
       input.value = String(v);
       label.textContent = v.toFixed(2);
 
-      // updateURLParam(key, String(settings[key]));
       drawMap();
     });
 
@@ -264,14 +292,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // Bind all numeric sliders uniformly
   const bound = Object.fromEntries(
     sliderDefs.map((d) => [d.key, bindSlider(d)])
-  ) as Record<NumKey, { input: HTMLInputElement; label: HTMLSpanElement; decimals: number }>;
-
+  ) as Record<
+    NumKey,
+    { input: HTMLInputElement; label: HTMLSpanElement; decimals: number }
+  >;
 
   // When either slider moves, mirror the other if linked
   bound.terrainFrequency.input.addEventListener("input", () => {
     const v = Number(bound.terrainFrequency.input.value);
-    // its own bindSlider handler already set settings/label/URL/draw
-    // We only need to mirror the other one here:
     syncFreq("terrainFrequency", v);
   });
 
@@ -286,7 +314,6 @@ document.addEventListener("DOMContentLoaded", () => {
     radio.addEventListener("change", () => {
       if (radio.checked) {
         settings.theme = radio.value as MapSettings["theme"];
-        // updateURLParam("theme", String(radio.value));
         drawMap();
       }
     });
@@ -296,7 +323,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const getCategoryLanguages = (category: string) =>
     Array.from(languageCheckboxes).filter((cb) => {
       const parent = cb.closest(".language-category");
-      const catCb = parent?.querySelector<HTMLInputElement>(".category-checkbox");
+      const catCb =
+        parent?.querySelector<HTMLInputElement>(".category-checkbox");
       return catCb?.dataset.category === category;
     });
 
@@ -313,13 +341,17 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter((cb) => cb.checked)
       .map((cb) => cb.value as Language);
     const allChecked = Array.from(languageCheckboxes).every((cb) => cb.checked);
-    toggleAllLanguagesBtn.textContent = allChecked ? "deselect all" : "select all";
+    toggleAllLanguagesBtn.textContent = allChecked
+      ? "deselect all"
+      : "select all";
   };
 
   // Wire category checkboxes
   categoryCheckboxes.forEach((catCb) => {
     catCb.addEventListener("change", () => {
-      getCategoryLanguages(catCb.dataset.category ?? "").forEach((cb) => (cb.checked = catCb.checked));
+      getCategoryLanguages(catCb.dataset.category ?? "").forEach(
+        (cb) => (cb.checked = catCb.checked)
+      );
       updateSelectedLanguages();
     });
   });
@@ -330,7 +362,8 @@ document.addEventListener("DOMContentLoaded", () => {
     cb.addEventListener("change", () => {
       updateSelectedLanguages();
       const parent = cb.closest(".language-category");
-      const catCb = parent?.querySelector<HTMLInputElement>(".category-checkbox");
+      const catCb =
+        parent?.querySelector<HTMLInputElement>(".category-checkbox");
       if (catCb) updateCategoryCheckbox(catCb);
     });
   });
@@ -357,35 +390,36 @@ document.addEventListener("DOMContentLoaded", () => {
       lang:
         selectedLanguages.length === 0
           ? undefined
-          : selectedLanguages[Math.floor(Math.random() * selectedLanguages.length)],
+          : selectedLanguages[
+              Math.floor(Math.random() * selectedLanguages.length)
+            ],
     });
     mapGenerator.reSeed(`${Date.now()}`);
     mapCache.clear();
     panZoomController.resetPan();
-    // updateURLParam("name", mapName);
     redraw();
   });
 
   const fadeOut = (btn: HTMLButtonElement) => {
-    btn.classList.add('clicked');
+    btn.classList.add("clicked");
     // 2) In the next frame, enable transitions
     requestAnimationFrame(() => {
-      btn.classList.add('enable-transition');
+      btn.classList.add("enable-transition");
 
       // 3) After a short display, remove highlight -> will fade back
       setTimeout(() => {
-        btn.classList.remove('clicked');
+        btn.classList.remove("clicked");
         // optional cleanup after it finishes fading
-        const off = (e: { propertyName: string; }) => {
-          if (e.propertyName === 'background-color') {
-            btn.classList.remove('enable-transition');
-            btn.removeEventListener('transitionend', off);
+        const off = (e: { propertyName: string }) => {
+          if (e.propertyName === "background-color") {
+            btn.classList.remove("enable-transition");
+            btn.removeEventListener("transitionend", off);
           }
         };
-        btn.addEventListener('transitionend', off);
+        btn.addEventListener("transitionend", off);
       }, 222);
     });
-  }
+  };
 
   resetSlidersBtn.addEventListener("click", () => {
     fadeOut(resetSlidersBtn);
@@ -411,12 +445,11 @@ document.addEventListener("DOMContentLoaded", () => {
     panZoomController.resetPan();
 
     mapCache.clear();
-    // updateURL();
     drawMap();
   });
 
   loadTitleBtn.addEventListener("click", () => {
-    playEffect(loadTitleBtnImg, "bounce")
+    playEffect(loadTitleBtnImg, "bounce");
     loadMap(mapTitle.value.trim());
   });
 
@@ -434,11 +467,147 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.classList.remove(effect);
     void btn.offsetWidth; // reflow so animation restarts
     btn.classList.add(effect);
-  }
+  };
 
   downloadBtn.addEventListener("click", () => {
     playEffect(downloadBtn, "bounce");
+    // Show the popup dialog for download options
+    const popupBackdrop = document.getElementById("popupBackdrop");
+    if (popupBackdrop) {
+      popupBackdrop.classList.add("show");
+    }
+  });
 
+  uploadBtn.addEventListener("click", () => {
+    playEffect(uploadBtn, "bounce");
+    handleUpload();
+  });
+
+  const handleCancelPopup = () => {
+    if (popupBackdrop) {
+      popupBackdrop.classList.remove("show");
+    }
+    document.removeEventListener("keydown", escHandler);
+    document.removeEventListener("click", clickHandler);
+  };
+
+  // Add ESC key handler to close popup
+  const escHandler = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      handleCancelPopup();
+    }
+  };
+
+  const clickHandler = (e: MouseEvent) => {
+    if (e.target === popupBackdrop) handleCancelPopup();
+  };
+
+  // Attach ESC handler when popup is shown
+  const popupBackdrop = document.getElementById("popupBackdrop");
+  if (popupBackdrop) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (
+          mutation.attributeName === "class" &&
+          popupBackdrop.classList.contains("show")
+        ) {
+          document.addEventListener("keydown", escHandler);
+          popupBackdrop.addEventListener("click", clickHandler);
+        }
+      });
+    });
+    observer.observe(popupBackdrop, { attributes: true });
+  }
+
+  const downloadPNG = () => {
+    handleDownloadPNG();
+    handleCancelPopup();
+  };
+
+  const downloadSave = () => {
+    handleDownloadSave();
+    handleCancelPopup();
+  };
+
+  downloadPNGBtn.addEventListener("click", () => {
+    downloadPNG();
+  });
+
+  downloadSaveBtn.addEventListener("click", () => {
+    downloadSave();
+  });
+
+  cancelPopupBtn.addEventListener("click", () => {
+    handleCancelPopup();
+  });
+
+  const handleDownloadSave = () => {
+    const mapTitleText = mapTitle.value || "Untitled Map";
+    const data = {
+      seed: mapName,
+      mapSettings: {
+        ...settings,
+        zoom: undefined, // Exclude zoom explicitly
+      },
+    };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${mapTitleText.replace(/\s+/g, "_")}.mapination`;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 100);
+  };
+
+  const onLoadSave = (evt: ProgressEvent<FileReader>) => {
+    let json: any;
+    try {
+      json = JSON.parse(evt.target?.result as string);
+    } catch {
+      alert("Failed to load map file.");
+      return;
+    }
+    if (!json.mapSettings) {
+      alert("Invalid map file format.");
+      return;
+    }
+
+    const mapSettings = {
+      ...json.mapSettings,
+      zoom: 0,
+    };
+    // Safe type check on loaded settings
+    if (!isMapSettings(mapSettings)) {
+      alert("Invalid map settings in file.");
+      return;
+    }
+
+    settings = mapSettings;
+    loadMap(json.seed);
+  };
+
+  const handleUpload = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".mapination,application/json";
+    input.onchange = (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = onLoadSave;
+      reader.readAsText(file);
+    };
+    input.click();
+    redraw();
+  };
+
+  const handleDownloadPNG = () => {
     const mapTitleText = mapTitle.value || "Untitled Map";
     const exportCanvas = document.createElement("canvas");
     const padding = 60;
@@ -457,13 +626,12 @@ document.addEventListener("DOMContentLoaded", () => {
     ctx.fillText(mapTitleText, exportCanvas.width / 2, 40);
 
     const link = document.createElement("a");
-    link.download = `MAPINATOR_${mapTitleText.replace(/\s+/g, "_")}.png`;
+    link.download = `${mapTitleText.replace(/\s+/g, "_")}.png`;
     link.href = exportCanvas.toDataURL("image/png");
     link.click();
-  });
+  };
 
   // --- Initial render
-  // updateURL();
   redraw();
   setTimeout(updateButtonPosition, 100);
 });

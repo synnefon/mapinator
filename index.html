@@ -22,6 +22,16 @@
     </p>
   </div>
 
+  <div class="popup-backdrop" id="popupBackdrop" class="hidden">
+    <div class="popup">
+      <h3>download as...</h3>
+      <button id="downloadPNG">png</button>
+      <button id="downloadSave">savefile</button>
+      <br>
+      <button id="cancelPopup">cancel</button>
+    </div>
+  </div>
+
   <div>
     <div class="toolbar">
 
@@ -84,9 +94,14 @@
       <button id="regen" class="img-button-container">
         <img id="regen-btn-img" class="button-img" src="./assets/regen.png"></img>
       </button>
-      <button id="download" class="img-button-container">
-        <img class="button-img" src="./assets/download.png"></img>
-      </button>
+      <div class="right-buttons">
+        <button id="download" class="img-button-container">
+          <img class="button-img" src="./assets/download.png"></img>
+        </button>
+        <button id="upload" class="img-button-container">
+          <img class="button-img" src="./assets/upload.png"></img>
+        </button>
+      </div>
     </div>
   </div>
 
