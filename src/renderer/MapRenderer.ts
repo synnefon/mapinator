@@ -1,7 +1,7 @@
 import type { Delaunay } from "d3-delaunay";
 import type { WorldMap } from "../common/map";
 import type { MapSettings } from "../common/settings";
-import { BiomeEngine } from "./BiomeColor";
+import { colorAt } from "./BiomeColor";
 
 type BBox = { minX: number; minY: number; maxX: number; maxY: number };
 type CellGeom = { path: Path2D; bbox: BBox };
@@ -169,7 +169,6 @@ export class MapRenderer {
     panY = 0,
     viewScale = 1.0
   ): void {
-    const engine = new BiomeEngine(settings.rainfall, settings.seaLevel);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -201,10 +200,12 @@ export class MapRenderer {
 
     for (let idx = 0; idx < visible.length; idx++) {
       const i = visible[idx];
-      const fill = engine.colorAt(
+      const fill = colorAt(
         settings.theme,
         elevations[i],
-        moistures[i]
+        moistures[i],
+        settings.rainfall,
+        settings.seaLevel
       );
 
       let bucket = buckets.get(fill);

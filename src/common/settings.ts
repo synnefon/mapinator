@@ -1,4 +1,4 @@
-import type { theme } from "./biomes";
+import type { Theme } from "./biomes";
 
 export interface MapSettings {
   resolution: number;
@@ -9,7 +9,7 @@ export interface MapSettings {
   clumpiness: number;
   elevationContrast: number;
   moistureContrast: number;
-  theme: theme;
+  theme: Theme;
   terrainFrequency: number;
   weatherFrequency: number;
 }
