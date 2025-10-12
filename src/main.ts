@@ -588,6 +588,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     settings = mapSettings;
+    themeRadios.forEach((radio) => {
+      radio.checked = radio.value === mapSettings.theme;
+    });
     loadMap(json.seed);
   };
 
