@@ -7,9 +7,11 @@ export type Theme =
   | "verdant"
   | "rainbow"
   | "oasis"
-  | "stone"
+  | "grayscale"
   | "winter"
-  | "autumn";
+  | "autumn"
+  | "volcano";
+  // | "alpine";
 
 export type BiomeKey =
   // water
@@ -231,24 +233,29 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     MID_LOW: "#E3D2A6", // sun-bleached dune
     WET_LOW: "#E3D2A6", // wet sand / muddy wadi
   },
-  stone: {
-    OCEAN: "#6b7e84",
+  grayscale: {
+    // ocean
+    OCEAN: "#2e2d2d", // muted steel grey — subtle water
 
-    DRY_VERY_HIGH: "#b2b2b2",
-    MID_VERY_HIGH: "#d3d1cc",
-    WET_VERY_HIGH: "#e8e7e4",
+    // very high
+    DRY_VERY_HIGH: "#cccccc", // pale cliff grey
+    MID_VERY_HIGH: "#cccccc", // sun-washed light
+    WET_VERY_HIGH: "#cccccc", // bright mist white
 
-    DRY_HIGH: "#9b8f83",
-    MID_HIGH: "#b1a496",
-    WET_HIGH: "#c6b9ac",
+    // high
+    DRY_HIGH: "#a6a6a6", // basalt ridge
+    MID_HIGH: "#a6a6a6", // concrete grey
+    WET_HIGH: "#a6a6a6", // softened wet tone
 
-    DRY_MEDIUM: "#85796e",
-    MID_MEDIUM: "#9d9287",
-    WET_MEDIUM: "#b6aca2",
+    // medium
+    DRY_MEDIUM: "#737373", // dry soil
+    MID_MEDIUM: "#737373", // neutral midtone
+    WET_MEDIUM: "#737373", // lightened by moisture
 
-    DRY_LOW: "#6d6259",
-    MID_LOW: "#8a7f76",
-    WET_LOW: "#a79e96",
+    // low
+    DRY_LOW: "#454444", // dark dune shadow
+    MID_LOW: "#454444", // mid shadow tone
+    WET_LOW: "#454444", // wet sand / damp wadi
   },
   winter: {
     OCEAN: "#5b6f87",
@@ -289,6 +296,26 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     MID_LOW: "#b05a2a", // deep rust
     WET_LOW: "#961D00", // earthy green-brown
   },
+  volcano: {
+    // ocean
+    OCEAN: "#1E2430",
+    // very high
+    DRY_VERY_HIGH: "#FF3D00", // lava red
+    MID_VERY_HIGH: "#FF3D00", // bright molten orange
+    WET_VERY_HIGH: "#FF3D00", // white-hot core / steam vent
+    // high
+    DRY_HIGH: "#3B2E2B",
+    MID_HIGH: "#5C4038",
+    WET_HIGH: "#78493C",
+    // medium
+    DRY_MEDIUM: "#2A2422",
+    MID_MEDIUM: "#2A2422",
+    WET_MEDIUM: "#2A2422",
+    // low
+    DRY_LOW: "#1A1A1A",
+    MID_LOW: "#1A1A1A",
+    WET_LOW: "#1A1A1A",
+  },
 } as const;
 
 const ELEVATION_BAND_BREAKS: readonly {
@@ -321,58 +348,13 @@ export const BASE_LIGHTNESS: Record<ElevationBand, number> = {
 export type ThemeAdjust = {
   lightness?: Partial<Record<ElevationBand, number>>;
   saturationScale?: number;
-  forcestone?: boolean;
 };
 
 export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
-  default: {
-    saturationScale: 1.0,
-    // lightness: {
-    //   LOW_1: 0,
-    //   LOW_2: 0,
-    //   MEDIUM_1: -0.05,
-    //   MEDIUM_2: 0,
-    //   HIGH_1: -0.05,
-    //   HIGH_2: 0,
-    //   VERY_HIGH_1: -0.05,
-    //   VERY_HIGH_2: 0,
-    // },
-  },
-  sage: {
-    // lightness: {
-    //   LOW_1: +0.1,
-    //   LOW_2: +0.05,
-    //   MEDIUM_2: -0.02,
-    //   HIGH_1: -0.05,
-    //   HIGH_2: -0.08,
-    //   VERY_HIGH: -0.12,
-    // },
-    saturationScale: 0.92,
-  },
-  verdant: {
-    // lightness: {
-    //   LOW_1: +0.1,
-    //   LOW_2: +0.06,
-    //   MEDIUM_1: +0.01,
-    //   MEDIUM_2: -0.02,
-    //   HIGH_1: -0.06,
-    //   HIGH_2: -0.11,
-    //   VERY_HIGH: -0.15,
-    // },
-    saturationScale: 1.07,
-  },
-  rainbow: {
-    saturationScale: 1.12,
-    // lightness: {
-    //   LOW_1: +0.03,
-    //   LOW_2: +0.02,
-    //   MEDIUM_1: +0.01,
-    //   MEDIUM_2: +0.01,
-    //   HIGH_1: -0.02,
-    //   HIGH_2: -0.04,
-    //   VERY_HIGH: -0.05,
-    // },
-  },
+  default: { saturationScale: 1.0 },
+  sage: { saturationScale: 0.92 },
+  verdant: { saturationScale: 1.07 },
+  rainbow: { saturationScale: 1.12 },
   oasis: {
     lightness: {
       LOW_1: 0.005,
@@ -386,23 +368,11 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
     },
     saturationScale: 0.85,
   },
-  winter: {
-    saturationScale: 0.95,
-    // lightness: { HIGH_1: -0.02, HIGH_2: -0.03, VERY_HIGH: -0.03 },
-  },
-  autumn: {
-    saturationScale: 1.12,
-    // lightness: {
-    //   LOW_1: +0.05,
-    //   LOW_2: +0.03,
-    //   MEDIUM_1: +0.02,
-    //   MEDIUM_2: +0.0,
-    //   HIGH_1: -0.02,
-    //   HIGH_2: -0.05,
-    //   VERY_HIGH: -0.06,
-    // },
-  },
-  stone: { saturationScale: 0.0, forcestone: true },
+  winter: { saturationScale: 0.95 },
+  autumn: { saturationScale: 1.12 },
+  grayscale: { saturationScale: 0.0 },
+  volcano: { saturationScale: 1.12 },
+  // alpine: { saturationScale: 1.0 },
 };
 
 /**
