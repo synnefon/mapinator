@@ -6,7 +6,7 @@ import {
   type ElevationBand,
   type Theme,
 } from "../common/biomes"; // fast (theme, elevation, moisture) -> hex
-import { clamp } from "../common/util";
+import { clamp, lerp } from "../common/util";
 
 const EPS = 1e-9;
 
@@ -21,16 +21,17 @@ function shapeForRules(
   moisture: number,
   rainfall: number,
   seaLevel: number
-): { e: number; m: number } {
+): { elevation: number; moisture: number } {
   // map elevation 0..1 -> [-1..1], then shift by sea level (lower sea => more land)
-  let e = 2.0 * (elevation - 0.5) - (seaLevel - 0.1);
+  let e = lerp(-1.0 - (seaLevel - 0.1), 1.0 - (seaLevel - 0.1), elevation);
+
   // moisture exponent
   let m = Math.pow(moisture, rainfall);
 
   // clamp to rule space
   e = Math.max(Math.min(e, 1 - EPS), -1);
   m = Math.max(Math.min(m, 1 - EPS), 0); // [0..1]
-  return { e, m };
+  return { elevation: e, moisture: m };
 }
 
 /** One-stop: elevation+moisture -> themed color (fast mapper + theme shading) */
@@ -51,7 +52,7 @@ export function colorAt(
   // Normalize sea level to -1..1
   seaLevel = 2.0 * (seaLevel - 0.5);
 
-  const { e, m } = shapeForRules(elevation, moisture, rainfall, seaLevel);
+  const { elevation: e, moisture: m } = shapeForRules(elevation, moisture, rainfall, seaLevel);
 
   // 1) Base color from fast lookup (uses shaped e/m)
   const baseHex = baseColorFor(theme, e, m);
@@ -60,13 +61,12 @@ export function colorAt(
   if (e < 0) return baseHex;
 
   // 3) Apply theme adjustments using RAW elevation band (now same thresholds as families)
-  const bandName = getElevationBandNameRaw(elevation);
-  if (!bandName) return baseHex;
+  const eBand = getElevationBandNameRaw(e);
+  const { h, s, l } = hexToHsl(baseHex);
 
   const adj = resolveTheme(theme);
-  const { h, s, l } = hexToHsl(baseHex);
-  const s2 = adj.forceGreyscale ? 0 : clamp(s * (adj.saturationScale ?? 1));
-  const delta = adj.lightness[bandName] ?? 0;
+  const s2 = clamp(s * (adj.saturationScale ?? 1));
+  const delta = adj.lightness[eBand.band] ?? 0;
   const l2 = clamp(l + delta);
   return hslToHex(h, s2, l2);
 }
@@ -80,8 +80,7 @@ function resolveTheme(theme: Theme) {
     ...(o.lightness ?? {}),
   };
   const saturationScale = o.saturationScale ?? 1.0;
-  const forceGreyscale = !!o.forceGreyscale;
-  return { lightness, saturationScale, forceGreyscale };
+  return { lightness, saturationScale };
 }
 
 /** ===================== Hex/HSL utils ===================== */

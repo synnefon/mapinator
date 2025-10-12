@@ -132,13 +132,13 @@
         <label for="theme">theme:</label>
         <select id="theme">
           <option value="default">default</option>
-          <option value="oldAtlas">old atlas</option>
+          <option value="sage">sage</option>
           <option value="verdant">verdant</option>
           <option value="rainbow">rainbow</option>
-          <option value="ashfall">ashfall</option>
+          <option value="oasis">oasis</option>
           <option value="winter">winter</option>
           <option value="autumn">autumn</option>
-          <option value="greyscale">greyscale</option>
+          <option value="stone">stone</option>
         </select>
       </div>
     </div>
