@@ -189,7 +189,7 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
   },
   rainbow: {
     // ocean
-    OCEAN: "#001219",
+    OCEAN: "#44447a",
     // very high
     DRY_VERY_HIGH: "#f9844a",
     MID_VERY_HIGH: "#f3722c",
