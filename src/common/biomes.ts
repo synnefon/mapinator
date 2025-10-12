@@ -11,7 +11,6 @@ export type Theme =
   | "winter"
   | "autumn"
   | "volcano";
-  // | "alpine";
 
 export type BiomeKey =
   // water
@@ -36,22 +35,7 @@ export type BiomeKey =
 type ElevationFamily = "OCEAN" | "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
 type MoistureBand = "DRY" | "MID" | "WET";
 
-// ===================== Fast Helpers =====================
-
-// Upper-bound binary search: first index i where x <= arr[i].
-const ub = (x: number, arr: readonly number[]) => {
-  let lo = 0,
-    hi = arr.length - 1,
-    mid = 0;
-  while (lo < hi) {
-    mid = (lo + hi) >>> 1;
-    if (x <= arr[mid]) hi = mid;
-    else lo = mid + 1;
-  }
-  return lo;
-};
-
-// ===================== Elevation Thresholds =====================
+// ===================== Elevation Discretization =====================
 // Raw elevation domain is [-1..1], land is [0..1]. We classify only land.
 // Breaks are inclusive upper-bounds for each band.
 export type ElevationBand =
@@ -76,54 +60,26 @@ export function getElevationBandNameRaw(elevation: number): {
   return firstBreak!;
 }
 
-// Continuous elevation -> family
-const familyOfElevation = (e: number): ElevationFamily => {
+const elevationBand = (e: number): ElevationFamily => {
   if (e < 0) return "OCEAN";
   const band = getElevationBandNameRaw(e)!;
   return band.colorFamily;
 };
 
-// ===================== Moisture Discretization (Scalar → 3 bands) =====================
-const MOISTURE_BREAKS_3: readonly number[] = [0.2, 0.5, 0.8] as const; // DRY | MID | WET
-
-const MOISTURE_BAND_ORDER: readonly MoistureBand[] = [
-  "DRY",
-  "MID",
-  "WET",
+// ===================== Moisture Discretization =====================
+const MOISTURE_BAND_BREAKS: readonly {
+  band: MoistureBand;
+  breakPoint: number;
+}[] = [
+  { band: "DRY", breakPoint: 0.2 },
+  { band: "MID", breakPoint: 0.6 },
+  { band: "WET", breakPoint: 1 },
 ] as const;
 
-const moistureBandOf = (m: number): MoistureBand => {
-  const idx = ub(clamp(m), MOISTURE_BREAKS_3);
-  return MOISTURE_BAND_ORDER[idx];
-};
-
-// ===================== Grid Mapping (ElevationFamily × MoistureBand → BiomeKey) =====================
-type BiomeGrid = Record<
-  Exclude<ElevationFamily, "OCEAN">,
-  Record<MoistureBand, BiomeKey>
->;
-
-const BIOME_GRID: BiomeGrid = {
-  LOW: {
-    DRY: "DRY_LOW",
-    MID: "MID_LOW",
-    WET: "WET_LOW",
-  },
-  MEDIUM: {
-    DRY: "DRY_MEDIUM",
-    MID: "MID_MEDIUM",
-    WET: "WET_MEDIUM",
-  },
-  HIGH: {
-    DRY: "DRY_HIGH",
-    MID: "MID_HIGH",
-    WET: "WET_HIGH",
-  },
-  VERY_HIGH: {
-    DRY: "DRY_VERY_HIGH",
-    MID: "MID_VERY_HIGH",
-    WET: "WET_VERY_HIGH",
-  },
+const moistureBand = (m: number): MoistureBand => {
+  m = clamp(m);
+  const ret = MOISTURE_BAND_BREAKS.find(({ breakPoint }) => m <= breakPoint)?.band;
+  return ret!;
 };
 
 // ===================== Theme → BiomeKey → Hex =====================
@@ -333,7 +289,7 @@ const ELEVATION_BAND_BREAKS: readonly {
   { breakPoint: 1.0, colorFamily: "VERY_HIGH", band: "VERY_HIGH_2" },
 ] as const;
 
-// ===================== Optional: Lightness & Theme overrides =====================
+// ===================== Lightness & Theme overrides =====================
 export const BASE_LIGHTNESS: Record<ElevationBand, number> = {
   LOW_1: -0.02,
   LOW_2: 0,
@@ -372,24 +328,21 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
   autumn: { saturationScale: 1.12 },
   grayscale: { saturationScale: 0.0 },
   volcano: { saturationScale: 1.12 },
-  // alpine: { saturationScale: 1.0 },
 };
 
-/**
- * Scalar → Biome color lookup using discretized elevation & moisture.
- * @param theme Theme palette to use
- * @param elevation Continuous elevation (≈[-1,1]); <0 means ocean
- * @param moisture Continuous moisture [0,1]
- */
+
+// ===================== Color lookup =====================
+
 export function colorFor(
   theme: Theme,
   elevation: number,
   moisture: number
 ): string {
-  const fam = familyOfElevation(elevation);
-  if (fam === "OCEAN") return BiomeColors[theme].OCEAN;
+  const eBand = elevationBand(elevation);
+  if (eBand === "OCEAN") return BiomeColors[theme].OCEAN;
 
-  const band = moistureBandOf(moisture); // DRY | MID | WET
-  const key = BIOME_GRID[fam][band];
+  const mBand = moistureBand(moisture);
+
+  const key = `${mBand}_${eBand}` as BiomeKey;
   return (BiomeColors[theme][key] ?? BiomeColors.default[key])!;
 }
