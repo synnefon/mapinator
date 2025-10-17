@@ -19,6 +19,28 @@ export class MapRenderer {
   // one cache per Delaunay instance
   private geomCache = new WeakMap<Delaunay<any>, VoronoiCache>();
 
+  // Color quantization: reduce color precision for better batching
+  // 5 bits per channel = 32 levels = 32^3 = 32,768 possible colors (vs 16.7M)
+  private quantizeColor(color: string): string {
+    const bits = 5; // bits per channel (5 = good balance of quality vs batching)
+    const levels = (1 << bits) - 1; // 31 for 5 bits
+    const scale = 255 / levels;
+
+    // Parse hex color #RRGGBB
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+
+    // Quantize each channel
+    const qr = Math.round(r / scale) * scale;
+    const qg = Math.round(g / scale) * scale;
+    const qb = Math.round(b / scale) * scale;
+
+    // Convert back to hex
+    const toHex = (n: number) => Math.round(n).toString(16).padStart(2, '0');
+    return `#${toHex(qr)}${toHex(qg)}${toHex(qb)}`;
+  }
+
   // Build or fetch the cached Path2D + bbox per cell
   private getVoronoiCache(map: WorldMap): VoronoiCache {
     const pad = map.resolution * 0.1;
@@ -200,13 +222,15 @@ export class MapRenderer {
 
     for (let idx = 0; idx < visible.length; idx++) {
       const i = visible[idx];
-      const fill = colorAt(
+      const rawColor = colorAt(
         settings.theme,
         elevations[i],
         moistures[i],
         settings.rainfall,
         settings.seaLevel
       );
+
+      const fill = this.quantizeColor(rawColor);
 
       let bucket = buckets.get(fill);
       if (!bucket) {

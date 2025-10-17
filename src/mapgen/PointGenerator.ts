@@ -36,7 +36,7 @@ export class PointGenerator {
     );
 
     // 3) N iterations of in-place Lloyd relaxation using voronoi + update()
-    const iterations = 4;
+    const iterations = 2;
     const bbox: [number, number, number, number] = [
       0,
       0,
