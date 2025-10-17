@@ -307,23 +307,22 @@ export class MapRenderer {
     while (queue.length) {
       const i = queue.pop()!;
       // If this cell touches the view rect, render it and enqueue neighbors
-      if (this.bboxIntersects(bboxData, i, x0, y0, x1, y1)) {
-        vis.push(i);
-        for (const j of map.delaunay.neighbors(i)) {
-          if (!visited[j]) {
-            visited[j] = 1;
-            // Optional quick-reject: check neighbor site is roughly near the rect
-            // to reduce queue growth when panning far away:
-            const p = map.points[j];
-            if (
-              p.x >= x0 - map.resolution * 0.1 &&
-              p.x <= x1 + map.resolution * 0.1 &&
-              p.y >= y0 - map.resolution * 0.1 &&
-              p.y <= y1 + map.resolution * 0.1
-            ) {
-              queue.push(j);
-            }
-          }
+      if (!this.bboxIntersects(bboxData, i, x0, y0, x1, y1)) continue;
+
+      vis.push(i);
+      for (const j of map.delaunay.neighbors(i)) {
+        if (visited[j]) continue;
+        visited[j] = 1;
+
+        // Optional quick-reject: check neighbor site is roughly near the rect
+        // to reduce queue growth when panning far away:
+        const p = map.points[j];
+        const nearX =
+          p.x >= x0 - map.resolution * 0.1 && p.x <= x1 + map.resolution * 0.1;
+        const nearY =
+          p.y >= y0 - map.resolution * 0.1 && p.y <= y1 + map.resolution * 0.1;
+        if (nearX && nearY) {
+          queue.push(j);
         }
       }
     }

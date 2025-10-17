@@ -36,9 +36,12 @@ type ElevationFamily = "OCEAN" | "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
 type MoistureBand = "DRY" | "MID" | "WET";
 
 // ===================== Elevation Discretization =====================
-// Raw elevation domain is [-1..1], land is [0..1]. We classify only land.
+// Raw elevation domain is [-1..1], ocean is [-1..0], land is [0..1].
 // Breaks are inclusive upper-bounds for each band.
 export type ElevationBand =
+  | "OCEAN_1"
+  | "OCEAN_2"
+  | "OCEAN_3"
   | "LOW_1"
   | "LOW_2"
   | "MEDIUM_1"
@@ -78,7 +81,9 @@ const MOISTURE_BAND_BREAKS: readonly {
 
 const moistureBand = (m: number): MoistureBand => {
   m = clamp(m);
-  const ret = MOISTURE_BAND_BREAKS.find(({ breakPoint }) => m <= breakPoint)?.band;
+  const ret = MOISTURE_BAND_BREAKS.find(
+    ({ breakPoint }) => m <= breakPoint
+  )?.band;
   return ret!;
 };
 
@@ -279,6 +284,9 @@ const ELEVATION_BAND_BREAKS: readonly {
   band: ElevationBand;
   colorFamily: ElevationFamily;
 }[] = [
+  { breakPoint: -0.7, colorFamily: "OCEAN", band: "OCEAN_3" }, // deep
+  { breakPoint: -0.35, colorFamily: "OCEAN", band: "OCEAN_2" }, // medium
+  { breakPoint: 0, colorFamily: "OCEAN", band: "OCEAN_1" }, // shallow
   { breakPoint: 0.2, colorFamily: "LOW", band: "LOW_1" },
   { breakPoint: 0.22, colorFamily: "LOW", band: "LOW_2" },
   { breakPoint: 0.35, colorFamily: "MEDIUM", band: "MEDIUM_1" },
@@ -291,6 +299,9 @@ const ELEVATION_BAND_BREAKS: readonly {
 
 // ===================== Lightness & Theme overrides =====================
 export const BASE_LIGHTNESS: Record<ElevationBand, number> = {
+  OCEAN_3: -0.06, // deep - darkest
+  OCEAN_2: -0.03, // medium depth
+  OCEAN_1: 0.01, // shallow
   LOW_1: -0.02,
   LOW_2: 0,
   MEDIUM_1: -0.05,
@@ -308,11 +319,14 @@ export type ThemeAdjust = {
 
 export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
   default: { saturationScale: 1.0 },
-  sage: { saturationScale: 0.92 },
+  sage: { saturationScale: 0.95 },
   verdant: { saturationScale: 1.07 },
   rainbow: { saturationScale: 1.12 },
   oasis: {
     lightness: {
+      OCEAN_3: 0,
+      OCEAN_2: 0,
+      OCEAN_1: 0,
       LOW_1: 0,
       LOW_2: 0,
       MEDIUM_1: 0,
@@ -326,10 +340,23 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
   },
   winter: { saturationScale: 0.95 },
   autumn: { saturationScale: 1.12 },
-  grayscale: { saturationScale: 0.0 },
-  volcano: { saturationScale: 1.12 },
+  grayscale: {
+    saturationScale: 0.0,
+    lightness: {
+      OCEAN_3: 0,
+      OCEAN_2: 0,
+      OCEAN_1: 0,
+    },
+  },
+  volcano: {
+    saturationScale: 1.12,
+    lightness: {
+      OCEAN_3: 0,
+      OCEAN_2: 0,
+      OCEAN_1: 0,
+    },
+  },
 };
-
 
 // ===================== Color lookup =====================
 

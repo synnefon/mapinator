@@ -57,10 +57,7 @@ export function colorAt(
   // 1) Base color from fast lookup (uses shaped e/m)
   const baseHex = baseColorFor(theme, e, m);
 
-  // 2) Ocean or below sea: return base early
-  if (e < 0) return baseHex;
-
-  // 3) Apply theme adjustments using RAW elevation band (now same thresholds as families)
+  // 2) Apply theme adjustments using elevation band (including ocean depth bands)
   const eBand = getElevationBandNameRaw(e);
   const { h, s, l } = hexToHsl(baseHex);
 
