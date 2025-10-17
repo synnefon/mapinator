@@ -1,7 +1,11 @@
 import { Languages, type Language } from "./common/language";
 import type { WorldMap } from "./common/map";
-import { isMapSettings, MAP_DEFAULTS, type MapSettings } from "./common/settings";
-import { debounce } from "./common/util";
+import {
+  isMapSettings,
+  MAP_DEFAULTS,
+  type MapSettings,
+} from "./common/settings";
+import { debounce, lerp } from "./common/util";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
@@ -139,8 +143,6 @@ document.addEventListener("DOMContentLoaded", () => {
       (urlParams.get("theme") as MapSettings["theme"]) ?? MAP_DEFAULTS.theme,
   };
 
-  console.log(urlParams.get("theme"));
-
   const urlMapName = urlParams.get("name") || urlParams.get("seed");
   const nameGenerator = new NameGenerator(`${Date.now()}`);
   let selectedLanguages: Language[] = [...Languages];
@@ -196,7 +198,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   // Debounced version for slider inputs (lil delay for smoother interaction)
-  const debouncedDrawMap = debounce(drawMap, 5);
+  const debouncedDrawMap = debounce(
+    drawMap,
+    lerp(0, 5, settings.resolution, 0, 1)
+  );
 
   const updateButtonPosition = () => {
     const titleWidth = mapTitle.offsetWidth;
