@@ -11,3 +11,20 @@ export const lerp = (
   srcMin: number = 0,
   srcMax: number = 1
 ) => dstMin + ((dstMax - dstMin) * (t - srcMin)) / (srcMax - srcMin);
+
+// debounce function calls - waits for `delay` ms of inactivity before executing
+export const debounce = <T extends (...args: Parameters<T>) => void>(
+  fn: T,
+  delay: number
+): ((...args: Parameters<T>) => void) => {
+  let timeoutId: number | undefined;
+  return (...args: Parameters<T>) => {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = window.setTimeout(() => {
+      fn(...args);
+      timeoutId = undefined;
+    }, delay);
+  };
+};

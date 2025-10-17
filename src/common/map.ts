@@ -17,7 +17,7 @@ export interface BaseMap {
 }
 
 export interface WorldMap extends BaseMap {
-    elevations: number[];
-    moistures: number[];
+    elevations: Float32Array;
+    moistures: Float32Array;
 }
 

@@ -76,12 +76,12 @@ export class MapGenerator {
     return { ...baseMap, elevations, moistures };
   }
 
-  private genMoistures(baseMap: BaseMap, settings: MapSettings): number[] {
+  private genMoistures(baseMap: BaseMap, settings: MapSettings): Float32Array {
     const { points, numRegions, resolution } = baseMap;
     const s = settings.weatherFrequency;
     const moistureContrast = settings.moistureContrast ?? 0.5; // 0.5 = identity
 
-    const out = new Array<number>(numRegions);
+    const out = new Float32Array(numRegions);
 
     for (let r = 0; r < numRegions; r++) {
       const nx = points[r].x / resolution - 0.5;
@@ -97,7 +97,7 @@ export class MapGenerator {
     return out;
   }
 
-  private genElevations(baseMap: BaseMap, settings: MapSettings): number[] {
+  private genElevations(baseMap: BaseMap, settings: MapSettings): Float32Array {
     const { points, numRegions, resolution } = baseMap;
     const {
       elevationContrast = 0.5,   // 0 = flat, 0.5 = identity, 1 = punchy
@@ -105,7 +105,7 @@ export class MapGenerator {
       clumpiness,                 // -1..1  (neg = Mediterranean, pos = Island)
     } = settings;
 
-    const out = new Array<number>(numRegions);
+    const out = new Float32Array(numRegions);
 
     for (let r = 0; r < numRegions; r++) {
       const x = lerp(-0.5, 0.5, points[r].x / resolution);

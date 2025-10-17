@@ -1,6 +1,7 @@
 import { Languages, type Language } from "./common/language";
 import type { WorldMap } from "./common/map";
 import { isMapSettings, MAP_DEFAULTS, type MapSettings } from "./common/settings";
+import { debounce } from "./common/util";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
@@ -116,7 +117,7 @@ document.addEventListener("DOMContentLoaded", () => {
     dst.input.value = String(v);
     dst.label.textContent = v.toFixed(dst.decimals);
 
-    drawMap();
+    debouncedDrawMap();
 
     syncingFreq = false;
   };
@@ -193,6 +194,9 @@ document.addEventListener("DOMContentLoaded", () => {
       panZoomController.viewScale
     );
   };
+
+  // Debounced version for slider inputs (lil delay for smoother interaction)
+  const debouncedDrawMap = debounce(drawMap, 5);
 
   const updateButtonPosition = () => {
     const titleWidth = mapTitle.offsetWidth;
@@ -283,7 +287,8 @@ document.addEventListener("DOMContentLoaded", () => {
       input.value = String(v);
       label.textContent = v.toFixed(2);
 
-      drawMap();
+      // Use debounced version for smoother slider interaction
+      debouncedDrawMap();
     });
 
     return { input, label, decimals: 2 };
@@ -314,7 +319,7 @@ document.addEventListener("DOMContentLoaded", () => {
     radio.addEventListener("change", () => {
       if (radio.checked) {
         settings.theme = radio.value as MapSettings["theme"];
-        drawMap();
+        debouncedDrawMap();
       }
     });
   });
