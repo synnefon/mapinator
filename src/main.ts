@@ -1,3 +1,4 @@
+import { v4 as uuid } from "uuid";
 import { Languages, type Language } from "./common/language";
 import type { WorldMap } from "./common/map";
 import {
@@ -144,7 +145,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const urlMapName = urlParams.get("name") || urlParams.get("seed");
-  const nameGenerator = new NameGenerator(`${Date.now()}`);
+  const nameGenerator = new NameGenerator(uuid());
   let selectedLanguages: Language[] = [...Languages];
   let mapName = urlMapName || nameGenerator.generate();
 
