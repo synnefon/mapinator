@@ -1,3 +1,5 @@
+import { type NumericSettingKey } from "./common/settings";
+
 // === UTILITY FUNCTIONS ===
 const fetchElement = <T extends HTMLElement>(id: string): T => {
   const elem = document.getElementById(id) as T | null;
@@ -9,18 +11,9 @@ const fetchElement = <T extends HTMLElement>(id: string): T => {
 };
 
 // === TYPES AND CONSTANTS ===
-export type NumKey =
-  | "resolution"
-  | "rainfall"
-  | "seaLevel"
-  | "clumpiness"
-  | "elevationContrast"
-  | "moistureContrast"
-  | "terrainFrequency"
-  | "weatherFrequency";
 
 export type SliderDef = {
-  key: NumKey;
+  key: NumericSettingKey;
   idBase: string;
   min: number;
   max: number;
@@ -37,22 +30,22 @@ export type UIElements = {
   // Core elements
   map: HTMLCanvasElement;
   mapTitle: HTMLInputElement;
-  zoom: HTMLInputElement;
+  zoomInput: HTMLInputElement;
   zoomValue: HTMLSpanElement;
-  
+
   // Buttons
-  regen: HTMLButtonElement;
+  regenBtn: HTMLButtonElement;
   regenBtnImg: HTMLImageElement;
-  resetSliders: HTMLButtonElement;
+  resetSlidersBtn: HTMLButtonElement;
   loadTitleBtn: HTMLButtonElement;
   loadTitleBtnImg: HTMLImageElement;
-  download: HTMLButtonElement;
-  upload: HTMLButtonElement;
-  downloadPNG: HTMLButtonElement;
-  downloadSave: HTMLButtonElement;
-  cancelPopup: HTMLButtonElement;
-  toggleAllLanguages: HTMLButtonElement;
-  
+  downloadBtn: HTMLButtonElement;
+  uploadBtn: HTMLButtonElement;
+  downloadPNGBtn: HTMLButtonElement;
+  downloadSaveBtn: HTMLButtonElement;
+  cancelPopupBtn: HTMLButtonElement;
+  toggleAllLanguagesBtn: HTMLButtonElement;
+
   // Collections
   themeRadios: NodeListOf<HTMLInputElement>;
   languageCheckboxes: NodeListOf<HTMLInputElement>;
@@ -65,15 +58,39 @@ export const sliderDefs: readonly SliderDef[] = [
   { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
   { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
   { key: "clumpiness", idBase: "clumpiness", min: -1, max: 1, step: 0.01 },
-  { key: "elevationContrast", idBase: "elevationContrast", min: 0, max: 1, step: 0.01 },
-  { key: "moistureContrast", idBase: "moistureContrast", min: 0, max: 1, step: 0.01 },
-  { key: "terrainFrequency", idBase: "terrainFrequency", min: 0, max: 1, step: 0.01 },
-  { key: "weatherFrequency", idBase: "weatherFrequency", min: 0, max: 1, step: 0.01 },
+  {
+    key: "elevationContrast",
+    idBase: "elevationContrast",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "moistureContrast",
+    idBase: "moistureContrast",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "terrainFrequency",
+    idBase: "terrainFrequency",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
+  {
+    key: "weatherFrequency",
+    idBase: "weatherFrequency",
+    min: 0,
+    max: 1,
+    step: 0.01,
+  },
 ];
 
 export class UIManager {
   private elements: UIElements;
-  private boundSliders: Record<NumKey, BoundSlider> = {} as any;
+  private boundSliders: Record<NumericSettingKey, BoundSlider> = {} as any;
 
   constructor() {
     this.elements = this.initializeElements();
@@ -82,28 +99,47 @@ export class UIManager {
 
   private initializeElements(): UIElements {
     const elementIds = [
-      "map", "regen", "regenBtnImg", "resetSliders", "zoom", "zoomValue",
-      "mapTitle", "loadTitleBtn", "loadTitleBtnImg", "download", "upload",
-      "downloadPNG", "downloadSave", "cancelPopup", "toggleAllLanguages"
+      "map",
+      "regenBtn",
+      "regenBtnImg",
+      "resetSlidersBtn",
+      "zoomInput",
+      "zoomValue",
+      "mapTitle",
+      "loadTitleBtn",
+      "loadTitleBtnImg",
+      "downloadBtn",
+      "uploadBtn",
+      "downloadPNGBtn",
+      "downloadSaveBtn",
+      "cancelPopupBtn",
+      "toggleAllLanguagesBtn",
     ];
 
     const elements: any = {};
-    elementIds.forEach(id => {
+    elementIds.forEach((id) => {
       elements[id] = fetchElement(id);
     });
 
     // Initialize collections
-    elements.themeRadios = document.querySelectorAll(".theme-radio") as NodeListOf<HTMLInputElement>;
-    elements.languageCheckboxes = document.querySelectorAll(".language-checkbox") as NodeListOf<HTMLInputElement>;
-    elements.categoryCheckboxes = document.querySelectorAll(".category-checkbox") as NodeListOf<HTMLInputElement>;
-    elements.lockFrequencies = document.getElementById("lockFrequencies") as HTMLInputElement || 
+    elements.themeRadios = document.querySelectorAll(
+      ".theme-radio"
+    ) as NodeListOf<HTMLInputElement>;
+    elements.languageCheckboxes = document.querySelectorAll(
+      ".language-checkbox"
+    ) as NodeListOf<HTMLInputElement>;
+    elements.categoryCheckboxes = document.querySelectorAll(
+      ".category-checkbox"
+    ) as NodeListOf<HTMLInputElement>;
+    elements.lockFrequencies =
+      (document.getElementById("lockFrequencies") as HTMLInputElement) ||
       Object.assign(document.createElement("input"), { checked: true });
 
     return elements as UIElements;
   }
 
   private initializeSliders() {
-    sliderDefs.forEach(def => {
+    sliderDefs.forEach((def) => {
       const input = fetchElement<HTMLInputElement>(def.idBase);
       const label = fetchElement<HTMLSpanElement>(`${def.idBase}Value`);
 
@@ -119,11 +155,11 @@ export class UIManager {
     return this.elements;
   }
 
-  getSlider(key: NumKey): BoundSlider {
+  getSlider(key: NumericSettingKey): BoundSlider {
     return this.boundSliders[key];
   }
 
-  updateSliderValue(key: NumKey, value: number) {
+  updateSliderValue(key: NumericSettingKey, value: number) {
     const slider = this.boundSliders[key];
     slider.input.value = String(value);
     slider.label.textContent = value.toFixed(slider.decimals);

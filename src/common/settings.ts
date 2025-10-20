@@ -14,7 +14,22 @@ export interface MapSettings {
   weatherFrequency: number;
 }
 
-const MAP_SETTINGS_KEYS = [
+export const NUMERIC_SETTING_KEYS = [
+  "resolution",
+  "rainfall",
+  "jitter",
+  "zoom",
+  "seaLevel",
+  "clumpiness",
+  "elevationContrast",
+  "moistureContrast",
+  "terrainFrequency",
+  "weatherFrequency",
+] as const;
+
+export type NumericSettingKey = (typeof NUMERIC_SETTING_KEYS)[number];
+
+export const MAP_SETTINGS_KEYS = [
   "resolution",
   "jitter",
   "zoom",
@@ -28,9 +43,29 @@ const MAP_SETTINGS_KEYS = [
   "weatherFrequency",
 ] as const satisfies readonly (keyof MapSettings)[];
 
-export const isMapSettings = (settings: any): settings is MapSettings => {
-  if (typeof settings !== "object" || settings === null) return false;
-  return MAP_SETTINGS_KEYS.every((k) => k in settings);
+export const isValidSaveFile = (fileContent: any): boolean => {
+  if (!fileContent.seed) {
+    alert("save file must contain a seed");
+    return false;
+  }
+  if (!fileContent.mapSettings) {
+    alert("save file must contain map settings object");
+    return false;
+  }
+  if (
+    typeof fileContent.mapSettings !== "object" ||
+    fileContent.mapSettings === null
+  ) {
+    alert("map settings object must be an object");
+    return false;
+  }
+  for (const k of MAP_SETTINGS_KEYS) {
+    if (!(k in fileContent.mapSettings)) {
+      alert(`save file must contain ${k} in map settings object`);
+      return false;
+    }
+  }
+  return true;
 };
 
 export const MAP_DEFAULTS: MapSettings = {

@@ -25,10 +25,10 @@
   <div class="popup-backdrop" id="popupBackdrop" class="hidden">
     <div class="popup">
       <h3>download as...</h3>
-      <button id="downloadPNG">png</button>
-      <button id="downloadSave">savefile</button>
+      <button id="downloadPNGBtn">png</button>
+      <button id="downloadSaveBtn">savefile</button>
       <br>
-      <button id="cancelPopup">cancel</button>
+      <button id="cancelPopupBtn">cancel</button>
     </div>
   </div>
 
@@ -40,8 +40,8 @@
           <label for="resolution">resolution: <span id="resolutionValue"></span></label>
           <input id="resolution" type="range" min="0" max="1" step="0.05" />
 
-          <label for="zoom">zoom: <span id="zoomValue"></span></label>
-          <input id="zoom" type="range" min="0" max="1" step="0.01" />
+          <label for="zoomInput">zoom: <span id="zoomValue"></span></label>
+          <input id="zoomInput" type="range" min="0" max="1" step="0.01" />
 
           <label class="freq-header">lock frequencies:</label>
           <input id="lockFrequencies" type="checkbox" checked aria-label="link sliders" />
@@ -77,7 +77,7 @@
     </div>
 
     <div class="reset-sliders-btn-container">
-      <button id="resetSliders">reset</button>
+      <button id="resetSlidersBtn">reset</button>
     </div>
   </div>
 
@@ -91,14 +91,14 @@
     </div>
     <canvas id="map" width="1000" height="1000"></canvas>
     <div id="buttonBar">
-      <button id="regen" class="img-button-container">
+      <button id="regenBtn" class="img-button-container">
         <img id="regenBtnImg" class="button-img" src="./assets/regen.png"></img>
       </button>
       <div class="right-buttons">
-        <button id="download" class="img-button-container">
+        <button id="downloadBtn" class="img-button-container">
           <img class="button-img" src="./assets/download.png"></img>
         </button>
-        <button id="upload" class="img-button-container">
+        <button id="uploadBtn" class="img-button-container">
           <img class="button-img" src="./assets/upload.png"></img>
         </button>
       </div>
@@ -109,7 +109,7 @@
     <div id="languageSelectContainer">
       <div class="language-header">
         <label>language</label>
-        <button id="toggleAllLanguages">deselect all</button>
+        <button id="toggleAllLanguagesBtn">deselect all</button>
       </div>
       <div id="languageCheckboxList">
         <div class="language-category">

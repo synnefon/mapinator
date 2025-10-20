@@ -88,7 +88,7 @@ body {
   box-sizing: border-box;
 }
 
-#resetSliders {
+#resetSlidersBtn {
   width: 100%;
   margin-left: 1em;
 }
@@ -135,14 +135,14 @@ body {
 }
 
 /* the rail container should match the sliders' height */
-.lock-frequencies {
+.lockFrequencies {
   position: relative;
   display: flex;
   justify-content: center;
   /* remove align-self: stretch */
 }
 
-.freq-group:hover .lock-rail .rail {
+.freqGroup:hover .lockFrequencies .lockRail .rail {
   opacity: 1;
 }
 
@@ -163,7 +163,7 @@ body {
   border-color: white;
 }
 
-.freq-sliders input[type="range"] {
+.freqSliders input[type="range"] {
   width: 100%;
 }
 
@@ -377,7 +377,7 @@ select[multiple] optgroup {
   /* Sets the text color of selected text to white */
 }
 
-#regen {
+#regenBtn {
   margin-top: 1em;
 }
 
@@ -473,7 +473,7 @@ canvas {
   display: flex;
   gap: 0.6rem;
   justify-content: space-between;
-  /* 👈 regen on left, download/upload on right */
+  /* 👈 regenBtn on left, download/upload on right */
   flex-direction: row;
 }
 
