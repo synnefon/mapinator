@@ -404,7 +404,7 @@ document.addEventListener("DOMContentLoaded", () => {
               Math.floor(Math.random() * selectedLanguages.length)
             ],
     });
-    mapGenerator.reSeed(`${Date.now()}`);
+    mapGenerator.reSeed(mapName);
     mapCache.clear();
     panZoomController.resetPan();
     redraw();
