@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const warning = document.getElementById("mobile-warning");
+    const warning = document.getElementById("mobileWarning");
 
     if (!warning) return;
 

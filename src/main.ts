@@ -11,244 +11,185 @@ import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
 import { PanZoomController } from "./renderer/PanZoomController";
+import { UIManager, type NumKey, type SliderDef, sliderDefs } from "./UIManager";
 
-const fetchElement = <T extends HTMLElement>(id: string): T => {
-  const elem = document.getElementById(id) as T | null;
-  if (!elem) {
-    alert(`UI init failed. Missing #${id}`);
-    throw new Error(`UI init failed. Missing #${id}`);
-  }
-  return elem;
+// === UTILITY FUNCTIONS ===
+
+const playEffect = (element: HTMLElement, effect: "bounce" | "spin") => {
+  element.classList.remove(effect);
+  void element.offsetWidth; // reflow so animation restarts
+  element.classList.add(effect);
 };
 
-const mapCache = new Map<string, WorldMap>();
-
-// Numeric sliders we want to bind in a uniform way.
-type NumKey =
-  | "resolution"
-  | "rainfall"
-  | "seaLevel"
-  | "clumpiness"
-  | "elevationContrast"
-  | "moistureContrast"
-  | "terrainFrequency"
-  | "weatherFrequency";
-
-// Slider def now carries numericity + formatting
-type SliderDef = {
-  key: NumKey;
-  idBase: string; // input id; label is `${idBase}Value`
-  min: number;
-  max: number;
-  step: number;
-  bound?: string;
+const fadeOut = (btn: HTMLButtonElement) => {
+  btn.classList.add("clicked");
+  requestAnimationFrame(() => {
+    btn.classList.add("enable-transition");
+    setTimeout(() => {
+      btn.classList.remove("clicked");
+      const off = (e: { propertyName: string }) => {
+        if (e.propertyName === "background-color") {
+          btn.classList.remove("enable-transition");
+          btn.removeEventListener("transitionend", off);
+        }
+      };
+      btn.addEventListener("transitionend", off);
+    }, 222);
+  });
 };
 
-// idBase is both the input id and label id with "Value" suffix.
-const sliderDefs: readonly SliderDef[] = [
-  { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.01 },
-  { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
-  { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
-  { key: "clumpiness", idBase: "clumpiness", min: -1, max: 1, step: 0.01 },
-  {
-    key: "elevationContrast",
-    idBase: "elevationContrast",
-    min: 0,
-    max: 1,
-    step: 0.01,
-  },
-  {
-    key: "moistureContrast",
-    idBase: "moistureContrast",
-    min: 0,
-    max: 1,
-    step: 0.01,
-  },
-  {
-    key: "terrainFrequency",
-    idBase: "terrainFrequency",
-    min: 0,
-    max: 1,
-    step: 0.01,
-  },
-  {
-    key: "weatherFrequency",
-    idBase: "weatherFrequency",
-    min: 0,
-    max: 1,
-    step: 0.01,
-  },
-];
+const downloadFile = (content: string | Blob, filename: string, mimeType: string) => {
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, 100);
+};
+
+// === TYPES AND CONSTANTS ===
 
 const SLIDER_KEYS = sliderDefs.map((d) => d.key) as readonly NumKey[];
 const URL_NUM_KEYS = [...SLIDER_KEYS, "zoom"] as const;
+const NUMERIC_SETTING_KEYS = [...URL_NUM_KEYS, "jitter"] as const;
 
+type NumericSettingKey = (typeof NUMERIC_SETTING_KEYS)[number];
+
+const mapCache = new Map<string, WorldMap>();
 const getCacheKey = (s: MapSettings) => SLIDER_KEYS.map((k) => s[k]).join("|");
 
+// === APPLICATION STATE ===
+class AppState {
+  private _settings: Pick<MapSettings, NumericSettingKey> & { theme: MapSettings["theme"] };
+  private _selectedLanguages: Language[] = [...Languages];
+  private _mapName: string;
+  private _syncingFreq = false;
+
+  constructor() {
+    const url = new URL(window.location.href);
+    const urlParams = url.searchParams;
+    
+    const numFromUrl = (k: keyof MapSettings, d: number) =>
+      parseFloat(urlParams.get(String(k)) ?? String(d));
+
+    const numericSettings = NUMERIC_SETTING_KEYS.reduce((acc, k) => {
+      (acc as any)[k] = numFromUrl(k, MAP_DEFAULTS[k]);
+      return acc;
+    }, {} as Pick<MapSettings, NumericSettingKey>);
+
+    this._settings = {
+      ...numericSettings,
+      theme: (urlParams.get("theme") as MapSettings["theme"]) ?? MAP_DEFAULTS.theme,
+    };
+
+    const urlMapName = urlParams.get("name") || urlParams.get("seed");
+    this._mapName = urlMapName || "";
+  }
+
+  get settings() { return this._settings; }
+  get selectedLanguages() { return this._selectedLanguages; }
+  get mapName() { return this._mapName; }
+  get syncingFreq() { return this._syncingFreq; }
+
+  set settings(value) { this._settings = value; }
+  set selectedLanguages(value) { this._selectedLanguages = value; }
+  set mapName(value) { this._mapName = value; }
+  set syncingFreq(value) { this._syncingFreq = value; }
+
+  updateSetting<K extends keyof typeof this._settings>(key: K, value: typeof this._settings[K]) {
+    this._settings[key] = value;
+  }
+}
+
+
 document.addEventListener("DOMContentLoaded", () => {
-  // --- URL helpers
-  const url = new URL(window.location.href);
-  const urlParams = url.searchParams;
-  const numFromUrl = (k: keyof MapSettings, d: number) =>
-    parseFloat(urlParams.get(String(k)) ?? String(d));
-
-  const lockFrequencies = (() => {
-    const el = document.getElementById(
-      "lock-frequencies"
-    ) as HTMLInputElement | null;
-    return (
-      el ?? Object.assign(document.createElement("input"), { checked: true })
-    ); // default true if missing
-  })();
-
-  let syncingFreq = false; // guard to avoid loops
-
-  const syncFreq = (
-    srcKey: "terrainFrequency" | "weatherFrequency",
-    v: number
-  ) => {
-    if (!lockFrequencies.checked || syncingFreq) return;
-
-    syncingFreq = true;
-
-    const dstKey =
-      srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
-
-    // Update settings
-    settings[dstKey] = v as any;
-
-    // Update UI label + input without triggering input handlers
-    const dst = bound[dstKey];
-    dst.input.value = String(v);
-    dst.label.textContent = v.toFixed(dst.decimals);
-
-    debouncedDrawMap();
-
-    syncingFreq = false;
-  };
-
-  // All numeric settings to load from URL or defaults
-  const NUMERIC_SETTING_KEYS = [...URL_NUM_KEYS, "jitter"] as const;
-  type NumericSettingKey = (typeof NUMERIC_SETTING_KEYS)[number];
-
-  const numericSettings = NUMERIC_SETTING_KEYS.reduce((acc, k) => {
-    (acc as any)[k] = numFromUrl(k, MAP_DEFAULTS[k]); // safe: both number
-    return acc;
-  }, {} as Pick<MapSettings, NumericSettingKey>);
-
-  let settings: Pick<MapSettings, NumericSettingKey> & {
-    theme: MapSettings["theme"];
-  } = {
-    ...numericSettings,
-    theme:
-      (urlParams.get("theme") as MapSettings["theme"]) ?? MAP_DEFAULTS.theme,
-  };
-
-  const urlMapName = urlParams.get("name") || urlParams.get("seed");
+  // === INITIALIZATION ===
+  const appState = new AppState();
+  const ui = new UIManager();
   const nameGenerator = new NameGenerator(uuid());
-  let selectedLanguages: Language[] = [...Languages];
-  let mapName = urlMapName || nameGenerator.generate();
-
-  // --- Core objects
-  const mapGenerator = new MapGenerator(mapName);
+  const mapGenerator = new MapGenerator(appState.mapName || nameGenerator.generate());
   const mapRenderer = new MapRenderer();
 
-  // --- Elements
-  const canvas = fetchElement<HTMLCanvasElement>("map");
-  const regenBtn = fetchElement<HTMLButtonElement>("regen");
-  const regenBtnImg = fetchElement<HTMLImageElement>("regen-btn-img");
-  const resetSlidersBtn = fetchElement<HTMLButtonElement>("reset-sliders");
-  const zoomInput = fetchElement<HTMLInputElement>("zoom");
-  const zoomLabel = fetchElement<HTMLSpanElement>("zoomValue");
+  // === CORE FUNCTIONALITY ===
+  const elements = ui.getAllElements();
+  const canvas = elements.map;
+  const mapTitle = elements.mapTitle;
+  const zoomInput = elements.zoom;
+  const zoomLabel = elements.zoomValue;
 
-  const mapTitle = fetchElement<HTMLInputElement>("map-title");
-  const loadTitleBtn = fetchElement<HTMLButtonElement>("load-title-btn");
-  const loadTitleBtnImg = fetchElement<HTMLImageElement>("load-title-btn-img");
-  const downloadBtn = fetchElement<HTMLButtonElement>("download");
-  const uploadBtn = fetchElement<HTMLButtonElement>("upload");
-  const downloadPNGBtn = fetchElement<HTMLButtonElement>("downloadPNG");
-  const downloadSaveBtn = fetchElement<HTMLButtonElement>("downloadSave");
-  const cancelPopupBtn = fetchElement<HTMLButtonElement>("cancelPopup");
-
-  const themeRadios =
-    document.querySelectorAll<HTMLInputElement>(".theme-radio");
-  const languageCheckboxes =
-    document.querySelectorAll<HTMLInputElement>(".language-checkbox");
-  const categoryCheckboxes =
-    document.querySelectorAll<HTMLInputElement>(".category-checkbox");
-  const toggleAllLanguagesBtn = fetchElement<HTMLButtonElement>(
-    "toggle-all-languages"
-  );
-
-  // --- Renderers
+  // === MAP RENDERING ===
   const drawMap = () => {
-    const cacheKey = getCacheKey(settings);
+    const cacheKey = getCacheKey(appState.settings);
     let cachedMap = mapCache.get(cacheKey);
     if (!cachedMap) {
-      cachedMap = mapGenerator.generateMap(settings);
+      cachedMap = mapGenerator.generateMap(appState.settings);
       mapCache.set(cacheKey, cachedMap);
     }
     mapRenderer.drawCellColors(
       canvas,
       cachedMap,
-      settings,
+      appState.settings,
       panZoomController.panX,
       panZoomController.panY,
       panZoomController.viewScale
     );
   };
 
-  // Debounced version for slider inputs (lil delay for smoother interaction)
   const debouncedDrawMap = debounce(
     drawMap,
-    lerp(0, 5, settings.resolution, 0, 1)
+    lerp(0, 5, appState.settings.resolution, 0, 1)
   );
 
+  // === UI HELPERS ===
   const updateButtonPosition = () => {
     const titleWidth = mapTitle.offsetWidth;
+    const loadTitleBtn = elements.loadTitleBtn;
     loadTitleBtn.style.transform = `translate(${titleWidth / 2 + 16}px, -50%)`;
   };
 
-  const drawTitle = (n?: string) => {
-    const name =
-      n ??
-      nameGenerator.generate({
-        lang:
-          selectedLanguages.length === 0
-            ? undefined
-            : selectedLanguages[
-                Math.floor(Math.random() * selectedLanguages.length)
-              ],
-      });
-    mapTitle.value = name;
+  const generateMapName = () => {
+    return nameGenerator.generate({
+      lang: appState.selectedLanguages.length === 0
+        ? undefined
+        : appState.selectedLanguages[Math.floor(Math.random() * appState.selectedLanguages.length)]
+    });
+  };
+
+  const drawTitle = (name?: string) => {
+    const finalName = name && name.trim() ? name : generateMapName();
+    mapTitle.value = finalName;
     setTimeout(updateButtonPosition, 0);
   };
 
   const redraw = () => {
-    drawTitle(mapName);
+    drawTitle(appState.mapName);
     drawMap();
   };
 
-  const loadMap = (n: string) => {
-    if (!n.trim()) {
+  const loadMap = (name: string) => {
+    if (!name.trim()) {
       alert("Please enter the name of a map to load in");
-      mapName = "";
+      appState.mapName = "";
       mapTitle.value = "";
       return;
     }
-    mapName = n;
-    mapGenerator.reSeed(n);
+    appState.mapName = name;
+    mapGenerator.reSeed(name);
     mapCache.clear();
-
     panZoomController.resetPan();
     redraw();
   };
 
-  // --- Pan/Zoom controller
+  // === PAN/ZOOM CONTROLLER ===
   const panZoomController = new PanZoomController({
     canvas,
     onRedraw: drawMap,
-    getCachedMap: () => mapCache.get(getCacheKey(settings)) ?? null,
+    getCachedMap: () => mapCache.get(getCacheKey(appState.settings)) ?? null,
     momentum: 0.3,
     onZoomChange: (zoom, viewScale) => {
       zoomInput.value = String(zoom);
@@ -256,86 +197,76 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   });
 
-  // --- Initialize zoom
-  zoomInput.value = String(settings.zoom);
-  panZoomController.setZoom(settings.zoom);
-  zoomLabel.textContent = panZoomController.viewScale.toFixed(2);
-  zoomInput.addEventListener("input", () => {
-    settings.zoom = Number(zoomInput.value);
-    panZoomController.setZoom(settings.zoom);
-    drawMap();
-  });
+  // === SLIDER MANAGEMENT ===
+  const syncFreq = (srcKey: "terrainFrequency" | "weatherFrequency", v: number) => {
+    if (!ui.lockFrequencies.checked || appState.syncingFreq) return;
 
-  // --- Generic slider binder (uses numericity from defs)
-  const bindSlider = (def: SliderDef) => {
-    const { key, idBase, min, max, step } = def;
-    const input = fetchElement<HTMLInputElement>(idBase);
-    const label = fetchElement<HTMLSpanElement>(`${idBase}Value`);
+    appState.syncingFreq = true;
+    const dstKey = srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
 
-    // Apply numeric constraints to the input element
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-
-    // Initialize from settings
-    const init = Number(settings[key]);
-    input.value = String(init);
-    label.textContent = init.toFixed(2);
-
-    input.addEventListener("input", () => {
-      let v = Number(input.value);
-      if (!Number.isFinite(v)) v = Number(MAP_DEFAULTS[key]);
-
-      if (v < min) v = min;
-      else if (v > max) v = max;
-
-      settings[key] = v as any;
-      input.value = String(v);
-      label.textContent = v.toFixed(2);
-
-      // Use debounced version for smoother slider interaction
-      debouncedDrawMap();
-    });
-
-    return { input, label, decimals: 2 };
+    appState.updateSetting(dstKey, v as any);
+    ui.updateSliderValue(dstKey, v);
+    debouncedDrawMap();
+    appState.syncingFreq = false;
   };
 
-  // Bind all numeric sliders uniformly
-  const bound = Object.fromEntries(
-    sliderDefs.map((d) => [d.key, bindSlider(d)])
-  ) as Record<
-    NumKey,
-    { input: HTMLInputElement; label: HTMLSpanElement; decimals: number }
-  >;
+  const bindSlider = (def: SliderDef) => {
+    const slider = ui.getSlider(def.key);
+    const init = Number(appState.settings[def.key]);
+    
+    ui.updateSliderValue(def.key, init);
 
-  // When either slider moves, mirror the other if linked
-  bound.terrainFrequency.input.addEventListener("input", () => {
-    const v = Number(bound.terrainFrequency.input.value);
+    slider.input.addEventListener("input", () => {
+      let v = Number(slider.input.value);
+      if (!Number.isFinite(v)) v = Number(MAP_DEFAULTS[def.key]);
+
+      v = Math.max(def.min, Math.min(def.max, v));
+      appState.updateSetting(def.key, v as any);
+      ui.updateSliderValue(def.key, v);
+      debouncedDrawMap();
+    });
+  };
+
+  // Bind all sliders
+  sliderDefs.forEach(bindSlider);
+
+  // Frequency sync handlers
+  ui.getSlider("terrainFrequency").input.addEventListener("input", () => {
+    const v = Number(ui.getSlider("terrainFrequency").input.value);
     syncFreq("terrainFrequency", v);
   });
 
-  bound.weatherFrequency.input.addEventListener("input", () => {
-    const v = Number(bound.weatherFrequency.input.value);
+  ui.getSlider("weatherFrequency").input.addEventListener("input", () => {
+    const v = Number(ui.getSlider("weatherFrequency").input.value);
     syncFreq("weatherFrequency", v);
   });
 
-  // --- Theme radios
-  themeRadios.forEach((radio) => {
-    radio.checked = radio.value === settings.theme;
+  // Initialize zoom
+  zoomInput.value = String(appState.settings.zoom);
+  panZoomController.setZoom(appState.settings.zoom);
+  zoomLabel.textContent = panZoomController.viewScale.toFixed(2);
+  zoomInput.addEventListener("input", () => {
+    appState.updateSetting("zoom", Number(zoomInput.value));
+    panZoomController.setZoom(appState.settings.zoom);
+    drawMap();
+  });
+
+  // === THEME MANAGEMENT ===
+  ui.themeRadios.forEach((radio) => {
+    radio.checked = radio.value === appState.settings.theme;
     radio.addEventListener("change", () => {
       if (radio.checked) {
-        settings.theme = radio.value as MapSettings["theme"];
+        appState.updateSetting("theme", radio.value as MapSettings["theme"]);
         debouncedDrawMap();
       }
     });
   });
 
-  // --- Language selection helpers
+  // === LANGUAGE MANAGEMENT ===
   const getCategoryLanguages = (category: string) =>
-    Array.from(languageCheckboxes).filter((cb) => {
+    Array.from(ui.languageCheckboxes).filter((cb) => {
       const parent = cb.closest(".language-category");
-      const catCb =
-        parent?.querySelector<HTMLInputElement>(".category-checkbox");
+      const catCb = parent?.querySelector<HTMLInputElement>(".category-checkbox");
       return catCb?.dataset.category === category;
     });
 
@@ -348,17 +279,17 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const updateSelectedLanguages = () => {
-    selectedLanguages = Array.from(languageCheckboxes)
+    appState.selectedLanguages = Array.from(ui.languageCheckboxes)
       .filter((cb) => cb.checked)
       .map((cb) => cb.value as Language);
-    const allChecked = Array.from(languageCheckboxes).every((cb) => cb.checked);
-    toggleAllLanguagesBtn.textContent = allChecked
-      ? "deselect all"
-      : "select all";
+    
+    const toggleAllBtn = elements.toggleAllLanguages;
+    const allChecked = Array.from(ui.languageCheckboxes).every((cb) => cb.checked);
+    toggleAllBtn.textContent = allChecked ? "deselect all" : "select all";
   };
 
   // Wire category checkboxes
-  categoryCheckboxes.forEach((catCb) => {
+  ui.categoryCheckboxes.forEach((catCb) => {
     catCb.addEventListener("change", () => {
       getCategoryLanguages(catCb.dataset.category ?? "").forEach(
         (cb) => (cb.checked = catCb.checked)
@@ -368,93 +299,71 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Wire individual language checkboxes
-  languageCheckboxes.forEach((cb) => {
-    cb.checked = selectedLanguages.includes(cb.value as Language);
+  ui.languageCheckboxes.forEach((cb) => {
+    cb.checked = appState.selectedLanguages.includes(cb.value as Language);
     cb.addEventListener("change", () => {
       updateSelectedLanguages();
       const parent = cb.closest(".language-category");
-      const catCb =
-        parent?.querySelector<HTMLInputElement>(".category-checkbox");
+      const catCb = parent?.querySelector<HTMLInputElement>(".category-checkbox");
       if (catCb) updateCategoryCheckbox(catCb);
     });
   });
 
   // Initialize category states
-  categoryCheckboxes.forEach(updateCategoryCheckbox as any);
+  ui.categoryCheckboxes.forEach(updateCategoryCheckbox as any);
   updateSelectedLanguages();
 
   // Toggle-all button
-  toggleAllLanguagesBtn.addEventListener("click", () => {
-    const all = Array.from(languageCheckboxes).every((cb) => cb.checked);
-    languageCheckboxes.forEach((cb) => (cb.checked = !all));
-    categoryCheckboxes.forEach((cb) => {
+  elements.toggleAllLanguages.addEventListener("click", () => {
+    const all = Array.from(ui.languageCheckboxes).every((cb) => cb.checked);
+    ui.languageCheckboxes.forEach((cb) => (cb.checked = !all));
+    ui.categoryCheckboxes.forEach((cb) => {
       cb.checked = !all;
       cb.indeterminate = false;
     });
     updateSelectedLanguages();
   });
 
-  // --- Buttons
+  // === BUTTON EVENT HANDLERS ===
+  const regenBtn = elements.regen;
+  const regenBtnImg = elements.regenBtnImg;
+  const resetSlidersBtn = elements.resetSliders;
+  const loadTitleBtn = elements.loadTitleBtn;
+  const loadTitleBtnImg = elements.loadTitleBtnImg;
+  const downloadBtn = elements.download;
+  const uploadBtn = elements.upload;
+  const downloadPNGBtn = elements.downloadPNG;
+  const downloadSaveBtn = elements.downloadSave;
+  const cancelPopupBtn = elements.cancelPopup;
+
   regenBtn.addEventListener("click", () => {
     playEffect(regenBtnImg, "spin");
-    mapName = nameGenerator.generate({
-      lang:
-        selectedLanguages.length === 0
-          ? undefined
-          : selectedLanguages[
-              Math.floor(Math.random() * selectedLanguages.length)
-            ],
-    });
-    mapGenerator.reSeed(mapName);
+    appState.mapName = generateMapName();
+    mapGenerator.reSeed(appState.mapName);
     mapCache.clear();
     panZoomController.resetPan();
     redraw();
   });
 
-  const fadeOut = (btn: HTMLButtonElement) => {
-    btn.classList.add("clicked");
-    // 2) In the next frame, enable transitions
-    requestAnimationFrame(() => {
-      btn.classList.add("enable-transition");
-
-      // 3) After a short display, remove highlight -> will fade back
-      setTimeout(() => {
-        btn.classList.remove("clicked");
-        // optional cleanup after it finishes fading
-        const off = (e: { propertyName: string }) => {
-          if (e.propertyName === "background-color") {
-            btn.classList.remove("enable-transition");
-            btn.removeEventListener("transitionend", off);
-          }
-        };
-        btn.addEventListener("transitionend", off);
-      }, 222);
-    });
-  };
-
   resetSlidersBtn.addEventListener("click", () => {
     fadeOut(resetSlidersBtn);
-
-    lockFrequencies.checked = true;
+    ui.lockFrequencies.checked = true;
 
     // Reset settings to defaults
     URL_NUM_KEYS.forEach((k) => {
-      settings[k] = MAP_DEFAULTS[k] as any;
+      appState.updateSetting(k, MAP_DEFAULTS[k] as any);
     });
 
-    // Sync UI for sliders (respect per-slider decimals)
+    // Sync UI for sliders
     SLIDER_KEYS.forEach((k) => {
-      const { input, label, decimals } = bound[k];
-      const v = Number(settings[k]);
-      input.value = String(v);
-      label.textContent = v.toFixed(decimals);
+      const v = Number(appState.settings[k]);
+      ui.updateSliderValue(k, v);
     });
 
     // Sync zoom separately
-    zoomInput.value = String(settings.zoom);
-    panZoomController.setZoom(settings.zoom);
+    zoomInput.value = String(appState.settings.zoom);
+    panZoomController.setZoom(appState.settings.zoom);
     panZoomController.resetPan();
-
     mapCache.clear();
     drawMap();
   });
@@ -467,112 +376,53 @@ document.addEventListener("DOMContentLoaded", () => {
   mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      loadMap(mapTitle.value.trim());
-      mapTitle.blur();
+      if (mapTitle.value.trim() !== appState.mapName) {
+        loadMap(mapTitle.value.trim());
+        playEffect(loadTitleBtnImg, "bounce");
+        setTimeout(() => mapTitle.blur(), 400); // Wait for bounce before blurring
+      }
     }
   });
 
   mapTitle.addEventListener("input", updateButtonPosition);
 
-  const playEffect = (btn: HTMLElement, effect: "bounce" | "spin") => {
-    btn.classList.remove(effect);
-    void btn.offsetWidth; // reflow so animation restarts
-    btn.classList.add(effect);
-  };
-
-  downloadBtn.addEventListener("click", () => {
-    playEffect(downloadBtn, "bounce");
-    // Show the popup dialog for download options
-    const popupBackdrop = document.getElementById("popupBackdrop");
-    if (popupBackdrop) {
-      popupBackdrop.classList.add("show");
-    }
-  });
-
-  uploadBtn.addEventListener("click", () => {
-    playEffect(uploadBtn, "bounce");
-    handleUpload();
-  });
-
-  const handleCancelPopup = () => {
-    if (popupBackdrop) {
-      popupBackdrop.classList.remove("show");
-    }
-    document.removeEventListener("keydown", escHandler);
-    document.removeEventListener("click", clickHandler);
-  };
-
-  // Add ESC key handler to close popup
-  const escHandler = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
-      handleCancelPopup();
-    }
-  };
-
-  const clickHandler = (e: MouseEvent) => {
-    if (e.target === popupBackdrop) handleCancelPopup();
-  };
-
-  // Attach ESC handler when popup is shown
-  const popupBackdrop = document.getElementById("popupBackdrop");
-  if (popupBackdrop) {
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (
-          mutation.attributeName === "class" &&
-          popupBackdrop.classList.contains("show")
-        ) {
-          document.addEventListener("keydown", escHandler);
-          popupBackdrop.addEventListener("click", clickHandler);
-        }
-      });
-    });
-    observer.observe(popupBackdrop, { attributes: true });
-  }
-
-  const downloadPNG = () => {
-    handleDownloadPNG();
-    handleCancelPopup();
-  };
-
-  const downloadSave = () => {
-    handleDownloadSave();
-    handleCancelPopup();
-  };
-
-  downloadPNGBtn.addEventListener("click", () => {
-    downloadPNG();
-  });
-
-  downloadSaveBtn.addEventListener("click", () => {
-    downloadSave();
-  });
-
-  cancelPopupBtn.addEventListener("click", () => {
-    handleCancelPopup();
-  });
-
+  // === DOWNLOAD/UPLOAD FUNCTIONALITY ===
   const handleDownloadSave = () => {
     const mapTitleText = mapTitle.value || "Untitled Map";
     const data = {
-      seed: mapName,
+      seed: appState.mapName,
       mapSettings: {
-        ...settings,
+        ...appState.settings,
         zoom: undefined, // Exclude zoom explicitly
       },
     };
     const json = JSON.stringify(data, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+    downloadFile(json, `${mapTitleText.replace(/\s+/g, "_")}.mapination`, "application/json");
+  };
+
+  const handleDownloadPNG = () => {
+    const mapTitleText = mapTitle.value || "Untitled Map";
+    const exportCanvas = document.createElement("canvas");
+    const padding = 60;
+    exportCanvas.width = canvas.width;
+    exportCanvas.height = canvas.height + padding;
+    const ctx = exportCanvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.fillStyle = "#dedede";
+    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    ctx.drawImage(canvas, 0, padding);
+
+    ctx.font = "bold 36px 'Roboto Mono', monospace";
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "center";
+    ctx.fillText(mapTitleText, exportCanvas.width / 2, 40);
+
+    const dataUrl = exportCanvas.toDataURL("image/png");
     const link = document.createElement("a");
-    link.href = url;
-    link.download = `${mapTitleText.replace(/\s+/g, "_")}.mapination`;
-    document.body.appendChild(link);
+    link.download = `${mapTitleText.replace(/\s+/g, "_")}.png`;
+    link.href = dataUrl;
     link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 100);
   };
 
   const onLoadSave = (evt: ProgressEvent<FileReader>) => {
@@ -592,14 +442,13 @@ document.addEventListener("DOMContentLoaded", () => {
       ...json.mapSettings,
       zoom: 0,
     };
-    // Safe type check on loaded settings
     if (!isMapSettings(mapSettings)) {
       alert("Invalid map settings in file.");
       return;
     }
 
-    settings = mapSettings;
-    themeRadios.forEach((radio) => {
+    appState.settings = mapSettings;
+    ui.themeRadios.forEach((radio) => {
       radio.checked = radio.value === mapSettings.theme;
     });
     loadMap(json.seed);
@@ -621,31 +470,67 @@ document.addEventListener("DOMContentLoaded", () => {
     redraw();
   };
 
-  const handleDownloadPNG = () => {
-    const mapTitleText = mapTitle.value || "Untitled Map";
-    const exportCanvas = document.createElement("canvas");
-    const padding = 60;
-    exportCanvas.width = canvas.width;
-    exportCanvas.height = canvas.height + padding;
-    const ctx = exportCanvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.fillStyle = "#dedede";
-    ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-    ctx.drawImage(canvas, 0, padding);
-
-    ctx.font = "bold 36px 'Roboto Mono', monospace";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "center";
-    ctx.fillText(mapTitleText, exportCanvas.width / 2, 40);
-
-    const link = document.createElement("a");
-    link.download = `${mapTitleText.replace(/\s+/g, "_")}.png`;
-    link.href = exportCanvas.toDataURL("image/png");
-    link.click();
+  // Popup management
+  const popupBackdrop = document.getElementById("popupBackdrop");
+  const handleCancelPopup = () => {
+    if (popupBackdrop) {
+      popupBackdrop.classList.remove("show");
+    }
+    document.removeEventListener("keydown", escHandler);
+    document.removeEventListener("click", clickHandler);
   };
 
-  // --- Initial render
+  const escHandler = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      handleCancelPopup();
+    }
+  };
+
+  const clickHandler = (e: MouseEvent) => {
+    if (e.target === popupBackdrop) handleCancelPopup();
+  };
+
+  if (popupBackdrop) {
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (
+          mutation.attributeName === "class" &&
+          popupBackdrop.classList.contains("show")
+        ) {
+          document.addEventListener("keydown", escHandler);
+          popupBackdrop.addEventListener("click", clickHandler);
+        }
+      });
+    });
+    observer.observe(popupBackdrop, { attributes: true });
+  }
+
+  // Download/Upload button handlers
+  downloadBtn.addEventListener("click", () => {
+    playEffect(downloadBtn, "bounce");
+    if (popupBackdrop) {
+      popupBackdrop.classList.add("show");
+    }
+  });
+
+  uploadBtn.addEventListener("click", () => {
+    playEffect(uploadBtn, "bounce");
+    handleUpload();
+  });
+
+  downloadPNGBtn.addEventListener("click", () => {
+    handleDownloadPNG();
+    handleCancelPopup();
+  });
+
+  downloadSaveBtn.addEventListener("click", () => {
+    handleDownloadSave();
+    handleCancelPopup();
+  });
+
+  cancelPopupBtn.addEventListener("click", handleCancelPopup);
+
+  // === INITIALIZATION ===
   redraw();
   setTimeout(updateButtonPosition, 100);
 });

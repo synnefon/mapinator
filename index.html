@@ -15,7 +15,7 @@
 </head>
 
 <body>
-  <div id="mobile-warning" class="hidden">
+  <div id="mobileWarning" class="hidden">
     <h2>⚠️ not supported</h2>
     <p>
       one day i'll get around to formatting this for small screens, but for now please use a big one.
@@ -44,7 +44,7 @@
           <input id="zoom" type="range" min="0" max="1" step="0.01" />
 
           <label class="freq-header">lock frequencies:</label>
-          <input id="lock-frequencies" type="checkbox" checked aria-label="link sliders" />
+          <input id="lockFrequencies" type="checkbox" checked aria-label="link sliders" />
       </div>
       <!-- <hr> -->
       <div class="toolbar-section">
@@ -77,22 +77,22 @@
     </div>
 
     <div class="reset-sliders-btn-container">
-      <button id="reset-sliders">reset</button>
+      <button id="resetSliders">reset</button>
     </div>
   </div>
 
 
-  <div id="map-container">
-    <div id="title-container">
-      <input type="text" id="map-title" spellcheck="false" />
-      <button id="load-title-btn" class="img-button-container-small">
-        <img id="load-title-btn-img" class="button-img-small" src="./assets/check.png"></img>
+  <div id="mapContainer">
+    <div id="titleContainer">
+      <input type="text" id="mapTitle" spellcheck="false" />
+      <button id="loadTitleBtn" class="img-button-container-small">
+        <img id="loadTitleBtnImg" class="button-img-small" src="./assets/check.png"></img>
       </button>
     </div>
     <canvas id="map" width="1000" height="1000"></canvas>
-    <div id="button-bar">
+    <div id="buttonBar">
       <button id="regen" class="img-button-container">
-        <img id="regen-btn-img" class="button-img" src="./assets/regen.png"></img>
+        <img id="regenBtnImg" class="button-img" src="./assets/regen.png"></img>
       </button>
       <div class="right-buttons">
         <button id="download" class="img-button-container">
@@ -106,12 +106,12 @@
   </div>
 
   <div class="right-sidebar">
-    <div id="language-select-container">
+    <div id="languageSelectContainer">
       <div class="language-header">
         <label>language</label>
-        <button id="toggle-all-languages">deselect all</button>
+        <button id="toggleAllLanguages">deselect all</button>
       </div>
-      <div id="language-checkbox-list">
+      <div id="languageCheckboxList">
         <div class="language-category">
           <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="modern" checked>
             modern</label>
@@ -172,9 +172,9 @@
         </div>
       </div>
 
-      <div id="theme-select-container">
+      <div id="themeSelectContainer">
         <label>theme</label>
-        <div id="theme-radio-list">
+        <div id="themeRadioList">
           <label><input type="radio" class="theme-radio" name="theme" value="default" checked> default</label>
           <label><input type="radio" class="theme-radio" name="theme" value="sage"> sage</label>
           <label><input type="radio" class="theme-radio" name="theme" value="verdant"> verdant</label>

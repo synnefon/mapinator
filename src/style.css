@@ -88,7 +88,7 @@ body {
   box-sizing: border-box;
 }
 
-#reset-sliders {
+#resetSliders {
   width: 100%;
   margin-left: 1em;
 }
@@ -146,7 +146,7 @@ body {
   opacity: 1;
 }
 
-#lock-frequencies {
+#lockFrequencies {
   background: var(--bg) center/contain no-repeat;
   background-image: url('/assets/unlock.png');
   width: 24px;
@@ -156,7 +156,7 @@ body {
   /* keeps the checkbox from collapsing */
 }
 
-#lock-frequencies:checked {
+#lockFrequencies:checked {
   background-image: url('/assets/lock.png');
   filter: invert();
   background-color: var(--inv-highlight);
@@ -270,7 +270,7 @@ input[type="checkbox"]:indeterminate::after {
   background-color: var(--highlight);
 }
 
-#theme-select-container {
+#themeSelectContainer {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -279,12 +279,12 @@ input[type="checkbox"]:indeterminate::after {
 }
 
 
-#theme-select-container>label {
+#themeSelectContainer>label {
   font-weight: bold;
   font-family: sans-serif;
 }
 
-#theme-radio-list {
+#themeRadioList {
   max-height: 20vh;
   overflow-y: auto;
   border: 4px solid var(--text);
@@ -292,7 +292,7 @@ input[type="checkbox"]:indeterminate::after {
   background-color: var(--bg);
 }
 
-#theme-radio-list label {
+#themeRadioList label {
   display: block;
   font-size: 0.8em;
   margin-left: 0.5em;
@@ -302,16 +302,16 @@ input[type="checkbox"]:indeterminate::after {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-#theme-radio-list label:hover {
+#themeRadioList label:hover {
   color: var(--highlight);
 }
 
-#theme-radio-list label:has(input[type="radio"]:checked) {
+#themeRadioList label:has(input[type="radio"]:checked) {
   background-color: var(--highlight);
   color: var(--bg);
 }
 
-#theme-radio-list label:has(input[type="radio"]:active) {
+#themeRadioList label:has(input[type="radio"]:active) {
   background: var(--highlight);
   color: var(--bg);
 }
@@ -382,7 +382,7 @@ select[multiple] optgroup {
 }
 
 /* Map area */
-#map-container {
+#mapContainer {
   width: 100%;
   height: calc(100vh - 1em);
   display: flex;
@@ -394,7 +394,7 @@ select[multiple] optgroup {
   /* button bar "hugs" the map */
 }
 
-#title-container {
+#titleContainer {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -404,7 +404,7 @@ select[multiple] optgroup {
   position: relative;
 }
 
-#map-title {
+#mapTitle {
   border: 0px;
   background-color: var(--bg);
   color: var(--text);
@@ -422,15 +422,15 @@ select[multiple] optgroup {
   height: 70%;
 }
 
-#map-title:focus {
+#mapTitle:focus {
   border: 2px solid var(--text);
 }
 
-#map-title:hover {
+#mapTitle:hover {
   border: 2px solid var(--highlight);
 }
 
-#load-title-btn {
+#loadTitleBtn {
   padding: 0px;
   height: min(4.5vh, 6.5vw);
   width: min(4.5vh, 6.5vw);
@@ -444,17 +444,17 @@ select[multiple] optgroup {
   border: none;
 }
 
-#map-title:focus+#load-title-btn,
-#load-title-btn:hover {
+#mapTitle:focus+#loadTitleBtn,
+#loadTitleBtn:hover {
   opacity: 1;
   pointer-events: auto;
 }
 
-#load-title-btn:hover {
+#loadTitleBtn:hover {
   background: transparent;
 }
 
-#load-title-btn:hover img.button-img-small {
+#loadTitleBtn:hover img.button-img-small {
   filter: brightness(0) saturate(100%) invert(33%) sepia(100%) saturate(7471%) hue-rotate(220deg) brightness(102%) contrast(101%);
 }
 
@@ -468,7 +468,7 @@ canvas {
 }
 
 /* Button bar under the map */
-#button-bar {
+#buttonBar {
   width: 65%;
   display: flex;
   gap: 0.6rem;
@@ -511,7 +511,7 @@ h4 {
   /* gap: 0.6rem; */
 }
 
-#mobile-warning {
+#mobileWarning {
   display: none;
   /* default hidden */
   position: fixed;
@@ -527,7 +527,7 @@ h4 {
   z-index: 9999;
 }
 
-#mobile-warning.show {
+#mobileWarning.show {
   display: flex;
   /* shown via class toggle */
 }
@@ -536,6 +536,7 @@ h4 {
   display: none;
   position: fixed;
   inset: 0;
+  z-index: 9999;
 }
 
 .popup-backdrop.show {
@@ -599,7 +600,7 @@ img.button-img-small {
   padding: 0px;
 }
 
-#language-select-container {
+#languageSelectContainer {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -618,12 +619,12 @@ img.button-img-small {
   font-family: sans-serif;
 }
 
-#toggle-all-languages {
+#toggleAllLanguages {
   font-size: 0.7em;
   padding: 0.3em 0.6em;
 }
 
-#language-checkbox-list {
+#languageCheckboxList {
   max-height: 40vh;
   overflow-y: scroll;
   border: 4px solid var(--text);
