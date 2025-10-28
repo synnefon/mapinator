@@ -128,23 +128,6 @@ export class ElevationCalculator {
         this.fbmW2 = sampleDial(DIALS.FBM2_W2_RANGE, rng);
         this.minCenterDrift = sampleDial(DIALS.MIN_CENTER_DRIFT_RANGE, rng);
 
-        console.log("[ElevationCalculator] Dial selections", {
-            endpointJitterFraction: this.endpointJitterFraction,
-            bellBase: this.bellBase,
-            bellGain: this.bellGain,
-            fbmW1: this.fbmW1,
-            fbmW2: this.fbmW2,
-            minCenterDrift: this.minCenterDrift,
-            ripple: this.settings.ripple,
-            lineCount: this.lines.length,
-            lineParams: this.lines.map((l, i) => ({
-                i,
-                length: l.length.toFixed(3),
-                bend: l.bend.toFixed(3),
-                radiusScale: l.radiusScale.toFixed(3),
-            })),
-        });
-
         // Pick 1–3 lines
         const n = weightedRandomChoice(DIALS.LINE_COUNT_PROBS as unknown as { val: number, prob: number }[], rng) as 1 | 2 | 3;
 
@@ -209,6 +192,23 @@ export class ElevationCalculator {
                 length: L,
             });
         }
+
+        console.log("[ElevationCalculator] Dial selections", {
+            endpointJitterFraction: this.endpointJitterFraction,
+            bellBase: this.bellBase,
+            bellGain: this.bellGain,
+            fbmW1: this.fbmW1,
+            fbmW2: this.fbmW2,
+            minCenterDrift: this.minCenterDrift,
+            ripple: this.settings.ripple,
+            lineCount: this.lines.length,
+            lineParams: this.lines.map((l, i) => ({
+                i,
+                length: l.length.toFixed(3),
+                bend: l.bend.toFixed(3),
+                radiusScale: l.radiusScale.toFixed(3),
+            })),
+        });
     }
 
     /** Top-level elevation with mask-driven coast field blend */
