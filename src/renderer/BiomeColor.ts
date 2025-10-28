@@ -23,7 +23,7 @@ function shapeForRules(
   seaLevel: number
 ): { elevation: number; moisture: number } {
   // map elevation 0..1 -> [-1..1], then shift by sea level (lower sea => more land)
-  let e = lerp(-1.0 - (seaLevel - 0.1), 1.0 - (seaLevel - 0.1), elevation);
+  let e = lerp(-0.9 - (seaLevel - 0.1), 0.9 - (seaLevel - 0.1), elevation);
 
   // moisture exponent
   let m = Math.pow(moisture, rainfall);

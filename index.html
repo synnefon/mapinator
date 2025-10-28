@@ -25,10 +25,10 @@
   <div class="popup-backdrop" id="popupBackdrop" class="hidden">
     <div class="popup">
       <h3>download as...</h3>
-      <button id="downloadPNGBtn">png</button>
-      <button id="downloadSaveBtn">savefile</button>
+      <button id="downloadPNGBtn" class="downloadPopupBtn">png</button>
+      <button id="downloadSaveBtn" class="downloadPopupBtn">savefile</button>
       <br>
-      <button id="cancelPopupBtn">cancel</button>
+      <button id="cancelPopupBtn" class="downloadPopupBtn">cancel</button>
     </div>
   </div>
 
@@ -52,11 +52,11 @@
           <label for="terrainFrequency">frequency: <span id="terrainFrequencyValue"></span></label>
           <input id="terrainFrequency" type="range" min="0" max="1.0" step="0.01" />
 
-          <label for="clumpiness">clumpiness: <span id="clumpinessValue"></span></label>
-          <input id="clumpiness" type="range" min="-1" max="1" step="0.01" />
+          <!-- <label for="clumpiness">clumpiness: <span id="clumpinessValue"></span></label>
+          <input id="clumpiness" type="range" min="-1" max="1" step="0.01" /> -->
 
-          <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
-          <input id="elevationContrast" type="range" min="0" max="1" step="0.01" />
+          <!-- <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
+          <input id="elevationContrast" type="range" min="0" max="1" step="0.01" /> -->
 
           <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
           <input id="seaLevel" type="range" min="0" max="1" step="0.01" />
@@ -67,8 +67,8 @@
           <label for="weatherFrequency">frequency: <span id="weatherFrequencyValue"></span></label>
           <input id="weatherFrequency" type="range" min="0" max="1.0" step="0.01" />
 
-          <label for="moistureContrast">moisture contrast: <span id="moistureContrastValue"></span></label>
-          <input id="moistureContrast" type="range" min="0" max="1" step="0.01" />
+          <!-- <label for="moistureContrast">moisture contrast: <span id="moistureContrastValue"></span></label>
+          <input id="moistureContrast" type="range" min="0" max="1" step="0.01" /> -->
 
           <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
           <input id="rainfall" type="range" min="0" max="1" step="0.01" />

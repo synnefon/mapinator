@@ -15,6 +15,7 @@ import { MapRenderer } from "./renderer/MapRenderer";
 import { PanZoomController } from "./renderer/PanZoomController";
 import { sliderDefs, UIManager, type SliderDef } from "./UIManager";
 import { MAPINATION_FILE_EXTENSION } from "./common/constants";
+import { makeRNG, randomContinuousChoice, weightedRandomChoice, type RNG } from "./common/random";
 
 // === UTILITY FUNCTIONS ===
 
@@ -75,6 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName || nameGenerator.generate()
   );
   const mapRenderer = new MapRenderer();
+  let rng: RNG = makeRNG(appState.mapName);
 
   // === CORE FUNCTIONALITY ===
   const {
@@ -142,6 +144,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const redraw = (newName?: string) => {
     appState.mapName = newName || generateMapName();
+    rng = makeRNG(appState.mapName);
+    appState.settings.clumpiness = weightedRandomChoice([
+      { val: randomContinuousChoice(0.75, 0.95, rng), prob: 0.7 },
+      { val: randomContinuousChoice(-0.95, -0.5, rng), prob: 0.3 },
+    ], rng);
     drawTitle(appState.mapName);
     drawMap();
   };
@@ -169,7 +176,6 @@ document.addEventListener("DOMContentLoaded", () => {
     onZoomChange: (zoom, viewScale) => {
       zoomInput.value = String(zoom);
       zoomValue.textContent = viewScale.toFixed(2);
-      
     },
   });
 

@@ -194,14 +194,19 @@ export class MapRenderer {
     // Compute colors for all cells once
     const colors = new Array<string>(map.points.length);
     for (let i = 0; i < map.points.length; i++) {
-      const rawColor = colorAt(
-        settings.theme,
-        map.elevations[i],
-        map.moistures[i],
-        settings.rainfall,
-        settings.seaLevel
-      );
-      colors[i] = this.quantizeColor(rawColor);
+      // if (map.elevations[i] === 10) {
+      //   // colors[i] = "#FF0000"
+      // } else {
+        const rawColor = colorAt(
+          settings.theme,
+          map.elevations[i],
+          map.moistures[i],
+          settings.rainfall,
+          settings.seaLevel
+        );
+        colors[i] = this.quantizeColor(rawColor);
+      // }
+
     }
 
     this.cellColorCache.set(map, {

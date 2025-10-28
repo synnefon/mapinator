@@ -94,12 +94,12 @@ export type ElevationSettings = {
 };
 
 export const ELEVATION_SETTINGS_DEFAULTS: ElevationSettings = {
-  centerDrift: 0.62,
-  baseRadius: 0.35,
+  centerDrift: 0.1,
+  baseRadius: 0.6,
   warpStrength: 0.5,
   ripple: 0.5,
-  kWarp: 2,
-  kRip: 2.2,
+  kWarp: 3.5,
+  kRip: 1.7,
   softness: 0.3,
-  aaRadius: 0.05,
+  aaRadius: 0.1,
 };
