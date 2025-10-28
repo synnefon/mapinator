@@ -4,6 +4,16 @@ import type { Point } from "../common/map";
 import { makeRNG, type RNG } from "../common/random";
 import type { MapSettings } from "../common/settings";
 
+/** ================================================
+ *  Named constants (no magic numbers)
+ *  ================================================ */
+const LLOYD_RELAXATION_ITERATIONS = 2;
+const POLYGON_MIN_VERTICES = 3;
+const EPSILON_AREA = 1e-12;
+const POLYGON_CENTROID_DIVISOR = 6;
+const GRID_START = 0;
+const GRID_STEP = 1;
+
 type PointGenReturn = {
   centers: Point[];
   delaunay: DelaunayT<any>;
@@ -16,63 +26,49 @@ export class PointGenerator {
   constructor(seed: string) {
     this.seed = seed;
   }
+
   public reSeed(seed: string) {
     this.seed = seed;
   }
 
   public genPoints(settings: MapSettings): PointGenReturn {
-    // determinate per resolution
     this.rng = makeRNG(`${this.seed}-${settings.resolution}`);
     const { resolution, jitter } = settings;
 
-    // 1) start with a jittered grid in Point[] (readable)
     const points = this.initPoints(resolution, jitter);
 
-    // 2) build delaunay (it copies x/y into an internal Float64Array: delaunay.points)
-    let delaunay = Delaunay.from(
-      points,
-      (p) => p.x,
-      (p) => p.y
-    );
+    let delaunay = Delaunay.from(points, (p) => p.x, (p) => p.y);
 
-    // 3) N iterations of in-place Lloyd relaxation using voronoi + update()
-    const iterations = 2;
     const bbox: [number, number, number, number] = [
-      0,
-      0,
+      GRID_START,
+      GRID_START,
       resolution,
       resolution,
     ];
 
-    for (let k = 0; k < iterations; k++) {
+    for (let k = 0; k < LLOYD_RELAXATION_ITERATIONS; k++) {
       const vor = delaunay.voronoi(bbox);
-
-      // write new positions directly into delaunay.points (flat [x0,y0,x1,y1,...])
       const flat = delaunay.points as Float64Array;
       const n = flat.length / 2;
 
       for (let i = 0; i < n; i++) {
-        const poly = vor.cellPolygon(i); // Array<[x,y]> or null
-        if (poly && poly.length >= 3) {
+        const poly = vor.cellPolygon(i);
+        if (poly && poly.length >= POLYGON_MIN_VERTICES) {
           const [cx, cy] = this.polygonCentroidXY(poly);
           flat[2 * i] = cx;
           flat[2 * i + 1] = cy;
         } else {
-          // Hull / degenerate: fall back to neighbor average to keep things stable
           const [ax, ay, count] = this.averageNeighborXY(delaunay, i);
           if (count > 0) {
             flat[2 * i] = ax;
             flat[2 * i + 1] = ay;
           }
-          // else: keep as-is (rare)
         }
       }
 
-      // Recompute triangulation with new coordinates (no allocations)
       delaunay.update();
     }
 
-    // 4) Return centers as Point[] (materialize from flat array)
     const centers: Point[] = [];
     const flat = delaunay.points;
     for (let i = 0; i < flat.length; i += 2) {
@@ -115,8 +111,8 @@ export class PointGenerator {
 
   private initPoints(resolution: number, jitter: number): Point[] {
     const pts: Point[] = [];
-    for (let x = 0; x < resolution; x++) {
-      for (let y = 0; y < resolution; y++) {
+    for (let x = GRID_START; x < resolution; x += GRID_STEP) {
+      for (let y = GRID_START; y < resolution; y += GRID_STEP) {
         const jx = x + jitter * (this.rng() - this.rng());
         const jy = y + jitter * (this.rng() - this.rng());
         pts.push({ x: jx, y: jy });
@@ -125,7 +121,6 @@ export class PointGenerator {
     return pts;
   }
 
-  // Shoelace centroid for Array<[x,y]>
   private polygonCentroidXY(verts: Array<[number, number]>): [number, number] {
     let A = 0,
       cx = 0,
@@ -139,12 +134,11 @@ export class PointGenerator {
       cx += (x0 + x1) * cross;
       cy += (y0 + y1) * cross;
     }
-    if (Math.abs(A) < 1e-12) return verts[0]; // degenerate fallback
+    if (Math.abs(A) < EPSILON_AREA) return verts[0];
     const area = A / 2;
-    return [cx / (6 * area), cy / (6 * area)];
+    return [cx / (POLYGON_CENTROID_DIVISOR * area), cy / (POLYGON_CENTROID_DIVISOR * area)];
   }
 
-  // Use neighbors(i) to compute average neighbor coordinate from the flat points array
   private averageNeighborXY(
     delaunay: DelaunayT<any>,
     i: number

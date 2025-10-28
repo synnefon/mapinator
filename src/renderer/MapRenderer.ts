@@ -3,37 +3,41 @@ import type { WorldMap } from "../common/map";
 import type { MapSettings } from "../common/settings";
 import { colorAt } from "./BiomeColor";
 
+/** ================================================
+ *  Named constants (no magic numbers)
+ *  ================================================ */
+const DEGENERATE_RADIUS = 0.001;
+const ARC_FULL_CIRCLE = Math.PI * 2;
+const COLOR_QUANT_BITS = 5;
+const COLOR_LEVELS = (1 << COLOR_QUANT_BITS) - 1; // 31
+const RGB_MAX = 255;
+const VORONOI_PAD_FACTOR = 0.1;
+const VIEW_MARGIN_FACTOR = 0.05;
+const HAIRLINE_PX = 1;
+const MIN_POLYGON_VERTICES = 3;
+
 type ColorBucket = Map<string, Path2D>; // fillStyle -> combined path
 
 type VoronoiCache = {
-  // cache is keyed by the Delaunay object identity + a version (if provided)
   delaunay: Delaunay<any>;
   version: number | undefined;
-  bounds: [number, number, number, number]; // [x0, y0, x1, y1] used to clip voronoi
-  cells: Path2D[]; // index-aligned with sites
-  bboxData: Float32Array; // [minX, minY, maxX, maxY] * numCells for fast bbox checks
+  bounds: [number, number, number, number];
+  cells: Path2D[];
+  bboxData: Float32Array;
 };
 
 type ColorCache = {
   version: number | undefined;
-  themeHash: string; // track theme/rainfall/seaLevel changes
-  colors: string[]; // index-aligned with cells, pre-quantized
+  themeHash: string;
+  colors: string[];
 };
 
 export class MapRenderer {
-  // one cache per Delaunay instance
   private geomCache = new WeakMap<Delaunay<any>, VoronoiCache>();
-
-  // Pre-computed quantized colors per map
   private cellColorCache = new WeakMap<WorldMap, ColorCache>();
-
-  // Raw color -> quantized color lookup
   private colorQuantCache = new Map<string, string>();
-
-  // Reusable bucket map to avoid allocations per frame
   private buckets: ColorBucket = new Map();
 
-  // Helper: Write bbox to typed array at cell index
   private writeBbox(
     bboxData: Float32Array,
     cellIdx: number,
@@ -49,31 +53,26 @@ export class MapRenderer {
     bboxData[idx + 3] = maxY;
   }
 
-  // Helper: Create degenerate cell (tiny circle at point)
   private createDegenerateCell(
     point: { x: number; y: number },
     cellIdx: number,
     bboxData: Float32Array
   ): Path2D {
     const path = new Path2D();
-    path.arc(point.x, point.y, 0.001, 0, Math.PI * 2);
+    path.arc(point.x, point.y, DEGENERATE_RADIUS, 0, ARC_FULL_CIRCLE);
     this.writeBbox(bboxData, cellIdx, point.x, point.y, point.x, point.y);
     return path;
   }
 
-  // Fast cell building using direct halfedge access
-  // Avoids cellPolygon() overhead and intermediate array allocations
   private buildCellGeometry(
     i: number,
-    vor: any, // Voronoi from d3-delaunay
+    vor: any,
     fallbackPoint: { x: number; y: number },
-    bboxData: Float32Array // Write bbox to [i*4 ... i*4+3]
+    bboxData: Float32Array
   ): Path2D {
-    // Access d3-delaunay internals for performance
     const { circumcenters } = vor;
     const { halfedges, triangles, inedges } = vor.delaunay;
 
-    // Start from an incoming halfedge for this site
     const e0 = inedges[i];
     if (e0 === -1) return this.createDegenerateCell(fallbackPoint, i, bboxData);
 
@@ -85,9 +84,8 @@ export class MapRenderer {
     let maxY = -Infinity;
     let first = true;
 
-    // Walk the halfedges around this site
     do {
-      const t = Math.floor(e / 3); // triangle index
+      const t = Math.floor(e / 3);
       const cx = circumcenters[2 * t];
       const cy = circumcenters[2 * t + 1];
 
@@ -98,17 +96,15 @@ export class MapRenderer {
         path.lineTo(cx, cy);
       }
 
-      // Update bbox
       if (cx < minX) minX = cx;
       if (cx > maxX) maxX = cx;
       if (cy < minY) minY = cy;
       if (cy > maxY) maxY = cy;
 
-      e = e % 3 === 2 ? e - 2 : e + 1; // next halfedge in triangle
-      if (triangles[e] !== i) break; // wrong site, shouldn't happen
-      e = halfedges[e]; // opposite halfedge
+      e = e % 3 === 2 ? e - 2 : e + 1;
+      if (triangles[e] !== i) break;
+      e = halfedges[e];
       if (e === -1) {
-        // Hit boundary, need to handle clipping
         return this.buildCellGeometryFallback(i, vor, fallbackPoint, bboxData);
       }
     } while (e !== e0 && e !== -1);
@@ -118,7 +114,6 @@ export class MapRenderer {
     return path;
   }
 
-  // Fallback for boundary cells that need clipping
   private buildCellGeometryFallback(
     i: number,
     vor: any,
@@ -126,7 +121,7 @@ export class MapRenderer {
     bboxData: Float32Array
   ): Path2D {
     const poly = vor.cellPolygon(i);
-    if (!poly || poly.length < 3) {
+    if (!poly || poly.length < MIN_POLYGON_VERTICES) {
       return this.createDegenerateCell(fallbackPoint, i, bboxData);
     }
 
@@ -148,39 +143,29 @@ export class MapRenderer {
     return path;
   }
 
-  // Color quantization: reduce color precision for better batching
-  // 5 bits per channel = 32 levels = 32^3 = 32,768 possible colors (vs 16.7M)
   private quantizeColor(color: string): string {
     const cached = this.colorQuantCache.get(color);
     if (cached) return cached;
 
-    const bits = 5; // bits per channel (5 = good balance of quality vs batching)
-    const levels = (1 << bits) - 1; // 31 for 5 bits
-    const scale = 255 / levels;
+    const scale = RGB_MAX / COLOR_LEVELS;
 
-    // Parse hex color #RRGGBB
     const r = parseInt(color.slice(1, 3), 16);
     const g = parseInt(color.slice(3, 5), 16);
     const b = parseInt(color.slice(5, 7), 16);
 
-    // Quantize each channel
     const qr = Math.round(r / scale) * scale;
     const qg = Math.round(g / scale) * scale;
     const qb = Math.round(b / scale) * scale;
 
-    // Convert back to hex
     const toHex = (n: number) => Math.round(n).toString(16).padStart(2, "0");
     const result = `#${toHex(qr)}${toHex(qg)}${toHex(qb)}`;
-
     this.colorQuantCache.set(color, result);
     return result;
   }
 
-  // Pre-compute and cache quantized colors for all cells
   private getCellColors(map: WorldMap, settings: MapSettings): string[] {
     const wantedVersion = (map as any).meshVersion as number | undefined;
     const themeHash = `${settings.theme}:${settings.rainfall}:${settings.seaLevel}`;
-
     const cached = this.cellColorCache.get(map);
     const cacheHit =
       cached &&
@@ -191,36 +176,24 @@ export class MapRenderer {
       return cached.colors;
     }
 
-    // Compute colors for all cells once
     const colors = new Array<string>(map.points.length);
     for (let i = 0; i < map.points.length; i++) {
-      // if (map.elevations[i] === 10) {
-      //   // colors[i] = "#FF0000"
-      // } else {
-        const rawColor = colorAt(
-          settings.theme,
-          map.elevations[i],
-          map.moistures[i],
-          settings.rainfall,
-          settings.seaLevel
-        );
-        colors[i] = this.quantizeColor(rawColor);
-      // }
-
+      const rawColor = colorAt(
+        settings.theme,
+        map.elevations[i],
+        map.moistures[i],
+        settings.rainfall,
+        settings.seaLevel
+      );
+      colors[i] = this.quantizeColor(rawColor);
     }
 
-    this.cellColorCache.set(map, {
-      version: wantedVersion,
-      themeHash,
-      colors,
-    });
-
+    this.cellColorCache.set(map, { version: wantedVersion, themeHash, colors });
     return colors;
   }
 
-  // Build or fetch the cached Path2D + bbox per cell
   private getVoronoiCache(map: WorldMap): VoronoiCache {
-    const pad = map.resolution * 0.1;
+    const pad = map.resolution * VORONOI_PAD_FACTOR;
     const bounds: [number, number, number, number] = [
       -pad,
       -pad,
@@ -230,23 +203,18 @@ export class MapRenderer {
 
     const cached = this.geomCache.get(map.delaunay);
     const meshVersion = (map as any).meshVersion as number | undefined;
-
     const cacheValid =
       cached &&
       cached.version === meshVersion &&
       cached.bounds.length === bounds.length &&
       cached.bounds.every((v, i) => v === bounds[i]);
-
     if (cacheValid) return cached;
 
-    // Build fresh voronoi + cell paths/bboxes
     const vor = map.delaunay.voronoi(bounds);
-    // Pre-allocate arrays (batch allocation)
     const numCells = map.points.length;
     const cells = new Array<Path2D>(numCells);
-    const bboxData = new Float32Array(numCells * 4); // 4 floats per cell
+    const bboxData = new Float32Array(numCells * 4);
 
-    // Build cells using regular for loop (faster than .map())
     for (let i = 0; i < numCells; i++) {
       cells[i] = this.buildCellGeometry(i, vor, map.points[i], bboxData);
     }
@@ -260,11 +228,9 @@ export class MapRenderer {
     };
 
     this.geomCache.set(map.delaunay, fresh);
-
     return fresh;
   }
 
-  // Simple bbox-rectangle intersection (reads from typed array)
   private bboxIntersects(
     bboxData: Float32Array,
     cellIdx: number,
@@ -281,20 +247,17 @@ export class MapRenderer {
     return !(maxX < rx0 || minX > rx1 || maxY < ry0 || minY > ry1);
   }
 
-  // Neighbor-walk to collect only cells intersecting the current view rect
   private collectVisibleCells(
     map: WorldMap,
     cache: VoronoiCache,
     viewRect: { x0: number; y0: number; x1: number; y1: number }
   ): number[] {
     const { x0, y0, x1, y1 } = viewRect;
-
-    // Start from the site nearest to the viewport center
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
     let seed = map.delaunay.find(cx, cy);
+
     if (seed == null || seed < 0 || seed >= map.points.length) {
-      // Fallback: find nearest to any corner
       seed =
         map.delaunay.find(x0, y0) ??
         map.delaunay.find(x1, y0) ??
@@ -311,7 +274,6 @@ export class MapRenderer {
 
     while (queue.length) {
       const i = queue.pop()!;
-      // If this cell touches the view rect, render it and enqueue neighbors
       if (!this.bboxIntersects(bboxData, i, x0, y0, x1, y1)) continue;
 
       vis.push(i);
@@ -319,16 +281,11 @@ export class MapRenderer {
         if (visited[j]) continue;
         visited[j] = 1;
 
-        // Optional quick-reject: check neighbor site is roughly near the rect
-        // to reduce queue growth when panning far away:
         const p = map.points[j];
-        const nearX =
-          p.x >= x0 - map.resolution * 0.1 && p.x <= x1 + map.resolution * 0.1;
-        const nearY =
-          p.y >= y0 - map.resolution * 0.1 && p.y <= y1 + map.resolution * 0.1;
-        if (nearX && nearY) {
-          queue.push(j);
-        }
+        const pad = map.resolution * VORONOI_PAD_FACTOR;
+        const nearX = p.x >= x0 - pad && p.x <= x1 + pad;
+        const nearY = p.y >= y0 - pad && p.y <= y1 + pad;
+        if (nearX && nearY) queue.push(j);
       }
     }
     return vis;
@@ -346,59 +303,39 @@ export class MapRenderer {
     if (!ctx) return;
 
     const { resolution } = map;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
 
-    // SCALE then TRANSLATE so pan is in pixels
     const scale = (canvas.width / resolution) * viewScale;
     ctx.scale(scale, scale);
     ctx.translate(panX / scale, panY / scale);
 
-    // Map-space viewport rect (+small margin)
-    const margin = resolution * 0.05;
+    const margin = resolution * VIEW_MARGIN_FACTOR;
     const x0 = Math.max(-resolution, -panX / scale - margin);
     const y0 = Math.max(-resolution, -panY / scale - margin);
     const x1 = Math.min(2 * resolution, (canvas.width - panX) / scale + margin);
-    const y1 = Math.min(
-      2 * resolution,
-      (canvas.height - panY) / scale + margin
-    );
+    const y1 = Math.min(2 * resolution, (canvas.height - panY) / scale + margin);
 
     const cache = this.getVoronoiCache(map);
-
     const visible = this.collectVisibleCells(map, cache, { x0, y0, x1, y1 });
-
-    // Get pre-computed colors (computed once per map/settings change)
     const colors = this.getCellColors(map, settings);
 
-    // ---- Batch by color: single path per color ----
-    // Reuse buckets map to avoid allocation per frame
     this.buckets.clear();
-
     for (let idx = 0; idx < visible.length; idx++) {
       const i = visible[idx];
       const fill = colors[i];
-
       let bucket = this.buckets.get(fill);
       if (!bucket) {
         bucket = new Path2D();
         this.buckets.set(fill, bucket);
       }
-      // Append the cached cell path into the color's combined path
       bucket.addPath(cache.cells[i]);
     }
 
-    // Hairline stroke in screen space to hide seams (no per-cell transforms needed)
-    // 1 device px in map coordinates:
-    const hairline = 1 / scale;
-
-    // Draw per color: fill once, stroke once
+    const hairline = HAIRLINE_PX / scale;
     for (const [fill, path] of this.buckets) {
       ctx.fillStyle = fill;
       ctx.fill(path);
-
-      // Stroke with same color to cover antialias cracks between polygons
       ctx.strokeStyle = fill;
       ctx.lineWidth = hairline;
       ctx.stroke(path);
