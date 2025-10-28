@@ -8,18 +8,18 @@ import { clamp, lerp } from "../common/util";
  *  (midpoint = current behavior)
  *  ================================ */
 export const DIALS = {
-    // Distribution over line counts; each prob is a range (kept tight at midpoint for now).
+    // Distribution over line counts
     LINE_COUNT_PROBS: [
         { val: 1 as const, prob: 0.6 as const },
         { val: 2 as const, prob: 0.3 as const },
         { val: 3 as const, prob: 0.1 as const },
     ],
 
-    // Per-count length & bend ranges (already ranges)
+    // Per-count length & bend ranges
     LENGTH_RANGE_BY_COUNT: {
-        1: [0.1, 4.0] as const,
-        2: [0.1, 1.0] as const,
-        3: [0.1, 1.0] as const,
+        1: [0.1, 5] as const,
+        2: [0.1, 2] as const,
+        3: [0.1, 1] as const,
     },
     BEND_RANGE_BY_COUNT: {
         1: [0.10, 0.32] as const,
@@ -27,9 +27,9 @@ export const DIALS = {
         3: [0.08, 0.30] as const,
     },
 
-    // Converted scalars → ranges (midpoint preserves old look)
+    // scalars
     ENDPOINT_JITTER_FRACTION_RANGE: [0.10, 0.30] as const, // mid=0.20
-    RADIUS_JITTER_RANGE: [0.10, 1.30] as const,            // unchanged
+    RADIUS_JITTER_RANGE: [0.10, 1.30] as const,
 
     // Tube profile along t
     BELL_BASE_RANGE: [0.4, 0.8] as const,                   // mid=0.6
@@ -40,7 +40,7 @@ export const DIALS = {
     FBM2_W2_RANGE: [0.05, 0.25] as const,                   // mid=0.15
 
     // Auto-retune guardrail
-    MIN_CENTER_DRIFT_RANGE: [0.4, 0.8] as const,            // mid=0.6
+    MIN_CENTER_DRIFT_RANGE: [0.3, 0.7] as const,            // mid=0.6
 
     // Ripple randomization range (used to draw a concrete ripple value)
     RIPPLE_RANDOM_RANGE: [0.3, 0.8] as const,
@@ -50,7 +50,7 @@ export const DIALS = {
  *  ADVANCED_DIALS — perf/quality trade-offs
  *  ========================================= */
 export const ADVANCED_DIALS = {
-    CURVE_COARSE_STEPS: 12,                        // inclusive (0..N)
+    CURVE_COARSE_STEPS: 30,                        // inclusive (0..N)
     REFINE_STEPS: [0.08, 0.025] as const,
 
     COAST_FIELD_SCALE: 0.5,
