@@ -169,6 +169,7 @@ document.addEventListener("DOMContentLoaded", () => {
     onZoomChange: (zoom, viewScale) => {
       zoomInput.value = String(zoom);
       zoomValue.textContent = viewScale.toFixed(2);
+      
     },
   });
 
