@@ -149,6 +149,10 @@ document.addEventListener("DOMContentLoaded", () => {
       { val: randomContinuousChoice(0.75, 0.95, rng), prob: 0.7 },
       { val: randomContinuousChoice(-0.95, -0.5, rng), prob: 0.3 },
     ], rng);
+    appState.settings.terrainFrequency = randomContinuousChoice(0.55, 0.8, rng);
+    appState.settings.weatherFrequency = randomContinuousChoice(0.4, 0.85, rng);
+    appState.settings.rainfall = randomContinuousChoice(0.45, 0.85, rng);
+    console.log("MAP SETTINGS:", appState.settings);
     drawTitle(appState.mapName);
     drawMap();
   };
@@ -180,21 +184,21 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // === SLIDER MANAGEMENT ===
-  const syncFreq = (
-    srcKey: "terrainFrequency" | "weatherFrequency",
-    v: number
-  ) => {
-    if (!ui.lockFrequencies.checked || appState.syncingFreq) return;
+  // const syncFreq = (
+  //   srcKey: "terrainFrequency" | "weatherFrequency",
+  //   v: number
+  // ) => {
+  //   if (!ui.lockFrequencies.checked || appState.syncingFreq) return;
 
-    appState.syncingFreq = true;
-    const dstKey =
-      srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
+  //   appState.syncingFreq = true;
+  //   const dstKey =
+  //     srcKey === "terrainFrequency" ? "weatherFrequency" : "terrainFrequency";
 
-    appState.updateSetting(dstKey, v as any);
-    ui.updateSliderValue(dstKey, v);
-    debouncedDrawMap();
-    appState.syncingFreq = false;
-  };
+  //   appState.updateSetting(dstKey, v as any);
+  //   ui.updateSliderValue(dstKey, v);
+  //   debouncedDrawMap();
+  //   appState.syncingFreq = false;
+  // };
 
   const bindSlider = (def: SliderDef) => {
     const slider = ui.getSlider(def.key);
@@ -217,15 +221,15 @@ document.addEventListener("DOMContentLoaded", () => {
   sliderDefs.forEach(bindSlider);
 
   // Frequency sync handlers
-  ui.getSlider("terrainFrequency").input.addEventListener("input", () => {
-    const v = Number(ui.getSlider("terrainFrequency").input.value);
-    syncFreq("terrainFrequency", v);
-  });
+  // ui.getSlider("terrainFrequency").input.addEventListener("input", () => {
+  //   const v = Number(ui.getSlider("terrainFrequency").input.value);
+  //   syncFreq("terrainFrequency", v);
+  // });
 
-  ui.getSlider("weatherFrequency").input.addEventListener("input", () => {
-    const v = Number(ui.getSlider("weatherFrequency").input.value);
-    syncFreq("weatherFrequency", v);
-  });
+  // ui.getSlider("weatherFrequency").input.addEventListener("input", () => {
+  //   const v = Number(ui.getSlider("weatherFrequency").input.value);
+  //   syncFreq("weatherFrequency", v);
+  // });
 
   // Initialize zoom
   zoomInput.value = String(appState.settings.zoom);
@@ -327,7 +331,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   resetSlidersBtn.addEventListener("click", () => {
     fadeOut(resetSlidersBtn);
-    ui.lockFrequencies.checked = true;
+    // ui.lockFrequencies.checked = true;
 
     // Reset settings to defaults
     [...sliderDefs.map((d) => d.key), "zoom"].forEach((k) => {

@@ -101,7 +101,7 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     MID_HIGH: "#85A947",
     WET_HIGH: "#63a947",
     // medium
-    DRY_MEDIUM: "#8A784E",
+    DRY_MEDIUM: "#8D8D4E",
     MID_MEDIUM: "#6c8a4e",
     WET_MEDIUM: "#528a4e",
     // low

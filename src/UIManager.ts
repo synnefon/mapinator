@@ -55,7 +55,7 @@ export type UIElements = {
 
 export const sliderDefs: readonly SliderDef[] = [
   { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.01 },
-  { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
+  // { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
   { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
   // { key: "clumpiness", idBase: "clumpiness", min: -1, max: 1, step: 0.01 },
   // {
@@ -72,20 +72,20 @@ export const sliderDefs: readonly SliderDef[] = [
   //   max: 1,
   //   step: 0.01,
   // },
-  {
-    key: "terrainFrequency",
-    idBase: "terrainFrequency",
-    min: 0,
-    max: 1,
-    step: 0.01,
-  },
-  {
-    key: "weatherFrequency",
-    idBase: "weatherFrequency",
-    min: 0,
-    max: 1,
-    step: 0.01,
-  },
+  // {
+  //   key: "terrainFrequency",
+  //   idBase: "terrainFrequency",
+  //   min: 0,
+  //   max: 1,
+  //   step: 0.01,
+  // },
+  // {
+  //   key: "weatherFrequency",
+  //   idBase: "weatherFrequency",
+  //   min: 0,
+  //   max: 1,
+  //   step: 0.01,
+  // },
 ];
 
 export class UIManager {
@@ -131,9 +131,9 @@ export class UIManager {
     elements.categoryCheckboxes = document.querySelectorAll(
       ".category-checkbox"
     ) as NodeListOf<HTMLInputElement>;
-    elements.lockFrequencies =
-      (document.getElementById("lockFrequencies") as HTMLInputElement) ||
-      Object.assign(document.createElement("input"), { checked: true });
+    // elements.lockFrequencies =
+    //   (document.getElementById("lockFrequencies") as HTMLInputElement) ||
+    //   Object.assign(document.createElement("input"), { checked: true });
 
     return elements as UIElements;
   }
@@ -165,9 +165,9 @@ export class UIManager {
     slider.label.textContent = value.toFixed(slider.decimals);
   }
 
-  get lockFrequencies() {
-    return this.elements.lockFrequencies;
-  }
+  // get lockFrequencies() {
+  //   return this.elements.lockFrequencies;
+  // }
 
   get themeRadios() {
     return this.elements.themeRadios;
