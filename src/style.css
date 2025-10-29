@@ -1,8 +1,8 @@
 :root {
-  --bg: rgb(9, 8, 0);
-  --text: #c2c1c1;
+  --bg: #758A93;
+  --text: #f0ebe6;
   --track: var(--text);
-  --highlight: rgb(0, 0, 255);
+  --highlight: #E9B63B;
   --inv-highlight: rgba(255, 255, 0, 0.87);
 
   font-family: 'Roboto Mono', monospace;
@@ -50,7 +50,12 @@ img.button-img {
 }
 
 button.img-button-container img.button-img {
-  filter: invert(100%);
+  filter: invert(97%) sepia(8%) saturate(346%) hue-rotate(328deg) brightness(103%) contrast(93%);
+  transition: filter 0.2s ease;
+}
+
+button.img-button-container:hover img.button-img {
+  filter: brightness(0) saturate(100%) invert(61%) sepia(9%) saturate(942%) hue-rotate(152deg) brightness(91%) contrast(87%);
 }
 
 /* Layout */
@@ -59,7 +64,7 @@ body {
   height: 100vh;
   width: 100vw;
   display: grid;
-  grid-template-columns: 20vw 80vw;
+  grid-template-columns: 25vw 75vw;
   align-items: start;
 }
 
@@ -68,9 +73,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  margin-left: 6em;
+  padding-left: 6em;
+  padding-right: 1em;
   margin-top: 1em;
-  width: 95%;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Toolbar */
@@ -88,7 +95,6 @@ body {
 .reset-sliders-btn-container {
   display: flex;
   align-items: left;
-  left: 0px;
   width: 100%;
   flex-direction: column;
   box-sizing: border-box;
@@ -291,12 +297,12 @@ input[type="checkbox"]:indeterminate::after {
 
 #themeRadioList label:has(input[type="radio"]:checked) {
   background-color: var(--highlight);
-  color: var(--text);
+  color: var(--bg);
 }
 
 #themeRadioList label:has(input[type="radio"]:active) {
   background: var(--highlight);
-  color: var(--text);
+  color: var(--bg);
 }
 
 input[type="radio"] {
@@ -440,7 +446,7 @@ canvas {
   /* max-height: 75vh; */
   /* width: auto; */
   height: auto;
-  width: 50%;
+  width: 56%;
   display: block;
   border: 6px solid var(--text);
   cursor: grab;
@@ -449,7 +455,7 @@ canvas {
 
 /* Button bar under the map */
 #buttonBar {
-  width: 51%;
+  width: 50%;
   max-width: 65%;
   display: flex;
   gap: 0.6rem;
@@ -485,6 +491,7 @@ button:hover {
   background: var(--highlight);
   font-family: inherit;
   font-size: 1rem;
+  color: var(--bg);
 }
 
 h4 {
