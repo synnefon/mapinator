@@ -1,9 +1,9 @@
 :root {
-  --bg: #C9C7AF;
-  --text: #C9C7AF;
+  --bg: #131322;
+  --text: #131322;
   --track: var(--text);
-  --highlight: #C9C7AF;
-  --highlightText: #C9C7AF;
+  --highlight: #131322;
+  --highlightText: #131322;
 
   font-family: 'Roboto Mono', monospace;
   line-height: 2.5;
