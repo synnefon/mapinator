@@ -32,9 +32,23 @@
     </div>
   </div>
 
-  <div>
-    <div class="toolbar">
+  <div class="left-sidebar">
+    <div id="themeSelectContainer">
+      <label>theme</label>
+      <div id="themeRadioList">
+        <label><input type="radio" class="theme-radio" name="theme" value="default" checked> default</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="sage"> sage</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="verdant"> verdant</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="grayscale"> grayscale</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> rainbow</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="oasis"> oasis</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="volcano"> volcano</label>
+        <!-- <label><input type="radio" class="theme-radio" name="theme" value="alpine"> alpine</label> -->
+      </div>
+    </div>
 
+    <label>map settings</label>
+    <div class="toolbar">
       <div class="toolbar-section">
         <h4 class="toolbar-category"></h3>
           <label for="resolution">resolution: <span id="resolutionValue"></span></label>
@@ -43,42 +57,9 @@
           <label for="zoomInput">zoom: <span id="zoomValue"></span></label>
           <input id="zoomInput" type="range" min="0" max="1" step="0.01" />
 
-          <!-- <label class="freq-header">lock frequencies:</label>
-          <input id="lockFrequencies" type="checkbox" checked aria-label="link sliders" /> -->
-
           <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
           <input id="seaLevel" type="range" min="0" max="1" step="0.01" />
-
-          <!-- <label for="rainfall">rainfall: <span id="rainfallValue"></span></label>
-          <input id="rainfall" type="range" min="0" max="1" step="0.01" /> -->
       </div>
-      <!-- <hr> -->
-      <!-- <div class="toolbar-section">
-        <h4 class="toolbar-category">terrain</h3>
-          <label for="terrainFrequency">frequency: <span id="terrainFrequencyValue"></span></label>
-          <input id="terrainFrequency" type="range" min="0" max="1.0" step="0.01" />
-
-          <label for="clumpiness">clumpiness: <span id="clumpinessValue"></span></label>
-          <input id="clumpiness" type="range" min="-1" max="1" step="0.01" />
-
-          <label for="elevationContrast">elevation contrast: <span id="elevationContrastValue"></span></label>
-          <input id="elevationContrast" type="range" min="0" max="1" step="0.01" />
-
-          <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
-          <input id="seaLevel" type="range" min="0" max="1" step="0.01" />
-      </div> -->
-      <!-- <hr> -->
-      <!-- <div class="toolbar-section">
-        <h4 class="toolbar-category">moisture</h3>
-          <label for="weatherFrequency">frequency: <span id="weatherFrequencyValue"></span></label>
-          <input id="weatherFrequency" type="range" min="0" max="1.0" step="0.01" />
-
-          <label for="moistureContrast">moisture contrast: <span id="moistureContrastValue"></span></label>
-          <input id="moistureContrast" type="range" min="0" max="1" step="0.01" />
-
-          
-      </div> -->
-
     </div>
 
     <div class="reset-sliders-btn-container">
@@ -110,88 +91,6 @@
     </div>
   </div>
 
-  <div class="right-sidebar">
-    <div id="languageSelectContainer">
-      <div class="language-header">
-        <label>language</label>
-        <button id="toggleAllLanguagesBtn">deselect all</button>
-      </div>
-      <div id="languageCheckboxList">
-        <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="modern" checked>
-            modern</label>
-          <label><input type="checkbox" class="language-checkbox" value="ANGLISH" checked> anglish</label>
-          <label><input type="checkbox" class="language-checkbox" value="NEW_ANGLISH" checked> new anglish</label>
-          <label><input type="checkbox" class="language-checkbox" value="ROMANCE" checked> romance</label>
-          <label><input type="checkbox" class="language-checkbox" value="GERMANIC" checked> germanic</label>
-          <label><input type="checkbox" class="language-checkbox" value="RUSSIANIC" checked> russianic</label>
-          <label><input type="checkbox" class="language-checkbox" value="CN" checked> chinese</label>
-          <label><input type="checkbox" class="language-checkbox" value="JP" checked> japanese</label>
-          <label><input type="checkbox" class="language-checkbox" value="TURKIC" checked> turkic</label>
-          <label><input type="checkbox" class="language-checkbox" value="SEMITIC" checked> semitic</label>
-          <label><input type="checkbox" class="language-checkbox" value="BANTU_LIKE" checked> bantu-like</label>
-          <label><input type="checkbox" class="language-checkbox" value="AFRICAN_WEST" checked> african west</label>
-          <label><input type="checkbox" class="language-checkbox" value="AFRICAN_HORN" checked> african horn</label>
-          <label><input type="checkbox" class="language-checkbox" value="POLYNESIAN" checked> polynesian</label>
-          <label><input type="checkbox" class="language-checkbox" value="MONGOLIC" checked> mongolic</label>
-        </div>
-        <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="classic"
-              checked> classic</label>
-          <label><input type="checkbox" class="language-checkbox" value="TAMILIC" checked> tamilic</label>
-          <label><input type="checkbox" class="language-checkbox" value="QUECHUA" checked> quechua</label>
-          <label><input type="checkbox" class="language-checkbox" value="NAHUATL" checked> nahuatl</label>
-          <label><input type="checkbox" class="language-checkbox" value="SANSKRITIC" checked> sanskritic</label>
-          <label><input type="checkbox" class="language-checkbox" value="BABYLONIAN" checked> babylonian</label>
-          <label><input type="checkbox" class="language-checkbox" value="ETRUSCAN" checked> etruscan</label>
-          <label><input type="checkbox" class="language-checkbox" value="GAULISH" checked> gaulish</label>
-          <label><input type="checkbox" class="language-checkbox" value="MESOPOTAMIC" checked> mesopotamic</label>
-          <label><input type="checkbox" class="language-checkbox" value="EGYPTIC" checked> egyptic</label>
-          <label><input type="checkbox" class="language-checkbox" value="GREEKIC" checked> greekic</label>
-          <label><input type="checkbox" class="language-checkbox" value="LATINIC" checked> latinic</label>
-        </div>
-        <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="fictional"
-              checked> fictional</label>
-          <label><input type="checkbox" class="language-checkbox" value="CELESTIC" checked> celestic</label>
-          <label><input type="checkbox" class="language-checkbox" value="INFERNIC" checked> infernic</label>
-          <label><input type="checkbox" class="language-checkbox" value="ARCANE" checked> arcane</label>
-          <label><input type="checkbox" class="language-checkbox" value="DEEP_SPEECH" checked> deep speech</label>
-          <label><input type="checkbox" class="language-checkbox" value="GOBLINIC" checked> goblinic</label>
-          <label><input type="checkbox" class="language-checkbox" value="DWARVISH" checked> dwarvish</label>
-          <label><input type="checkbox" class="language-checkbox" value="HALFLING" checked> halfling</label>
-          <label><input type="checkbox" class="language-checkbox" value="NOCTURNIC" checked> nocturnic</label>
-          <label><input type="checkbox" class="language-checkbox" value="TECHNARCH" checked> technarch</label>
-          <label><input type="checkbox" class="language-checkbox" value="SIRENIC" checked> sirenic</label>
-          <label><input type="checkbox" class="language-checkbox" value="LYRICIAN" checked> lyrician</label>
-        </div>
-        <div class="language-category">
-          <label class="category-label"><input type="checkbox" class="category-checkbox" data-category="silly" checked>
-            silly</label>
-          <label><input type="checkbox" class="language-checkbox" value="SIMLISH" checked> simlish</label>
-          <label><input type="checkbox" class="language-checkbox" value="OOGA_BOOGA" checked> ooga booga</label>
-          <label><input type="checkbox" class="language-checkbox" value="DERPTONGUE" checked> derptongue</label>
-          <label><input type="checkbox" class="language-checkbox" value="TOADISH" checked> toadish</label>
-          <label><input type="checkbox" class="language-checkbox" value="BANANAIC" checked> bananaic</label>
-          <label><input type="checkbox" class="language-checkbox" value="PHRASIC" checked> phrasic</label>
-        </div>
-      </div>
-
-      <div id="themeSelectContainer">
-        <label>theme</label>
-        <div id="themeRadioList">
-          <label><input type="radio" class="theme-radio" name="theme" value="default" checked> default</label>
-          <label><input type="radio" class="theme-radio" name="theme" value="sage"> sage</label>
-          <label><input type="radio" class="theme-radio" name="theme" value="verdant"> verdant</label>
-          <label><input type="radio" class="theme-radio" name="theme" value="grayscale"> grayscale</label>
-          <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> rainbow</label>
-          <label><input type="radio" class="theme-radio" name="theme" value="oasis"> oasis</label>
-          <label><input type="radio" class="theme-radio" name="theme" value="volcano"> volcano</label>
-          <!-- <label><input type="radio" class="theme-radio" name="theme" value="alpine"> alpine</label> -->
-        </div>
-      </div>
-    </div>
-  </div>
 
   <script type="module" src="./src/main.ts"></script>
   <script type="module" src="./src/mobile-check.ts"></script>

@@ -44,7 +44,7 @@ export type UIElements = {
   downloadPNGBtn: HTMLButtonElement;
   downloadSaveBtn: HTMLButtonElement;
   cancelPopupBtn: HTMLButtonElement;
-  toggleAllLanguagesBtn: HTMLButtonElement;
+  // toggleAllLanguagesBtn: HTMLButtonElement;
 
   // Collections
   themeRadios: NodeListOf<HTMLInputElement>;
@@ -113,7 +113,7 @@ export class UIManager {
       "downloadPNGBtn",
       "downloadSaveBtn",
       "cancelPopupBtn",
-      "toggleAllLanguagesBtn",
+      // "toggleAllLanguagesBtn",
     ];
 
     const elements: any = {};

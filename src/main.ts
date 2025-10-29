@@ -1,7 +1,8 @@
 import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
-import { type Language } from "./common/language";
+import { MAPINATION_FILE_EXTENSION } from "./common/constants";
 import type { WorldMap } from "./common/map";
+import { makeRNG, randomContinuousChoice, weightedRandomChoice, type RNG } from "./common/random";
 import {
   isValidSaveFile,
   MAP_DEFAULTS,
@@ -14,8 +15,6 @@ import { NameGenerator } from "./mapgen/NameGenerator";
 import { MapRenderer } from "./renderer/MapRenderer";
 import { PanZoomController } from "./renderer/PanZoomController";
 import { sliderDefs, UIManager, type SliderDef } from "./UIManager";
-import { MAPINATION_FILE_EXTENSION } from "./common/constants";
-import { makeRNG, randomContinuousChoice, weightedRandomChoice, type RNG } from "./common/random";
 
 // === UTILITY FUNCTIONS ===
 
@@ -93,7 +92,6 @@ document.addEventListener("DOMContentLoaded", () => {
     uploadBtn,
     downloadPNGBtn,
     downloadSaveBtn,
-    toggleAllLanguagesBtn,
     cancelPopupBtn,
   } = ui.getAllElements();
 
@@ -253,71 +251,71 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // === LANGUAGE MANAGEMENT ===
-  const getCategoryLanguages = (category: string) =>
-    Array.from(ui.languageCheckboxes).filter((cb) => {
-      const parent = cb.closest(".language-category");
-      const catCb =
-        parent?.querySelector<HTMLInputElement>(".category-checkbox");
-      return catCb?.dataset.category === category;
-    });
+  // const getCategoryLanguages = (category: string) =>
+  //   Array.from(ui.languageCheckboxes).filter((cb) => {
+  //     const parent = cb.closest(".language-category");
+  //     const catCb =
+  //       parent?.querySelector<HTMLInputElement>(".category-checkbox");
+  //     return catCb?.dataset.category === category;
+  //   });
 
-  const updateCategoryCheckbox = (categoryCheckbox: HTMLInputElement) => {
-    const langs = getCategoryLanguages(categoryCheckbox.dataset.category ?? "");
-    const all = langs.every((cb) => cb.checked);
-    const none = langs.every((cb) => !cb.checked);
-    categoryCheckbox.checked = all;
-    categoryCheckbox.indeterminate = !all && !none;
-  };
+  // const updateCategoryCheckbox = (categoryCheckbox: HTMLInputElement) => {
+  //   const langs = getCategoryLanguages(categoryCheckbox.dataset.category ?? "");
+  //   const all = langs.every((cb) => cb.checked);
+  //   const none = langs.every((cb) => !cb.checked);
+  //   categoryCheckbox.checked = all;
+  //   categoryCheckbox.indeterminate = !all && !none;
+  // };
 
-  const updateSelectedLanguages = () => {
-    appState.selectedLanguages = Array.from(ui.languageCheckboxes)
-      .filter((cb) => cb.checked)
-      .map((cb) => cb.value as Language);
+  // const updateSelectedLanguages = () => {
+  //   appState.selectedLanguages = Array.from(ui.languageCheckboxes)
+  //     .filter((cb) => cb.checked)
+  //     .map((cb) => cb.value as Language);
 
-    const allChecked = Array.from(ui.languageCheckboxes).every(
-      (cb) => cb.checked
-    );
-    toggleAllLanguagesBtn.textContent = allChecked
-      ? "deselect all"
-      : "select all";
-  };
+  //   const allChecked = Array.from(ui.languageCheckboxes).every(
+  //     (cb) => cb.checked
+  //   );
+  //   toggleAllLanguagesBtn.textContent = allChecked
+  //     ? "deselect all"
+  //     : "select all";
+  // };
 
   // Wire category checkboxes
-  ui.categoryCheckboxes.forEach((catCb) => {
-    catCb.addEventListener("change", () => {
-      getCategoryLanguages(catCb.dataset.category ?? "").forEach(
-        (cb) => (cb.checked = catCb.checked)
-      );
-      updateSelectedLanguages();
-    });
-  });
+  // ui.categoryCheckboxes.forEach((catCb) => {
+  //   catCb.addEventListener("change", () => {
+  //     getCategoryLanguages(catCb.dataset.category ?? "").forEach(
+  //       (cb) => (cb.checked = catCb.checked)
+  //     );
+  //     updateSelectedLanguages();
+  //   });
+  // });
 
   // Wire individual language checkboxes
-  ui.languageCheckboxes.forEach((cb) => {
-    cb.checked = appState.selectedLanguages.includes(cb.value as Language);
-    cb.addEventListener("change", () => {
-      updateSelectedLanguages();
-      const parent = cb.closest(".language-category");
-      const catCb =
-        parent?.querySelector<HTMLInputElement>(".category-checkbox");
-      if (catCb) updateCategoryCheckbox(catCb);
-    });
-  });
+  // ui.languageCheckboxes.forEach((cb) => {
+  //   cb.checked = appState.selectedLanguages.includes(cb.value as Language);
+  //   cb.addEventListener("change", () => {
+  //     updateSelectedLanguages();
+  //     const parent = cb.closest(".language-category");
+  //     const catCb =
+  //       parent?.querySelector<HTMLInputElement>(".category-checkbox");
+  //     if (catCb) updateCategoryCheckbox(catCb);
+  //   });
+  // });
 
   // Initialize category states
-  ui.categoryCheckboxes.forEach(updateCategoryCheckbox as any);
-  updateSelectedLanguages();
+  // ui.categoryCheckboxes.forEach(updateCategoryCheckbox as any);
+  // updateSelectedLanguages();
 
   // Toggle-all button
-  toggleAllLanguagesBtn.addEventListener("click", () => {
-    const all = Array.from(ui.languageCheckboxes).every((cb) => cb.checked);
-    ui.languageCheckboxes.forEach((cb) => (cb.checked = !all));
-    ui.categoryCheckboxes.forEach((cb) => {
-      cb.checked = !all;
-      cb.indeterminate = false;
-    });
-    updateSelectedLanguages();
-  });
+  // toggleAllLanguagesBtn.addEventListener("click", () => {
+  //   const all = Array.from(ui.languageCheckboxes).every((cb) => cb.checked);
+  //   ui.languageCheckboxes.forEach((cb) => (cb.checked = !all));
+  //   ui.categoryCheckboxes.forEach((cb) => {
+  //     cb.checked = !all;
+  //     cb.indeterminate = false;
+  //   });
+  //   updateSelectedLanguages();
+  // });
 
   // === BUTTON EVENT HANDLERS ===
   regenBtn.addEventListener("click", () => {
