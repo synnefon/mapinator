@@ -124,15 +124,15 @@ export const DIALS = {
   // Lower values --> features are more compact and localized
   RADIUS_JITTER_RANGE: [0.1, 1.3] as const,
 
-  // Bell base: Controls the "floor" elevation of the terrain.
+  // Bell base: Varies the floor elevation
   // Higher values --> higher baseline plateau, smoother rolling hills, gradual transitions
   // Lower values --> deeper valleys, more dramatic elevation differences, sharper contrasts
   BELL_BASE_RANGE: [0.4, 0.7] as const,
 
-  // Bell gain: Controls how much elevation variation is added on top of the base.
+  // Bell gain: Varies the peak elevation added on top
   // Higher values --> more pronounced peaks and valleys, more dramatic terrain
   // Lower values --> flatter terrain with subtle elevation changes
-  BELL_GAIN_RANGE: [0.3, 0.6] as const,
+  BELL_GAIN_RANGE: [0.4, 0.63] as const,
 
   // FBM (Fractional Brownian Motion) weight for primary noise layer.
   // Higher values --> more influence from large-scale terrain features
