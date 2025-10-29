@@ -3,13 +3,13 @@ import { clamp } from "./util";
 // ===================== Public Types =====================
 export type Theme =
   | "default"
-  | "sage"
-  | "verdant"
+  | "arid"
+  | "lush"
   | "rainbow"
   | "oasis"
   | "grayscale"
-  | "winter"
-  | "autumn"
+  // | "winter"
+  // | "autumn"
   | "volcano";
 
 export type BiomeKey =
@@ -110,45 +110,52 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     WET_LOW: "#436132",
   },
   // 44447a
-  sage: {
-    // ocean
-    OCEAN: "#5C7285",
-    // very high
-    DRY_VERY_HIGH: "#888888",
-    MID_VERY_HIGH: "#bbbbbb",
-    WET_VERY_HIGH: "#E7E8E9",
-    // high
-    DRY_HIGH: "#babc8a",
-    MID_HIGH: "#a8bc8a",
-    WET_HIGH: "#9EBC8A",
-    // medium
-    DRY_MEDIUM: "#92946b",
-    MID_MEDIUM: "#85946b",
-    WET_MEDIUM: "#73946B",
-    // low
-    DRY_LOW: "#D2D0A0",
-    MID_LOW: "#587d53",
-    WET_LOW: "#537D5D",
+  arid: {
+    // ocean — sun-faded, slightly saline
+    OCEAN: "#34699A",
+    // very high — rocky, chalky, not icy
+    DRY_VERY_HIGH: "#bdb49d", // deeper beige with subtle warmth
+    MID_VERY_HIGH: "#bfbeb5", // neutral stone, more shadow separation
+    WET_VERY_HIGH: "#c9cccc", // cool chalky tone, stronger definition
+
+    // high — limestone and sage scrub
+    DRY_HIGH: "#bbae8c", // more depth in rock tone
+    MID_HIGH: "#9ca881", // cool sage with real contrast
+    WET_HIGH: "#839d7d", // muted mossy green, tighter value range
+
+    // medium — lighter, drier uplands with sun-baked olive soil
+    DRY_MEDIUM: "#b59f70", // richer sun-tan, adds warmth to the slope
+    MID_MEDIUM: "#99995f", // clear olive-earth transition
+    WET_MEDIUM: "#7b8e61", // restrained sage green, shadowed
+
+    // low — fertile or irrigated basins (richer tones)
+    DRY_LOW: "#d0c293", // slightly brighter sand, reflective glare
+    MID_LOW: "#96854d", // denser loam brown-green
+    WET_LOW: "#637d45", // vibrant floodplain contrast, but still earthy
   },
-  verdant: {
+  lush: {
     // OCEAN: "#44447a",
-    OCEAN: "#22577a",
+    OCEAN: "#34699A",
 
-    DRY_VERY_HIGH: "#a7d9a0",
-    MID_VERY_HIGH: "#a0d9a9",
-    WET_VERY_HIGH: "#a0d9c0",
+    // very high — misty rock faces and mossy peaks
+    DRY_VERY_HIGH: "#bfb9a4",
+    MID_VERY_HIGH: "#c4c2bc",
+    WET_VERY_HIGH: "#E7E8E9",
 
-    DRY_HIGH: "#29ab01",
-    MID_HIGH: "#01ab0f",
-    WET_HIGH: "#01ab4b", // 1, 171, 75
+    // high — elevated forest canopy, cooler and lighter greens
+    DRY_HIGH: "#7eaa5b", // bright olive canopy, sun-bleached tops
+    MID_HIGH: "#649a4b", // balanced mid-green ridge forests
+    WET_HIGH: "#4d8f45", // humid alpine growth, moderate depth
 
-    DRY_MEDIUM: "#297f01", // 40, 127, 1
-    MID_MEDIUM: "#017f10", // 1, 127, 16
-    WET_MEDIUM: "#007f5f", // 1, 127, 75
+    // medium — lowland jungle and wetlands, denser and darker
+    DRY_MEDIUM: "#557d3f", // drier forest interior, rich shadows
+    MID_MEDIUM: "#457339", // deeper tone, mossy undercanopy
+    WET_MEDIUM: "#356a33", // saturated jungle floor / wet fern green
 
-    DRY_LOW: "#1e6301", // 40, 99, 1
-    MID_LOW: "#016310", // 1, 99, 16
-    WET_LOW: "#01634b", // 1, 99, 75
+    // low — tropical basins, rich soil, river systems
+    DRY_LOW: "#9e8e61", // earthy, sun-touched loam
+    MID_LOW: "#3e6432", // fertile wet ground, near rivers
+    WET_LOW: "#27582c", // darkest floodplain, soaked with water
   },
   rainbow: {
     // ocean
@@ -175,7 +182,7 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     OCEAN: "#E3D2A6", // same turquoise oasis water
 
     // very high (oasis ridges / alpine springs)
-    DRY_VERY_HIGH: "#E3D2A6", // sage green (dry greenery)
+    DRY_VERY_HIGH: "#E3D2A6", // arid green (dry greenery)
     MID_VERY_HIGH: "#E3D2A6", // vibrant oasis green
     WET_VERY_HIGH: "#04009A", // bright dewy green
 
@@ -217,45 +224,6 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     DRY_LOW: "#454444", // dark dune shadow
     MID_LOW: "#454444", // mid shadow tone
     WET_LOW: "#454444", // wet sand / damp wadi
-  },
-  winter: {
-    OCEAN: "#5b6f87",
-    DRY_VERY_HIGH: "#b0b7bf",
-    MID_VERY_HIGH: "#d8dee5",
-    WET_VERY_HIGH: "#f4f6f8",
-    DRY_HIGH: "#9da7ad",
-    MID_HIGH: "#bcc7d0",
-    WET_HIGH: "#dce4eb",
-    DRY_MEDIUM: "#7f8c91",
-    MID_MEDIUM: "#a4b5bd",
-    WET_MEDIUM: "#cad5dd",
-    DRY_LOW: "#6d7a7f",
-    MID_LOW: "#8fa0a8",
-    WET_LOW: "#a7bcc4",
-  },
-  autumn: {
-    // Ocean — cool desaturated blue to contrast the warm land
-    OCEAN: "#3f5566",
-
-    // Very high — pale golds to off-white (frost-kissed peaks)
-    DRY_VERY_HIGH: "#bda77e", // faded tan
-    MID_VERY_HIGH: "#d8c9a7", // pale gold
-    WET_VERY_HIGH: "#f1e9d5", // soft cream
-
-    // High — burnt ochre, amber, fading green
-    DRY_HIGH: "#9a8f57", // warm ochre
-    MID_HIGH: "#c48a4d", // amber brown
-    WET_HIGH: "#b37b40", // muted olive green (touch of late summer)
-
-    // Medium — peak fall colors
-    DRY_MEDIUM: "#7d864e", // pumpkin orange
-    MID_MEDIUM: "#e49a3a", // rusty red-orange
-    WET_MEDIUM: "#d86b38", // faded green moss
-
-    // Low — ground foliage, leaf litter, and damp soil
-    DRY_LOW: "#f2c472", // golden leaves
-    MID_LOW: "#b05a2a", // deep rust
-    WET_LOW: "#961D00", // earthy green-brown
   },
   volcano: {
     // ocean
@@ -319,8 +287,8 @@ export type ThemeAdjust = {
 
 export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
   default: { saturationScale: 1.0 },
-  sage: { saturationScale: 0.95 },
-  verdant: { saturationScale: 1.07 },
+  arid: { saturationScale: 0.95 },
+  lush: { saturationScale: 1.07 },
   rainbow: { saturationScale: 1.12 },
   oasis: {
     lightness: {
@@ -338,8 +306,8 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
     },
     saturationScale: 0.85,
   },
-  winter: { saturationScale: 0.95 },
-  autumn: { saturationScale: 1.12 },
+  // winter: { saturationScale: 0.95 },
+  // autumn: { saturationScale: 1.12 },
   grayscale: {
     saturationScale: 0.0,
     lightness: {

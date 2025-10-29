@@ -132,8 +132,8 @@
         <label for="theme">theme:</label>
         <select id="theme">
           <option value="default">default</option>
-          <option value="sage">sage</option>
-          <option value="verdant">verdant</option>
+          <option value="arid">arid</option>
+          <option value="lush">lush</option>
           <option value="rainbow">rainbow</option>
           <option value="oasis">oasis</option>
           <option value="winter">winter</option>

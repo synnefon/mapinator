@@ -3238,7 +3238,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
       "shimmering ",
       "quiet ",
       "hidden ",
-      "verdant ",
+      "lush ",
       "lonely ",
       "glimmering ",
       "frozen ",

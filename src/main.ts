@@ -9,6 +9,7 @@ import {
   type MapSettings,
   type NumericSettingKey,
 } from "./common/settings";
+import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
 import { debounce, lerp } from "./common/util";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
@@ -67,6 +68,23 @@ const getCacheKey = (s: MapSettings) =>
   sliderDefs.map((d) => s[d.key]).join("|");
 
 document.addEventListener("DOMContentLoaded", () => {
+  // === INJECT THEME BUTTON STYLES ===
+  const styleTag = document.createElement("style");
+  styleTag.textContent = generateThemeButtonCSS();
+  document.head.appendChild(styleTag);
+
+  // === SETUP SVG/IMAGE MASKS ===
+  // Convert img tags to use CSS mask for exact color control
+  document.querySelectorAll<HTMLImageElement>("img.button-img, img.button-img-small").forEach((img) => {
+    const src = img.getAttribute("src");
+    if (src) {
+      img.style.maskImage = `url(${src})`;
+      img.style.webkitMaskImage = `url(${src})`;
+      // Make the img transparent so only the mask shows through
+      img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    }
+  });
+
   // === INITIALIZATION ===
   const appState = new AppState();
   const ui = new UIManager();
@@ -245,10 +263,14 @@ document.addEventListener("DOMContentLoaded", () => {
     radio.addEventListener("change", () => {
       if (radio.checked) {
         appState.updateSetting("theme", radio.value as MapSettings["theme"]);
+        applyThemeUIColors(radio.value as MapSettings["theme"]);
         debouncedDrawMap();
       }
     });
   });
+
+  // Apply initial theme colors
+  applyThemeUIColors(appState.settings.theme);
 
   // === LANGUAGE MANAGEMENT ===
   // const getCategoryLanguages = (category: string) =>
@@ -430,6 +452,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ui.themeRadios.forEach((radio) => {
       radio.checked = radio.value === saveFile.mapSettings.theme;
     });
+    applyThemeUIColors(saveFile.mapSettings.theme);
     loadMap(saveFile.seed);
   };
 

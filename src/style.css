@@ -1,9 +1,9 @@
 :root {
-  --bg: #758A93;
-  --text: #f0ebe6;
+  --bg: #C9C7AF;
+  --text: #C9C7AF;
   --track: var(--text);
-  --highlight: #E9B63B;
-  --inv-highlight: rgba(255, 255, 0, 0.87);
+  --highlight: #C9C7AF;
+  --highlightText: #C9C7AF;
 
   font-family: 'Roboto Mono', monospace;
   line-height: 2.5;
@@ -14,8 +14,6 @@
   color: var(--text);
   background-color: var(--bg);
   text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 img.button-img {
@@ -49,13 +47,23 @@ img.button-img {
   100% { transform: translateY(0); }
 }
 
-button.img-button-container img.button-img {
-  filter: invert(97%) sepia(8%) saturate(346%) hue-rotate(328deg) brightness(103%) contrast(93%);
-  transition: filter 0.2s ease;
+button.img-button-container img.button-img,
+button.img-button-container-small img.button-img-small {
+  background-color: var(--text);
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  transition: background-color 0.2s ease;
 }
 
-button.img-button-container:hover img.button-img {
-  filter: brightness(0) saturate(100%) invert(61%) sepia(9%) saturate(942%) hue-rotate(152deg) brightness(91%) contrast(87%);
+button.img-button-container:hover img.button-img,
+button.img-button-container-small:hover img.button-img-small,
+img.button-img.bounce,
+img.button-img-small.bounce {
+  background-color: var(--highlightText);
 }
 
 /* Layout */
@@ -109,7 +117,7 @@ body {
 }
 *.clicked {
   background-color: var(--highlight);
-  color: var(--bg);
+  color: var(--highlightText);
 }
 
 .toolbar label {
@@ -291,25 +299,12 @@ input[type="checkbox"]:indeterminate::after {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-#themeRadioList label:hover {
-  color: var(--highlight);
-}
-
-#themeRadioList label:has(input[type="radio"]:checked) {
-  background-color: var(--highlight);
-  color: var(--bg);
-}
-
-#themeRadioList label:has(input[type="radio"]:active) {
-  background: var(--highlight);
-  color: var(--bg);
-}
-
 input[type="radio"] {
   appearance: none;
 }
 
-input[type="radio"]:hover {
+input[type="radio"]:hover,
+input[type="radio"]:active {
   background-color: var(--highlight);
 }
 
@@ -335,13 +330,14 @@ select {
 }
 
 select:hover,
-select:focus {
+select:focus,
+select:active {
   border-color: var(--highlight);
 }
 
 select[multiple] option:checked {
   background: var(--highlight);
-  color: var(--bg);
+  color: var(--highlightText);
 }
 
 select[multiple] optgroup {
@@ -351,9 +347,7 @@ select[multiple] optgroup {
 
 ::selection {
   background-color: var(--highlight);
-  /* Sets the background of selected text to red */
-  color: #ffffff;
-  /* Sets the text color of selected text to white */
+  color: var(--highlightText);
 }
 
 #regenBtn {
@@ -420,7 +414,6 @@ select[multiple] optgroup {
   left: 50%;
   top: 50%;
   transform: translate(0, -50%);
-  filter: invert(1);
   background: transparent;
   border: none;
 }
@@ -429,17 +422,8 @@ select[multiple] optgroup {
 #loadTitleBtn:hover {
   opacity: 1;
   pointer-events: auto;
-  /* filter: invert(0); */
 }
 
-#loadTitleBtn:hover {
-  background: transparent;
-  filter: invert(0);
-}
-
-#loadTitleBtn:hover img.button-img-small {
-  filter: brightness(0) saturate(100%) invert(33%) sepia(100%) saturate(7471%) hue-rotate(220deg) brightness(102%) contrast(101%);
-}
 
 canvas {
   /* max-width: 60%; */
@@ -487,11 +471,12 @@ button {
   transition: background 0.2s ease;
 }
 
-button:hover {
+button:hover,
+button:active {
   background: var(--highlight);
   font-family: inherit;
   font-size: 1rem;
-  color: var(--bg);
+  color: var(--highlightText);
 }
 
 h4 {
@@ -555,6 +540,7 @@ h4 {
 
 .popup button:hover {
   background-color: var(--highlight);
+  color: var(--highlightText);
 }
 
 .popup button:last-child {

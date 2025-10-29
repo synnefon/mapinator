@@ -1,4 +1,5 @@
 import type { Delaunay } from "d3-delaunay";
+import { quantizeColor } from "../common/colorUtils";
 import type { WorldMap } from "../common/map";
 import type { MapSettings } from "../common/settings";
 import { colorAt } from "./BiomeColor";
@@ -8,9 +9,6 @@ import { colorAt } from "./BiomeColor";
  *  ================================================ */
 const DEGENERATE_RADIUS = 0.001;
 const ARC_FULL_CIRCLE = Math.PI * 2;
-const COLOR_QUANT_BITS = 5;
-const COLOR_LEVELS = (1 << COLOR_QUANT_BITS) - 1; // 31
-const RGB_MAX = 255;
 const VORONOI_PAD_FACTOR = 0.1;
 const VIEW_MARGIN_FACTOR = 0.05;
 const HAIRLINE_PX = 1;
@@ -143,26 +141,6 @@ export class MapRenderer {
     return path;
   }
 
-  private quantizeColor(color: string): string {
-    const cached = this.colorQuantCache.get(color);
-    if (cached) return cached;
-
-    const scale = RGB_MAX / COLOR_LEVELS;
-
-    const r = parseInt(color.slice(1, 3), 16);
-    const g = parseInt(color.slice(3, 5), 16);
-    const b = parseInt(color.slice(5, 7), 16);
-
-    const qr = Math.round(r / scale) * scale;
-    const qg = Math.round(g / scale) * scale;
-    const qb = Math.round(b / scale) * scale;
-
-    const toHex = (n: number) => Math.round(n).toString(16).padStart(2, "0");
-    const result = `#${toHex(qr)}${toHex(qg)}${toHex(qb)}`;
-    this.colorQuantCache.set(color, result);
-    return result;
-  }
-
   private getCellColors(map: WorldMap, settings: MapSettings): string[] {
     const wantedVersion = (map as any).meshVersion as number | undefined;
     const themeHash = `${settings.theme}:${settings.rainfall}:${settings.seaLevel}`;
@@ -185,11 +163,19 @@ export class MapRenderer {
         settings.rainfall,
         settings.seaLevel
       );
-      colors[i] = this.quantizeColor(rawColor);
+      colors[i] = this.quantizeColorCached(rawColor);
     }
 
     this.cellColorCache.set(map, { version: wantedVersion, themeHash, colors });
     return colors;
+  }
+
+  private quantizeColorCached(color: string): string {
+    const cached = this.colorQuantCache.get(color);
+    if (cached) return cached;
+    const result = quantizeColor(color);
+    this.colorQuantCache.set(color, result);
+    return result;
   }
 
   private getVoronoiCache(map: WorldMap): VoronoiCache {
@@ -314,7 +300,10 @@ export class MapRenderer {
     const x0 = Math.max(-resolution, -panX / scale - margin);
     const y0 = Math.max(-resolution, -panY / scale - margin);
     const x1 = Math.min(2 * resolution, (canvas.width - panX) / scale + margin);
-    const y1 = Math.min(2 * resolution, (canvas.height - panY) / scale + margin);
+    const y1 = Math.min(
+      2 * resolution,
+      (canvas.height - panY) / scale + margin
+    );
 
     const cache = this.getVoronoiCache(map);
     const visible = this.collectVisibleCells(map, cache, { x0, y0, x1, y1 });
