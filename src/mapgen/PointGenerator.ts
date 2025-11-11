@@ -32,7 +32,8 @@ export class PointGenerator {
   }
 
   public genPoints(settings: MapSettings): PointGenReturn {
-    this.rng = makeRNG(`${this.seed}-${settings.resolution}`);
+    // Use seed without resolution to keep point positions consistent across resolution changes
+    this.rng = makeRNG(`${this.seed}-points`);
     const { resolution, jitter } = settings;
 
     const points = this.initPoints(resolution, jitter);
@@ -86,8 +87,9 @@ export class PointGenerator {
     height: number,
     spacing: number
   ): Point[] {
+    // Use seed without resolution to keep point positions consistent across resolution changes
     this.rng = makeRNG(
-      `${this.seed}-${settings.resolution}-${worldX}-${worldY}`
+      `${this.seed}-points-${worldX}-${worldY}`
     );
     const { jitter } = settings;
     const points: Point[] = [];
