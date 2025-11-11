@@ -34,8 +34,10 @@ export class MapGenerator {
   private pointGenerator: PointGenerator;
   private rng: RNG;
   private elevationCalc: ElevationCalculator;
+  private seed: string;
 
   public constructor(seed: string) {
+    this.seed = seed;
     this.rng = makeRNG(seed);
     this.noise2D = createNoise2D(makeRNG(seed));
     this.pointGenerator = new PointGenerator(seed);
@@ -43,6 +45,7 @@ export class MapGenerator {
   }
 
   public reSeed(seed: string) {
+    this.seed = seed;
     this.rng = makeRNG(seed);
     this.noise2D = createNoise2D(makeRNG(seed));
     this.pointGenerator = new PointGenerator(seed);
@@ -98,9 +101,12 @@ export class MapGenerator {
     const weatherFrequency = settings.weatherFrequency;
     const moistureContrast =
       settings.moistureContrast ?? DEFAULT_MOISTURE_CONTRAST;
-    const rippleIntensity = sampleDial(DIALS.RIPPLE_INTENSITY_RANGE, this.rng);
-    const warpFrequency = sampleDial(DIALS.WARP_FREQUENCY_RANGE, this.rng);
-    const warpStrength = sampleDial(DIALS.WARP_STRENGTH_RANGE, this.rng);
+
+    // Create a deterministic RNG for moisture generation to ensure consistent results
+    const moistureRng = makeRNG(this.seed + "-moisture");
+    const rippleIntensity = sampleDial(DIALS.RIPPLE_INTENSITY_RANGE, moistureRng);
+    const warpFrequency = sampleDial(DIALS.WARP_FREQUENCY_RANGE, moistureRng);
+    const warpStrength = sampleDial(DIALS.WARP_STRENGTH_RANGE, moistureRng);
 
     const fbm2w = (x: number, y: number) => {
       const n1 = this.noise2D(x / weatherFrequency, y / weatherFrequency);
