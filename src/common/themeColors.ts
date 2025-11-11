@@ -18,10 +18,10 @@ export interface ThemeUIColors {
  */
 export const THEME_UI_COLORS: Record<Theme, ThemeUIColors> = {
   default: {
-    bg: "#131322", 
-    text:"#c9ada7",
-    highlight: "#c9ada7",
-    highlightText: "#181828",
+    bg:"rgb(200, 200, 200)",
+    text:"#000000",
+    highlight: "#0000ff",
+    highlightText: "rgb(200, 200, 200)",
   },
   arid: {
     bg: "#131322",
