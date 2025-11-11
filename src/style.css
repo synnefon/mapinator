@@ -206,7 +206,7 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--highlight);
   height: 16px;
   width: 16px;
-  /* border-radius: 50%; */
+  border-radius: 20%;
   margin-top: -5px;
   /* opacity: 1; */
   cursor: grab;
@@ -699,5 +699,5 @@ hr {
 }
 
 * {
-  border-radius: 2px;
+  border-radius: 8px;
 }
