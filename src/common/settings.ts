@@ -80,7 +80,7 @@ export const MAP_DEFAULTS: MapSettings = {
   clumpiness: 0.8,
   elevationContrast: 0.7,
   moistureContrast: 0.5,
-  theme: "default",
+  theme: "lush",
 };
 
 /** ================================
