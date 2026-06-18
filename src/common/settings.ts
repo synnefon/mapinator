@@ -7,6 +7,7 @@ export interface MapSettings {
   zoom: number;
   rainfall: number;
   seaLevel: number;
+  scale: number;
   clumpiness: number;
   elevationContrast: number;
   moistureContrast: number;
@@ -21,6 +22,7 @@ export const NUMERIC_SETTING_KEYS = [
   "jitter",
   "zoom",
   "seaLevel",
+  "scale",
   "clumpiness",
   "elevationContrast",
   "moistureContrast",
@@ -36,6 +38,7 @@ export const MAP_SETTINGS_KEYS = [
   "zoom",
   "rainfall",
   "seaLevel",
+  "scale",
   "clumpiness",
   "elevationContrast",
   "moistureContrast",
@@ -76,7 +79,8 @@ export const MAP_DEFAULTS: MapSettings = {
   terrainFrequency: 0.65,
   weatherFrequency: 0.65,
   rainfall: 0.65,
-  seaLevel: 0.51,
+  seaLevel: 0.50,
+  scale: 0.5,
   clumpiness: 0.8,
   elevationContrast: 0.7,
   moistureContrast: 0.5,

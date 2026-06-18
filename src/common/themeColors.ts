@@ -30,13 +30,13 @@ export const THEME_UI_COLORS: Record<Theme, ThemeUIColors> = {
     highlightText: "#181828",
   },
   lush: {
-    bg: "#131322",
+    bg: "rgb(42, 1, 118)",
     text:"#b8c9c1",
     highlight: "#B7FF00",
     highlightText: "#181828",
   },
   rainbow: {
-    bg: "#44447a",
+    bg: "#5900FF",
     text: "#f8961e",
     highlight: "#f94144",
     highlightText: "#e8f5e9",
@@ -48,10 +48,10 @@ export const THEME_UI_COLORS: Record<Theme, ThemeUIColors> = {
     highlightText: "#04009A",
   },
   grayscale: {
-    bg: "#5a5a5a",
+    bg: "rgb(63, 63, 63)",
     text: "#e0e0e0",
-    highlight: "#2e2d2d",
-    highlightText: "#e0e0e0",
+    highlight: "rgb(184, 184, 184)",
+    highlightText: "rgb(63, 63, 63)",
   },
   volcano: {
     bg: "#1A1A1A", 

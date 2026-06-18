@@ -347,7 +347,9 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Failed to load map file.");
       return;
     }
-    if (saveFile.mapSettings) saveFile.mapSettings.zoom = 0;
+    if (saveFile.mapSettings) {
+      saveFile.mapSettings = { ...MAP_DEFAULTS, ...saveFile.mapSettings, zoom: 0 };
+    }
     if (!isValidSaveFile(saveFile)) return;
     appState.settings = saveFile.mapSettings;
     ui.themeRadios.forEach(
