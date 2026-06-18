@@ -19,5 +19,6 @@ export interface BaseMap {
 export interface WorldMap extends BaseMap {
     elevations: Float32Array;
     moistures: Float32Array;
+    rainfall: number; // per-seed wet/dry bias, consumed at render time
 }
 

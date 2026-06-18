@@ -4,11 +4,6 @@ import { MAPINATION_FILE_EXTENSION } from "./common/constants";
 import type { WorldMap } from "./common/map";
 import { printSection } from "./common/printUtils";
 import {
-  makeRNG,
-  randomContinuousChoice,
-  type RNG,
-} from "./common/random";
-import {
   isValidSaveFile,
   MAP_DEFAULTS,
   type MapSettings,
@@ -107,7 +102,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const mapGenerator = new MapGenerator(appState.mapName);
   const mapRenderer = new MapRenderer();
-  let rng: RNG = makeRNG(appState.mapName);
 
   // UI Elements
   const {
@@ -177,12 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (newName) {
       appState.mapName = newName;
     }
-    rng = makeRNG(appState.mapName);
-    Object.assign(appState.settings, {
-      terrainFrequency: randomContinuousChoice(0.6, 0.8, rng),
-      weatherFrequency: randomContinuousChoice(0.4, 0.85, rng),
-      rainfall: randomContinuousChoice(0.45, 0.8, rng),
-    });
     printSection(
       "MAP SETTINGS",
       ...Object.entries(appState.settings).map(([key, value]) => ({

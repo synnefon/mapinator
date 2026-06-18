@@ -55,37 +55,8 @@ export type UIElements = {
 
 export const sliderDefs: readonly SliderDef[] = [
   { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.01 },
-  // { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
   { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
   { key: "scale", idBase: "scale", min: 0, max: 1, step: 0.01 },
-  // {
-  //   key: "elevationContrast",
-  //   idBase: "elevationContrast",
-  //   min: 0,
-  //   max: 1,
-  //   step: 0.01,
-  // },
-  // {
-  //   key: "moistureContrast",
-  //   idBase: "moistureContrast",
-  //   min: 0,
-  //   max: 1,
-  //   step: 0.01,
-  // },
-  // {
-  //   key: "terrainFrequency",
-  //   idBase: "terrainFrequency",
-  //   min: 0,
-  //   max: 1,
-  //   step: 0.01,
-  // },
-  // {
-  //   key: "weatherFrequency",
-  //   idBase: "weatherFrequency",
-  //   min: 0,
-  //   max: 1,
-  //   step: 0.01,
-  // },
 ];
 
 export class UIManager {

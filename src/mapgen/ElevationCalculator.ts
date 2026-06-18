@@ -2,24 +2,15 @@ import type { NoiseFunction2D } from "simplex-noise";
 import { printSection } from "../common/printUtils";
 import { type RNG } from "../common/random";
 import {
-  CONTINENT_GAIN,
-  CONTINENT_HI,
-  CONTINENT_LACUNARITY,
-  CONTINENT_LO,
-  CONTINENT_OCTAVES,
-  CONTINENT_SCALE,
-  CONTINENT_WARP,
-  DETAIL_AMPLITUDE,
+  CONTINENT,
   DIALS,
-  FRACTAL_GAIN,
-  FRACTAL_LACUNARITY,
-  FRACTAL_OCTAVES,
-  INLAND_HEIGHT,
+  ELEVATION,
+  FRACTAL,
   INVARIANTS,
-  OCEAN_FLOOR,
   sampleDial,
 } from "../common/settings";
 import { clamp, lerp } from "../common/util";
+import { fbm } from "./fbm";
 
 /** smoothstep for shaping curves */
 const smoothstep = (a: number, b: number, x: number) => {
@@ -34,11 +25,9 @@ const WARP_OFFSET_Y = 1.7;
 /**
  * Continentalness-based elevation (model B).
  *  - A low-frequency, domain-warped noise field decides where continents sit.
- *  - A shaping curve maps that field to a base height (deep ocean → shelf → inland).
- *  - A multi-octave fractal rides on top as detail, producing wiggly coastlines
- *    and a natural hierarchy of island sizes.
- * The field is scale-free, so it reads as continents when zoomed out and as a
- * single coastline when zoomed in.
+ *  - A shaping curve maps it to a base height (deep ocean → shelf → inland).
+ *  - The shared fractal (fbm) rides on top as detail → coastlines + island sizes.
+ * Scale-free, so it reads as continents zoomed out and one coastline zoomed in.
  */
 export class ElevationCalculator {
   private noise2D: NoiseFunction2D;
@@ -46,7 +35,7 @@ export class ElevationCalculator {
 
   constructor(rng: RNG, noise2D: NoiseFunction2D) {
     this.noise2D = noise2D;
-    this.fbmW1 = sampleDial(DIALS.FBM2_W1_RANGE, rng);
+    this.fbmW1 = sampleDial(DIALS.FBM_W1, rng);
 
     printSection("ELEVATION SETTINGS", { key: "fbmW1", value: this.fbmW1 });
   }
@@ -55,62 +44,37 @@ export class ElevationCalculator {
   public elevationAt(x: number, y: number, terrainFrequency: number): number {
     const C = this.continentalness(x, y);
     const base = lerp(
-      OCEAN_FLOOR,
-      INLAND_HEIGHT,
-      smoothstep(CONTINENT_LO, CONTINENT_HI, C)
+      CONTINENT.OCEAN_FLOOR,
+      CONTINENT.INLAND_HEIGHT,
+      smoothstep(CONTINENT.LO, CONTINENT.HI, C)
     );
-    const detail =
-      this.fbmFractal(x, y, terrainFrequency) - INVARIANTS.NEUTRAL_CENTER_POINT;
-    return clamp(base + DETAIL_AMPLITUDE * detail);
+    const detail = fbm(
+      this.noise2D,
+      x,
+      y,
+      terrainFrequency,
+      this.fbmW1,
+      FRACTAL.OCTAVES,
+      FRACTAL.GAIN,
+      FRACTAL.LACUNARITY
+    );
+    return clamp(base + ELEVATION.DETAIL_AMPLITUDE * detail);
   }
 
   /**
-   * Low-frequency, domain-warped continent field → [0,1]. High where continents
-   * sit, low over open ocean.
+   * Low-frequency, domain-warped continent field → [0,1]. Single octave; the
+   * fractal supplies all the finer coastline detail.
    */
   private continentalness(x: number, y: number): number {
     const wx =
-      x + CONTINENT_WARP * this.continentNoise(x + WARP_OFFSET_X, y + WARP_OFFSET_Y);
+      x + CONTINENT.WARP * this.continentNoise(x + WARP_OFFSET_X, y + WARP_OFFSET_Y);
     const wy =
-      y + CONTINENT_WARP * this.continentNoise(x - WARP_OFFSET_Y, y - WARP_OFFSET_X);
-
-    let amp = 1;
-    let freq = 1;
-    let sum = 0;
-    let norm = 0;
-    for (let i = 0; i < CONTINENT_OCTAVES; i++) {
-      sum += amp * this.continentNoise(freq * wx, freq * wy);
-      norm += amp;
-      amp *= CONTINENT_GAIN;
-      freq *= CONTINENT_LACUNARITY;
-    }
-    // sum/norm ∈ [-1,1] → [0,1]
-    return INVARIANTS.NEUTRAL_CENTER_POINT * (1 + sum / norm);
+      y + CONTINENT.WARP * this.continentNoise(x - WARP_OFFSET_Y, y - WARP_OFFSET_X);
+    return INVARIANTS.NEUTRAL_CENTER_POINT * (1 + this.continentNoise(wx, wy));
   }
 
   /** Raw continent-scale noise (lower frequency than the terrain detail). */
   private continentNoise(x: number, y: number): number {
-    return this.noise2D(x / CONTINENT_SCALE, y / CONTINENT_SCALE);
+    return this.noise2D(x / CONTINENT.SCALE, y / CONTINENT.SCALE);
   }
-
-  /**
-   * Multi-octave fractal detail → ~[0,1], centered on 0.5. Spreads energy across
-   * FRACTAL_OCTAVES scales for a natural hierarchy of coastal feature sizes.
-   */
-  private fbmFractal = (x: number, y: number, terrainFrequency: number) => {
-    let amp = this.fbmW1;
-    let freq = 1;
-    let sum = 0;
-    for (let i = 0; i < FRACTAL_OCTAVES; i++) {
-      sum +=
-        amp *
-        this.noise2D(
-          (freq * x) / terrainFrequency,
-          (freq * y) / terrainFrequency
-        );
-      amp *= FRACTAL_GAIN;
-      freq *= FRACTAL_LACUNARITY;
-    }
-    return clamp(INVARIANTS.NEUTRAL_CENTER_POINT + sum);
-  };
 }

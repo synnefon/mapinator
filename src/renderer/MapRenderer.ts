@@ -143,7 +143,7 @@ export class MapRenderer {
 
   private getCellColors(map: WorldMap, settings: MapSettings): string[] {
     const wantedVersion = (map as any).meshVersion as number | undefined;
-    const themeHash = `${settings.theme}:${settings.rainfall}:${settings.seaLevel}`;
+    const themeHash = `${settings.theme}:${map.rainfall}:${settings.seaLevel}`;
     const cached = this.cellColorCache.get(map);
     const cacheHit =
       cached &&
@@ -160,7 +160,7 @@ export class MapRenderer {
         settings.theme,
         map.elevations[i],
         map.moistures[i],
-        settings.rainfall,
+        map.rainfall,
         settings.seaLevel
       );
       colors[i] = this.quantizeColorCached(rawColor);

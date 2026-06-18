@@ -2,7 +2,7 @@
 import { Delaunay, type Delaunay as DelaunayT } from "d3-delaunay";
 import type { Point } from "../common/map";
 import { makeRNG, type RNG } from "../common/random";
-import type { MapSettings } from "../common/settings";
+import { JITTER, type MapSettings } from "../common/settings";
 
 /** ================================================
  *  Named constants (no magic numbers)
@@ -34,9 +34,9 @@ export class PointGenerator {
   public genPoints(settings: MapSettings): PointGenReturn {
     // Use seed without resolution to keep point positions consistent across resolution changes
     this.rng = makeRNG(`${this.seed}-points`);
-    const { resolution, jitter } = settings;
+    const { resolution } = settings;
 
-    const points = this.initPoints(resolution, jitter);
+    const points = this.initPoints(resolution, JITTER);
 
     let delaunay = Delaunay.from(points, (p) => p.x, (p) => p.y);
 
@@ -77,36 +77,6 @@ export class PointGenerator {
     }
 
     return { centers, delaunay };
-  }
-
-  public genPointsForRegion(
-    settings: MapSettings,
-    worldX: number,
-    worldY: number,
-    width: number,
-    height: number,
-    spacing: number
-  ): Point[] {
-    // Use seed without resolution to keep point positions consistent across resolution changes
-    this.rng = makeRNG(
-      `${this.seed}-points-${worldX}-${worldY}`
-    );
-    const { jitter } = settings;
-    const points: Point[] = [];
-
-    const startX = Math.floor(worldX / spacing) * spacing;
-    const startY = Math.floor(worldY / spacing) * spacing;
-    const endX = worldX + width;
-    const endY = worldY + height;
-
-    for (let x = startX; x <= endX; x += spacing) {
-      for (let y = startY; y <= endY; y += spacing) {
-        const jx = x + jitter * spacing * (this.rng() - this.rng());
-        const jy = y + jitter * spacing * (this.rng() - this.rng());
-        points.push({ x: jx, y: jy });
-      }
-    }
-    return points;
   }
 
   // -------- internals --------
