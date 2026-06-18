@@ -3,47 +3,26 @@ import { createNoise2D, type NoiseFunction2D } from "simplex-noise";
 import type { BaseMap, WorldMap } from "../common/map";
 import { printSection } from "../common/printUtils";
 import { makeRNG, type RNG } from "../common/random";
-import { DIALS, sampleDial, type MapSettings } from "../common/settings";
+import {
+  CONTRAST_AT_HIGH_SEA,
+  CONTRAST_AT_LOW_SEA,
+  DEFAULT_MOISTURE_CONTRAST,
+  DIALS,
+  FBM_WEIGHTS,
+  RESOLUTION_RANGE,
+  RIP_DIVISOR,
+  SEA_LEVEL_CONTRAST_MAX,
+  SEA_LEVEL_CONTRAST_MIN,
+  TERRAIN_FREQ_RANGE,
+  WARP_DIVISOR,
+  WEATHER_FREQ_RANGE,
+  sampleDial,
+  scaleZoom,
+  type MapSettings,
+} from "../common/settings";
 import { clamp, lerp } from "../common/util";
 import { ElevationCalculator } from "./ElevationCalculator";
 import { PointGenerator } from "./PointGenerator";
-
-/** ================================================
- *  Named constants (no magic numbers)
- *  ================================================ */
-
-// Resolution & frequency ranges
-const RESOLUTION_RANGE: [number, number] = [10, 200];
-const TERRAIN_FREQ_RANGE: [number, number] = [0.1, 1.3];
-const WEATHER_FREQ_RANGE: [number, number] = [0.1, 1.3];
-
-// Moisture defaults
-const DEFAULT_MOISTURE_CONTRAST = 0.5;
-const WARP_DIVISOR = 4;
-const RIP_DIVISOR = 0.5;
-const FBM_WEIGHTS = { n1: 0.35, n2: 0.15 };
-
-// Elevation contrast parameters
-const CONTRAST_AT_LOW_SEA = 0.45;
-const CONTRAST_AT_HIGH_SEA = 1.0;
-const SEA_LEVEL_CONTRAST_MIN = 0.2;
-const SEA_LEVEL_CONTRAST_MAX = 0.9;
-
-// Scale (globe ↔ island): exponential zoom on the generation coordinates.
-// At SCALE_NEUTRAL the field is sampled 1:1 (current view). Toward globe the
-// sample window widens (more terrain per pixel — denser); toward island it
-// narrows (one landmass fills the frame).
-const SCALE_NEUTRAL = 0.5; // slider value that reproduces current terrain
-const SCALE_ZOOM_RANGE = 3; // zoom-out factor at the globe end (1/this at island end)
-
-/** Exponential zoom factor for the scale slider; 1 at SCALE_NEUTRAL. */
-function scaleZoom(scale: number): number {
-  const t =
-    scale >= SCALE_NEUTRAL
-      ? (scale - SCALE_NEUTRAL) / (1 - SCALE_NEUTRAL) // 0..1 toward globe
-      : (scale - SCALE_NEUTRAL) / SCALE_NEUTRAL; // -1..0 toward island
-  return Math.pow(SCALE_ZOOM_RANGE, t);
-}
 
 export class MapGenerator {
   private noise2D: NoiseFunction2D;
@@ -166,7 +145,7 @@ export class MapGenerator {
 
   private genElevations(baseMap: BaseMap, settings: MapSettings): Float32Array {
     const { points, numRegions, resolution } = baseMap;
-    const { seaLevel, terrainFrequency, clumpiness, scale } = settings;
+    const { seaLevel, terrainFrequency, scale } = settings;
 
     const normalizedSeaLevel = clamp(
       lerp(0, 1, seaLevel, SEA_LEVEL_CONTRAST_MIN, SEA_LEVEL_CONTRAST_MAX)
@@ -184,13 +163,8 @@ export class MapGenerator {
     for (let r = 0; r < numRegions; r++) {
       const x = lerp(-0.5, 0.5, points[r].x / resolution) * zoom;
       const y = lerp(-0.5, 0.5, points[r].y / resolution) * zoom;
-      const elev = this.elevationCalc.maskedElevation(
-        x,
-        y,
-        terrainFrequency,
-        clumpiness
-      );
-      out[r] = elev === 10 ? elev : this.applyContrast(elev, elevationContrast);
+      const elev = this.elevationCalc.elevationAt(x, y, terrainFrequency);
+      out[r] = this.applyContrast(elev, elevationContrast);
     }
 
     return out;

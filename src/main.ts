@@ -6,7 +6,6 @@ import { printSection } from "./common/printUtils";
 import {
   makeRNG,
   randomContinuousChoice,
-  weightedRandomChoice,
   type RNG,
 } from "./common/random";
 import {
@@ -180,13 +179,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     rng = makeRNG(appState.mapName);
     Object.assign(appState.settings, {
-      clumpiness: weightedRandomChoice(
-        [
-          { val: randomContinuousChoice(0.75, 0.95, rng), prob: 0.75 },
-          { val: randomContinuousChoice(-0.95, -0.75, rng), prob: 0.25 },
-        ],
-        rng
-      ),
       terrainFrequency: randomContinuousChoice(0.6, 0.8, rng),
       weatherFrequency: randomContinuousChoice(0.4, 0.85, rng),
       rainfall: randomContinuousChoice(0.45, 0.8, rng),

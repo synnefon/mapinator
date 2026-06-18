@@ -58,7 +58,6 @@ export const sliderDefs: readonly SliderDef[] = [
   // { key: "rainfall", idBase: "rainfall", min: 0, max: 1, step: 0.01 },
   { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
   { key: "scale", idBase: "scale", min: 0, max: 1, step: 0.01 },
-  // { key: "clumpiness", idBase: "clumpiness", min: -1, max: 1, step: 0.01 },
   // {
   //   key: "elevationContrast",
   //   idBase: "elevationContrast",
