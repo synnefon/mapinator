@@ -69,7 +69,11 @@ export class ElevationCalculator {
     );
   }
 
-  /** Top-level elevation in [0,1] at a unit-sphere point: base + scaled relief. */
+  /**
+   * Top-level elevation in [0,1] at a unit-sphere point: base + scaled relief.
+   * `erosion` is the FEATURE_DETAIL amplitude at this point (see erosionAmplitudeAt);
+   * the caller passes it in so it isn't recomputed here and again for moisture.
+   */
   public elevationAt(
     x: number,
     y: number,
@@ -77,7 +81,8 @@ export class ElevationCalculator {
     coastWavelength: number,
     mountainWavelength: number,
     oceanWavelength: number,
-    extraOctaves: number
+    extraOctaves: number,
+    erosion: number
   ): number {
     const C = this.continentalness(x, y, z);
     // Shelf ramp: 0 out in open ocean → 1 once fully inland. Sets the base height
@@ -96,48 +101,81 @@ export class ElevationCalculator {
     // Coast → inland ramp: 0 at the shoreline, 1 deep inland. Drives both the
     // coast/mountain amplitude blend and the downward sink-damp.
     const inland = smoothstep(CONTINENT.SHELF[1], 1, C);
-    // Three relief waves, ocean → shore → inland: a gentle OCEAN swell in deep
-    // water, fine COAST jaggedness at the shore, broad MOUNTAIN relief inland.
-    const oceanRelief = fbm3(
-      this.noise3D,
-      x,
-      y,
-      z,
-      oceanWavelength,
-      this.oceanAmplitude,
-      FRACTAL.OCTAVES + extraOctaves,
-      FRACTAL.GAIN,
-      FRACTAL.LACUNARITY
-    );
-    const coastRelief = fbm3(
-      this.noise3D,
-      x,
-      y,
-      z,
-      coastWavelength,
-      this.coastAmplitude,
-      FRACTAL.OCTAVES + extraOctaves,
-      FRACTAL.GAIN,
-      FRACTAL.LACUNARITY
-    );
-    const mountainRelief = fbm3(
-      this.noise3D,
-      x,
-      y,
-      z,
-      mountainWavelength,
-      this.mountainAmplitude,
-      FRACTAL.OCTAVES + extraOctaves,
-      FRACTAL.GAIN,
-      FRACTAL.LACUNARITY
-    );
-    const landRelief = lerp(coastRelief, mountainRelief, inland);
-    const relief = lerp(oceanRelief, landRelief, shelf);
-    let r = this.erosionAmplitudeAt(x, y, z) * relief;
+
+    // Relief blends ocean → shore → inland: a gentle OCEAN swell in deep water,
+    // fine COAST jaggedness at the shore, broad MOUNTAIN relief inland. Each wave's
+    // weight (shelf / inland) saturates to exactly 0 or 1 outside its band, so we
+    // evaluate only the waves that actually contribute. Most cells are open ocean
+    // (shelf = 0 → ocean only) or deep interior (shelf = 1 → land only), skipping
+    // one or two fBm evaluations with bit-identical output.
+    let relief: number;
+    if (shelf <= 0) {
+      relief = this.relief(x, y, z, oceanWavelength, this.oceanAmplitude, extraOctaves);
+    } else {
+      const land = this.landRelief(
+        x, y, z, coastWavelength, mountainWavelength, inland, extraOctaves
+      );
+      relief =
+        shelf >= 1
+          ? land
+          : lerp(
+              this.relief(x, y, z, oceanWavelength, this.oceanAmplitude, extraOctaves),
+              land,
+              shelf
+            );
+    }
+
+    let r = erosion * relief;
     // Relief may dig below sea level near the coast (bays, channels) but not deep
     // inland (no lakes). Upward relief (mountains) is never damped.
     if (r < 0) r *= 1 - INLAND_SINK_DAMP * inland;
     return clamp(base + r);
+  }
+
+  /** One relief fBm wave (shared fractal shape; only wavelength + amplitude vary). */
+  private relief(
+    x: number,
+    y: number,
+    z: number,
+    wavelength: number,
+    amplitude: number,
+    extraOctaves: number
+  ): number {
+    return fbm3(
+      this.noise3D,
+      x,
+      y,
+      z,
+      wavelength,
+      amplitude,
+      FRACTAL.OCTAVES + extraOctaves,
+      FRACTAL.GAIN,
+      FRACTAL.LACUNARITY
+    );
+  }
+
+  /** Land relief: fine COAST at the shore → broad MOUNTAIN inland, blended by
+   * `inland`. Skips whichever wave has zero weight at the saturated ends. */
+  private landRelief(
+    x: number,
+    y: number,
+    z: number,
+    coastWavelength: number,
+    mountainWavelength: number,
+    inland: number,
+    extraOctaves: number
+  ): number {
+    if (inland <= 0) {
+      return this.relief(x, y, z, coastWavelength, this.coastAmplitude, extraOctaves);
+    }
+    const mountain = this.relief(
+      x, y, z, mountainWavelength, this.mountainAmplitude, extraOctaves
+    );
+    if (inland >= 1) return mountain;
+    const coast = this.relief(
+      x, y, z, coastWavelength, this.coastAmplitude, extraOctaves
+    );
+    return lerp(coast, mountain, inland);
   }
 
   /**

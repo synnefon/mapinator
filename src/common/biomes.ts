@@ -119,10 +119,12 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     MID_VERY_HIGH: "#eef1f3", // snow
     WET_VERY_HIGH: "#ffffff", // deep snow
 
-    // high — bare mountain rock (gray → near-black when wet)
-    DRY_HIGH: "#9d978b", // light gray rock
-    MID_HIGH: "#7c776f", // mid gray rock
-    WET_HIGH: "#585450", // dark wet rock, near-black
+    // high — treeline: dry = bare rock, wetter = alpine forest (snow caps sit above,
+    // in VERY_HIGH). The moisture field varies spatially, so mountains come out a mix
+    // of bare rocky slopes and forested ones rather than uniform rock.
+    DRY_HIGH: "#9d978b", // light gray rock — exposed, arid alpine
+    MID_HIGH: "#5e6b4a", // sparse scrub / krummholz over rock (olive)
+    WET_HIGH: "#3f5a37", // montane conifer forest (deep green)
 
     // medium — dry = tan steppe, wetter = green
     DRY_MEDIUM: "#b59f70", // arid-palette tan

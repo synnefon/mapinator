@@ -16,8 +16,18 @@ import { debounce } from "./common/util";
 import { globePointCount } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { GlobeController } from "./renderer/GlobeController";
-import { GlobeRenderer, globeRadiusPx } from "./renderer/GlobeRenderer";
-import { QUAT_IDENTITY, quatViewCenter, type Quat } from "./common/rotation";
+import { globeRadiusPx } from "./renderer/GlobeRenderer";
+import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
+import {
+  QUAT_IDENTITY,
+  quatViewCenter,
+  qRotate,
+  qFromAxisAngle,
+  qMul,
+  qNormalize,
+  qSlerp,
+  type Quat,
+} from "./common/rotation";
 import { sliderDefs, UIManager } from "./UIManager";
 
 // --- Utility Functions ---
@@ -61,18 +71,54 @@ const downloadFile = (c: string | Blob, fname: string, m: string) => {
 // --- Setup & State ---
 const mapCache = new Map<string, GlobeMap>();
 
-// Level-of-detail: zoomed out (visible cap > ~38°) we draw the whole-globe mesh;
-// zoomed in we mesh a cap BIGGER than the view (`capDeg` = preload margin so
-// panning is already loaded) from the global point set, layering `octaves` of
-// finer detail. 5 levels (global + 4 patch) span the zoom range. `points` = global
-// Fibonacci density → ~points×capArea cells per patch (~1 KB each; tune for memory).
+// Level-of-detail. Zoomed out (view radius > the coarsest `aboveDeg`) we draw the
+// whole-globe mesh; zoomed in we mesh a cap BIGGER than the view (`capDeg` = preload
+// margin so panning is already loaded) from the global Fibonacci point set, layering
+// `octaves` of finer detail. `points` is that global density → ~points·capArea cells.
+//
+// The ladder is DERIVED from the knobs below, not hand-placed, so fidelity stays
+// uniform: `points` steps geometrically (×POINT_RATIO) up to the cap, and each level's
+// activation angle is solved so every level ENTERS the screen at the same cell size.
+// Cells in view ≈ points·(1−cos halfDeg)/2, so holding that constant ⇒ points·(1−cos
+// aboveDeg) is constant across the ladder. Side effect: every patch is ~the same cell
+// count, so they all generate in roughly equal time.
 const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
-const PATCH_LEVELS = [
-  { aboveDeg: 38, capDeg: 60, points: 1_000_000, octaves: 1 },
-  { aboveDeg: 22, capDeg: 32, points: 2_000_000, octaves: 2 },
-  { aboveDeg: 12, capDeg: 17, points: 3_000_000, octaves: 3 },
-  { aboveDeg: 6.5, capDeg: 10, points: 8_000_000, octaves: 4 }, // max-zoom fidelity
-] as const;
+const MAX_PATCH_POINTS = 8_000_000; // max-zoom fidelity cap
+const MIN_PATCH_POINTS = 250_000; // coarsest patch — a gentle step above the global mesh
+const POINT_RATIO = 2; // density ratio between adjacent levels (≈1.4× finer cells)
+const FINEST_ABOVE_DEG = 6; // view radius (°) the finest level enters at → sets the target cell size
+const CAP_MARGIN = 1.5; // patch cap radius ÷ view radius (pan preload)
+const MAX_EXTRA_OCTAVES = 4; // extra fractal octaves at the finest level
+
+type PatchLevel = {
+  aboveDeg: number;
+  capDeg: number;
+  points: number;
+  octaves: number;
+};
+
+/** LOD ladder, coarsest → finest, generated from the constants above. */
+function buildPatchLevels(): PatchLevel[] {
+  const points: number[] = [];
+  for (let p = MAX_PATCH_POINTS; p >= MIN_PATCH_POINTS; p /= POINT_RATIO) {
+    points.unshift(p);
+  }
+  // Target cells-in-view, anchored by the finest level, held constant down the ladder.
+  const targetCells =
+    (MAX_PATCH_POINTS * (1 - Math.cos((FINEST_ABOVE_DEG * Math.PI) / 180))) / 2;
+  const last = points.length - 1;
+  return points.map((p, i) => {
+    const cosAbove = Math.max(-1, Math.min(1, 1 - (2 * targetCells) / p));
+    const aboveDeg = (Math.acos(cosAbove) * 180) / Math.PI;
+    return {
+      points: p,
+      aboveDeg,
+      capDeg: aboveDeg * CAP_MARGIN,
+      octaves: Math.round(1 + (MAX_EXTRA_OCTAVES - 1) * (i / last)),
+    };
+  });
+}
+const PATCH_LEVELS: PatchLevel[] = buildPatchLevels();
 
 // PNG export density floor: a zoomed-in export re-renders its patch at no fewer
 // than this many global points, so the image stays crisp no matter which zoom
@@ -116,10 +162,13 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName = generateMapName();
   }
 
-  const globeRenderer = new GlobeRenderer();
+  const globeRenderer = createGlobeRenderer();
   // Live view orientation (world→view quaternion), driven by the orbit controls;
   // reset on regen. Replaced wholesale by setView (not mutated in place).
   let orientation: Quat = QUAT_IDENTITY;
+  // rAF handle for the north-align animation (see orientNorth); any user view change
+  // cancels it so a drag/zoom mid-animation takes over cleanly.
+  let northAnim: number | null = null;
 
   // UI Elements
   const {
@@ -127,6 +176,7 @@ document.addEventListener("DOMContentLoaded", () => {
     mapTitle,
     regenBtn,
     regenBtnImg,
+    northBtn,
     resetSlidersBtn,
     loadTitleBtn,
     loadTitleBtnImg,
@@ -138,26 +188,25 @@ document.addEventListener("DOMContentLoaded", () => {
   } = ui.getAllElements();
 
   // Orbit controls: drag = rotate, wheel/pinch = zoom. Mutates orientation + the
-  // scale setting and redraws; geometry is untouched, so this only re-projects.
+  // zoom setting and redraws; geometry is untouched, so this only re-projects.
   new GlobeController({
     canvas,
-    getView: () => ({ orientation, scale: appState.settings.scale }),
+    getView: () => ({ orientation, zoom: appState.settings.zoom }),
     setView: (view) => {
+      if (northAnim !== null) {
+        cancelAnimationFrame(northAnim); // a drag/zoom interrupts the north animation
+        northAnim = null;
+      }
       orientation = view.orientation;
-      if (view.scale !== appState.settings.scale) {
-        appState.updateSetting("scale", view.scale);
-        ui.updateSliderValue("scale", view.scale);
+      if (view.zoom !== appState.settings.zoom) {
+        appState.updateSetting("zoom", view.zoom);
+        ui.updateSliderValue("zoom", view.zoom);
       }
       drawMap();
     },
   });
 
   // --- Map Rendering ---
-  const mapLoader = document.getElementById("mapLoader");
-  const setLoading = (on: boolean) => {
-    mapLoader?.classList.toggle("hidden", !on);
-  }
-
   // Terrain generation runs in a Web Worker so heavy meshing/noise never blocks the
   // UI thread; the globe's typed arrays transfer back zero-copy. Rotate/zoom only
   // re-project (reading the cached arrays), so they stay on the main thread.
@@ -180,7 +229,6 @@ document.addEventListener("DOMContentLoaded", () => {
   };
   worker.onerror = (e) => {
     console.error("map worker error:", e.message);
-    setLoading(false);
   };
 
   type GenRequest =
@@ -214,9 +262,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // re-project instantly; a debounced regen swaps in the right patch on settle.
   let globalMap: GlobeMap | null = null;
   let patchMap: GlobeMap | null = null;
-  // Total cached maps. Patches run tens of thousands of cells (~1 KB each), so
-  // this bounds patch memory; the global base is never evicted (see cacheMap).
-  const CACHE_CAP = 8;
+  // Total cached maps. With 6 patch levels, zooming straight in builds up to 6 patches
+  // at one center; this holds the global base + that stack (plus a little pan slack)
+  // so revisited zooms stay warm. The global base is never evicted (see cacheMap).
+  const CACHE_CAP = 12;
 
   function render() {
     if (!globalMap) return;
@@ -247,6 +296,40 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Animate the view orientation to `target` (slerp, ease in/out) at a roughly constant
+  // angular pace, re-projecting each frame. Used by the north-align button so the globe
+  // visibly rotates into place instead of snapping. A user drag/zoom cancels it (setView).
+  const NORTH_MS_PER_RAD = 250; // pace; ~half-turn in ~0.8s
+  const NORTH_MS_MIN = 300;
+  const NORTH_MS_MAX = 800;
+  function animateOrientationTo(target: Quat) {
+    if (northAnim !== null) cancelAnimationFrame(northAnim);
+    const start = orientation;
+    const dot = Math.abs(
+      start.x * target.x + start.y * target.y + start.z * target.z + start.w * target.w
+    );
+    const angle = 2 * Math.acos(Math.min(1, dot)); // rotation between start and target
+    if (angle < 1e-4) {
+      orientation = target;
+      northAnim = null;
+      scheduleRender();
+      return;
+    }
+    const duration = Math.min(
+      NORTH_MS_MAX,
+      Math.max(NORTH_MS_MIN, angle * NORTH_MS_PER_RAD)
+    );
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = t * t * (3 - 2 * t); // smoothstep ease in/out
+      orientation = qSlerp(start, target, eased);
+      render();
+      northAnim = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    northAnim = requestAnimationFrame(step);
+  }
+
   // Whole-globe vs a dense local patch, decided from the current zoom + orientation.
   type LocalView = {
     local: true;
@@ -259,7 +342,7 @@ document.addEventListener("DOMContentLoaded", () => {
   type View = { local: false } | LocalView;
 
   function currentView(): View {
-    const radiusPx = globeRadiusPx(canvas, appState.settings.scale);
+    const radiusPx = globeRadiusPx(canvas, appState.settings.zoom);
     // angular radius from the view center to the canvas corner (covers the view)
     const halfDeg =
       (Math.asin(
@@ -323,9 +406,6 @@ document.addEventListener("DOMContentLoaded", () => {
       pKey !== null && !mapCache.has(pKey) && !inFlight.has(pKey);
     if (!needGlobal && !needPatch) return;
 
-    // Loader ONLY for a fresh whole-globe build (new seed / first load /
-    // resolution change). Patch regen on pan/zoom stays silent.
-    if (needGlobal) setLoading(true);
     const epoch = seedEpoch;
 
     if (needGlobal) {
@@ -336,7 +416,6 @@ document.addEventListener("DOMContentLoaded", () => {
           if (epoch !== seedEpoch) return; // seed changed mid-flight — drop
           cacheMap(gKey, map);
           if (globalKey() === gKey) globalMap = map;
-          setLoading(false);
           scheduleRender();
         }
       );
@@ -372,14 +451,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- UI Helpers ---
-  const updateButtonPosition = () => {
-    loadTitleBtn.style.transform = `translate(${
-      mapTitle.offsetWidth / 2 + 16
-    }px, -50%)`;
-  };
   const drawTitle = (name: string) => {
     mapTitle.value = name;
-    setTimeout(updateButtonPosition, 0);
   };
 
   function redraw(newName?: string) {
@@ -444,9 +517,30 @@ document.addEventListener("DOMContentLoaded", () => {
     reseedWorker(appState.mapName);
     mapCache.clear();
     orientation = QUAT_IDENTITY;
-    appState.settings.scale = 1;
-    ui.updateSliderValue("scale", 1);
+    appState.settings.zoom = 0;
+    ui.updateSliderValue("zoom", 0);
     redraw(appState.mapName);
+  });
+
+  // Re-orient north, animating the globe into place. Zoomed in: a pure roll about the view
+  // axis — keep your exact spot, just level north (no N/S or E/W movement). Whole-globe:
+  // also rotate N/S onto the equator while keeping the current longitude — i.e. look at
+  // (current lon, 0°) with north up, which is a pure spin about the world N/S axis, so it
+  // never rotates E/W.
+  northBtn.addEventListener("click", () => {
+    playEffect(northBtn, "bounce");
+    let target: Quat;
+    if (currentView().local) {
+      const n = qRotate(orientation, { x: 0, y: 1, z: 0 }); // north in view space
+      target = qNormalize(
+        qMul(qFromAxisAngle(0, 0, 1, Math.atan2(n.x, n.y)), orientation)
+      );
+    } else {
+      const c = quatViewCenter(orientation); // world point currently facing the camera
+      const lon = Math.atan2(c.z, c.x); // keep this longitude; level latitude to 0
+      target = qFromAxisAngle(0, 1, 0, lon - Math.PI / 2);
+    }
+    animateOrientationTo(target);
   });
 
   resetSlidersBtn.addEventListener("click", () => {
@@ -475,7 +569,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
   });
-  mapTitle.addEventListener("input", updateButtonPosition);
 
   // --- Download/Upload ---
   const handleDownloadSave = () => {
@@ -526,11 +619,12 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     // Zoomed in: re-render this patch at the export floor (denser than the live zoom
-    // band) onto an offscreen canvas matching the on-screen framing, then export it.
-    // The worker builds it off-thread; the loader covers the wait.
+    // band) onto the live canvas at the on-screen framing, capture it, then restore
+    // the live view. Rendering to the main canvas keeps a single GL context (the
+    // WebGL path can't read back an offscreen canvas it never drew to). The worker
+    // builds the dense patch off-thread.
     const base = globalMap;
     const points = Math.max(view.points, PNG_MIN_EXPORT_POINTS);
-    setLoading(true);
     requestMap({
       kind: "local",
       center: view.center,
@@ -538,21 +632,17 @@ document.addEventListener("DOMContentLoaded", () => {
       points,
       extraOctaves: view.extraOctaves,
     }).then((patch) => {
-      const mapCanvas = Object.assign(document.createElement("canvas"), {
-        width: canvas.width,
-        height: canvas.height,
-      });
       globeRenderer.draw(
-        mapCanvas,
+        canvas,
         base,
         appState.settings,
         orientation,
         true,
         patch.cap
       );
-      globeRenderer.draw(mapCanvas, patch, appState.settings, orientation, false);
-      setLoading(false);
-      downloadGlobePNG(mapCanvas);
+      globeRenderer.draw(canvas, patch, appState.settings, orientation, false);
+      downloadGlobePNG(canvas);
+      scheduleRender(); // restore the live (normal-density) view
     });
   };
 
@@ -636,5 +726,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- Initialize ---
   redraw();
-  setTimeout(updateButtonPosition, 100);
 });

@@ -4,7 +4,7 @@ import { randomContinuousChoice } from "./random";
 export interface MapSettings {
   resolution: number;
   seaLevel: number;
-  scale: number; // globe zoom: 1 = whole planet, lower = zoom toward a patch
+  zoom: number; // 0 = whole planet, 1 = max zoom toward a patch
   theme: Theme;
 }
 
@@ -13,7 +13,7 @@ export type NumericSettingKey = Exclude<keyof MapSettings, "theme">;
 export const MAP_DEFAULTS: MapSettings = {
   resolution: 1,
   seaLevel: 0.5,
-  scale: 1,
+  zoom: 0,
   theme: "lush",
 };
 
@@ -62,7 +62,7 @@ export const SLIDER_RANGES = {
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
 export const FRACTAL = {
-  OCTAVES: 5, // more = finer detail, costlier
+  OCTAVES: 7, // more = finer detail, costlier
   GAIN: 0.7, // amplitude falloff per octave; higher = rougher
   LACUNARITY: 2, // wavelength shrink per octave
 } as const;
@@ -107,17 +107,21 @@ export const MOISTURE = {
   WAVELENGTH: [0.5, 0.7], // larger = bigger climate zones
   AMPLITUDE: 0.4, // higher = stronger wet/dry swings
   CONTRAST: 0.5, // higher = sharper wet/dry boundaries
+  NOISE_OFFSET: 31.7, // decorrelates the moisture noise from the elevation field
 } as const;
 
-// ICE — polar caps. EXTENT is the per-seed |y| (latitude) where the caps begin
-// (one size shared by both poles); higher = smaller caps. ASYMMETRY lets the two
-// poles differ slightly so they aren't identical.
+// ICE — polar snow caps on LAND (open water doesn't ice, for now). Land is snow poleward
+// of its snow line (EXTENT − LAND_BONUS, in |y| = sin latitude), blended back into the
+// terrain over EDGE on the equatorward side. The line is RUFFLEd by noise (a base wave
+// for a slightly lopsided cap + a finer octave at 3× for a ragged edge) so it isn't a
+// clean circle. ASYMMETRY tweaks each pole. (EXTENT near 1 = tiny caps; lower for bigger.)
 export const ICE = {
-  EXTENT: [0.8, 0.92], // |y| where ice starts; higher = smaller caps
-  ASYMMETRY: [-0.04, 0.04], // per-pole tweak around the shared extent
-  EDGE: 0.08, // softness of the ice → land transition
-  WOBBLE: 0.06, // irregularity of the cap edge (ragged coastline)
-  FREQ: 2.5, // wobble spatial frequency; higher = more wiggle
+  EXTENT: [0.85, 0.92], // |y| poleward of which land is iced; higher = smaller caps
+  ASYMMETRY: [-0.03, 0.03], // per-pole tweak around the shared extent
+  LAND_BONUS: 0.08, // ice reaches this much farther toward the equator over land
+  EDGE: 0.04, // width (in |y|) of the soft equatorward blend; smaller = crisper edge
+  RUFFLE: 0.035, // how far the snow line wanders (|y|) → asymmetrical, ragged edge
+  RUFFLE_FREQ: 4, // base scale of the ruffle (a finer octave at 3× rides on top)
 } as const;
 
 // FEATURE_DETAIL — "erosion": a low-frequency wave that scales the COAST/MOUNTAIN
@@ -127,10 +131,15 @@ export const FEATURE_DETAIL = {
   AMPLITUDE: [0.5, 0.7], // FEATURE amplitude [smooth zones, rugged zones]; raise hi for taller/more mountains
 } as const;
 
+// Midpoint of the FEATURE_DETAIL amplitude; dividing by it gives a ~1-centered factor
+// used to modulate moisture (more wet/dry swing in rugged regions, less in calm ones).
+export const FEATURE_DETAIL_MID =
+  (FEATURE_DETAIL.AMPLITUDE[0] + FEATURE_DETAIL.AMPLITUDE[1]) / 2;
+
 // Per-seed wet/dry bias applied at render time (not a wave). higher = wetter.
 export const RAINFALL = [0.65, 0.8] as const;
 
-// Fixed elevation contrast applied before coloring (no longer sea-level coupled).
+// Fixed elevation contrast applied before coloring.
 // Higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones.
 export const ELEVATION_CONTRAST = 0.72;
 
@@ -143,27 +152,19 @@ export const SEA_LEVEL = { MIN: 0.12, MAX: 0.82 } as const;
 // 0 = lakes everywhere; coasts keep full downward relief (bays) regardless.
 export const INLAND_SINK_DAMP = 0.82;
 
-// Globe ↔ island zoom on the generation coordinates (not a wave).
-const SCALE = {
-  NEUTRAL: 0.5, // slider value that reproduces 1:1 sampling
-  ZOOM_RANGE: 3, // zoom-out factor at globe end (1/this at island)
-} as const;
-
 // Point-grid jitter; higher = more irregular cell shapes.
 export const JITTER = 0.5;
+
+// Mesh / LOD infrastructure (not terrain shape).
+export const MESH = {
+  CACHE_CAP: 4, // global Voronoi meshes cached per point count (seed-independent; reused across seeds)
+  LOCAL_KEEP_FRACTION: 0.85, // patch cells beyond this fraction of the cap are unbounded padding → dropped
+  OCCLUSION_MARGIN_DEG: 3, // inset the patch occlusion cap so a ring of base cells still draws under its rim
+} as const;
 
 export const INVARIANTS = {
   NEUTRAL_CENTER_POINT: 0.5, // neutral center for noise fields and midpoint math
 } as const;
-
-/** Exponential zoom factor for the scale slider; 1 at SCALE.NEUTRAL. */
-export function scaleZoom(scale: number): number {
-  const t =
-    scale >= SCALE.NEUTRAL
-      ? (scale - SCALE.NEUTRAL) / (1 - SCALE.NEUTRAL) // 0..1 toward globe
-      : (scale - SCALE.NEUTRAL) / SCALE.NEUTRAL; // -1..0 toward island
-  return Math.pow(SCALE.ZOOM_RANGE, t);
-}
 
 export function sampleDial(
   range: readonly [number, number],

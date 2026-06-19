@@ -3,12 +3,14 @@ import {
   THEME_OVERRIDES,
   colorFor as baseColorFor,
   getElevationBandNameRaw,
+  iceColorFor,
   type ElevationBand,
   type Theme,
 } from "../common/biomes";
-import { clamp, lerp } from "../common/util";
-import { hexToHsl, hslToHex, quantizeColor } from "../common/colorUtils";
-import { SEA_LEVEL } from "../common/settings";
+import type { GlobeMap } from "../common/map";
+import { applyContrast, clamp, lerp } from "../common/util";
+import { hexToHsl, hslToHex, mixHex, quantizeColor } from "../common/colorUtils";
+import { ELEVATION_CONTRAST, SEA_LEVEL } from "../common/settings";
 
 /** ================================================
  *  Named constants (no magic numbers)
@@ -82,6 +84,51 @@ export function colorAt(
   const l2 = clamp(l + delta);
   // Quantize so the blend stays smooth-ish but the total palette stays small.
   return quantizeColor(hslToHex(h, s2, l2));
+}
+
+/** ================================================
+ *  Per-cell colours (shared by every renderer)
+ *  ================================================ */
+// Per-cell base colour as an index into a small deduplicated palette, so a renderer
+// resolves each distinct colour once instead of once per cell. Both the Canvas2D and
+// the WebGL renderer build their fills from this, so they stay pixel-identical.
+export type CellColors = { palette: string[]; colorIdx: Int32Array };
+
+export function computeCellColors(
+  map: GlobeMap,
+  theme: Theme,
+  seaLevel: number
+): CellColors {
+  const iceColor = iceColorFor(theme); // matches this theme's snowiest peak
+  const { elevation, moisture, ice, cellCount, rainfall } = map;
+  const colorIdx = new Int32Array(cellCount);
+  const palette: string[] = [];
+  const indexOf = new Map<string, number>();
+  const intern = (hex: string): number => {
+    let idx = indexOf.get(hex);
+    if (idx === undefined) {
+      idx = palette.length;
+      palette.push(hex);
+      indexOf.set(hex, idx);
+    }
+    return idx;
+  };
+
+  for (let i = 0; i < cellCount; i++) {
+    const biome = colorAt(
+      theme,
+      applyContrast(elevation[i], ELEVATION_CONTRAST),
+      moisture[i],
+      rainfall,
+      seaLevel
+    );
+    // Blend snow into the terrain by iciness (quantized to keep the palette small), so
+    // the ice edge fades like every other biome instead of being a flat sticker.
+    const hex =
+      ice[i] > 0 ? quantizeColor(mixHex(biome, iceColor, ice[i])) : biome;
+    colorIdx[i] = intern(hex);
+  }
+  return { palette, colorIdx };
 }
 
 /** ================================================

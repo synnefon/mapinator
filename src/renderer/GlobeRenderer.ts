@@ -1,33 +1,31 @@
-import { iceColorFor } from "../common/biomes";
 import type { GlobeMap, Vec3 } from "../common/map";
 import { hexToHsl, hslToHex } from "../common/colorUtils";
 import type { Quat } from "../common/rotation";
-import { ELEVATION_CONTRAST, type MapSettings } from "../common/settings";
-import { applyContrast, clamp } from "../common/util";
-import { colorAt } from "./BiomeColor";
+import { type MapSettings } from "../common/settings";
+import { clamp } from "../common/util";
+import { computeCellColors } from "./BiomeColor";
 
 /** ================================================
  *  Named constants (no magic numbers)
  *  ================================================ */
-const FIT_FACTOR = 0.46; // globe radius as a fraction of min(canvas w, h) when scale=1
-const GLOBE_MAX_ZOOM = 24; // radius multiplier at scale=0 (deepest zoom; spread over the LOD levels)
+const FIT_FACTOR = 0.46; // globe radius as a fraction of min(canvas w, h) at zoom=0 (whole globe)
+const GLOBE_MAX_ZOOM = 24; // radius multiplier at zoom=1 (deepest zoom; spread over the LOD levels)
 const AMBIENT = 0.4; // limb-darkening floor; lower = more dramatic terminator
 const SHADE_BUCKETS = 32; // quantize shade for the lightness cache
 const HAIRLINE_PX = 1; // stroke each cell in its own color to close seams
-const ICE_THRESHOLD = 0.5; // a cell is ice past this mask value (crisp, cell-resolution edge)
 // On-screen cell radius (px) below which we stroke each color group to hide the
 // ~1px AA seams between cells; above it cells are big enough to skip that pass.
 const SEAM_STROKE_MAX_CELL_PX = 10;
 
-/** Apparent globe radius in px for a zoom. scale=1 fits the canvas; lower zooms in. */
-export function globeRadiusPx(canvas: HTMLCanvasElement, scale: number): number {
-  // Geometric (not linear) zoom: equal scale steps give equal radius RATIOS, so the
+/** Apparent globe radius in px for a zoom. zoom=0 fits the canvas; higher zooms in. */
+export function globeRadiusPx(canvas: HTMLCanvasElement, zoom: number): number {
+  // Geometric (not linear) zoom: equal zoom steps give equal radius RATIOS, so the
   // wheel feels uniform across the range instead of lurching near the whole-globe
-  // view. Endpoints are unchanged: scale=1 → ×1, scale=0 → ×GLOBE_MAX_ZOOM.
+  // view. Endpoints: zoom=0 → ×1 (whole globe), zoom=1 → ×GLOBE_MAX_ZOOM (deepest).
   return (
     Math.min(canvas.width, canvas.height) *
     FIT_FACTOR *
-    Math.pow(GLOBE_MAX_ZOOM, 1 - scale)
+    Math.pow(GLOBE_MAX_ZOOM, zoom)
   );
 }
 
@@ -75,7 +73,7 @@ export class GlobeRenderer {
 
     const cxPx = W / 2;
     const cyPx = H / 2;
-    const radius = globeRadiusPx(canvas, settings.scale);
+    const radius = globeRadiusPx(canvas, settings.zoom);
 
     const { palette, colorIdx } = this.getColors(map, settings);
     const { sites, ringVerts, ringOffsets, cellCount } = map;
@@ -182,36 +180,11 @@ export class GlobeRenderer {
     const cached = this.colorCache.get(map);
     if (cached && cached.key === key) return cached;
 
-    const iceColor = iceColorFor(settings.theme); // matches this theme's snowiest peak
-    const { elevation, moisture, ice, cellCount, rainfall } = map;
-    const colorIdx = new Int32Array(cellCount);
-    const palette: string[] = [];
-    const indexOf = new Map<string, number>();
-    const intern = (hex: string): number => {
-      let idx = indexOf.get(hex);
-      if (idx === undefined) {
-        idx = palette.length;
-        palette.push(hex);
-        indexOf.set(hex, idx);
-      }
-      return idx;
-    };
-
-    for (let i = 0; i < cellCount; i++) {
-      // Crisp, cell-resolution ice (like the land cells), not a smooth blend.
-      const hex =
-        ice[i] > ICE_THRESHOLD
-          ? iceColor
-          : colorAt(
-              settings.theme,
-              applyContrast(elevation[i], ELEVATION_CONTRAST),
-              moisture[i],
-              rainfall,
-              settings.seaLevel
-            );
-      colorIdx[i] = intern(hex);
-    }
-
+    const { palette, colorIdx } = computeCellColors(
+      map,
+      settings.theme,
+      settings.seaLevel
+    );
     const entry: ColorCache = { key, palette, colorIdx };
     this.colorCache.set(map, entry);
     return entry;

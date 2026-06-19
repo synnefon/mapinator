@@ -81,7 +81,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding-left: 6em;
+  padding-left: 2em;
   padding-right: 1em;
   margin-top: 1em;
   width: 100%;
@@ -95,9 +95,20 @@ body {
   flex-direction: column;
   gap: 0.85vh;
   border: 4px solid var(--text);
-  padding: 0.5em;
+  padding: 0.5em 0.5em 1.3em; /* extra space below the last slider before the box edge */
   box-sizing: border-box;
   overflow-y: auto;
+}
+
+/* 4. upload / download + regen row */
+#ioButtons {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+#ioButtons #regenBtn {
+  margin-left: auto; /* push regen to the right edge */
 }
 
 .reset-sliders-btn-container {
@@ -353,70 +364,62 @@ select[multiple] optgroup {
   color: var(--highlightText);
 }
 
-#regenBtn {
-  margin-top: 1em;
-}
 
-/* Map area */
+/* Map area — now just the canvas; controls live in the left sidebar. Centre the
+   (larger) globe in the column. */
 #mapContainer {
   width: 100%;
   height: calc(100vh - 1em);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
   margin-top: 1em;
   overflow-y: auto;
-  /* button bar "hugs" the map */
 }
 
+/* 1. Title bar — full column width; the check mark floats at its right edge. */
 #titleContainer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 3em;
-  height: 3em;
   position: relative;
+  width: 100%;
 }
 
 #mapTitle {
-  border: 0px;
+  border: 2px solid transparent; /* always reserve the border box → constant height */
   background-color: var(--bg);
   color: var(--text);
   outline: none;
   font-family: 'Roboto Mono', monospace;
   font-weight: 700;
-  font-size: 2em;
-  text-align: center;
-  border-bottom: 2px solid transparent;
+  font-size: 1.4em; /* shrunk to fit the sidebar */
+  text-align: left;
   cursor: text;
   user-select: text;
-  padding: 0.2em 0.5em;
-  width: fit-content;
+  padding: 0.1em 2em 0.1em 0.3em; /* right pad leaves room for the floating check */
+  width: 100%; /* full column width */
+  box-sizing: border-box;
   transition: font-size 0.15s ease;
-  height: 70%;
 }
 
 #mapTitle:focus {
-  border: 2px solid var(--text);
+  border-color: var(--text); /* colour only — no box-size change, so no height jump */
 }
 
 #mapTitle:hover {
-  border: 2px solid var(--highlight);
+  border-color: var(--highlight);
 }
 
 #loadTitleBtn {
+  position: absolute; /* float at the right edge of the full-width title */
+  right: 0.2em;
+  top: 50%;
+  transform: translateY(-50%);
   padding: 0px;
-  height: min(4.5vh, 6.5vw);
-  width: min(4.5vh, 6.5vw);
+  height: 1.7em;
+  width: 1.7em;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(0, -50%);
   background: transparent;
   border: none;
 }
@@ -428,38 +431,32 @@ select[multiple] optgroup {
 }
 
 
+/* Square globe sized as large as fits: bounded by the map column's width and the
+   viewport height (so it never overflows and forces a scroll). The frame is the
+   positioning context for map overlays (e.g. the north button). */
+#mapFrame {
+  position: relative;
+  width: min(92%, 94vh);
+  line-height: 0;
+}
+
 canvas {
-  /* max-width: 60%; */
-  /* max-height: 75vh; */
-  /* width: auto; */
+  box-sizing: border-box; /* keep the border inside the frame's width */
   height: auto;
-  width: 56%;
+  width: 100%;
   display: block;
   border: 6px solid var(--text);
   cursor: grab;
-  /* margin-top: 1em; */
 }
 
-/* Button bar under the map */
-#buttonBar {
-  width: 50%;
-  max-width: 65%;
-  display: flex;
-  gap: 0.6rem;
-  justify-content: space-between;
-  /* 👈 regenBtn on left, download/upload on right */
-  flex-direction: row;
-}
-
-.right-buttons {
-  display: flex;
-  gap: 0.6rem;
-  flex-direction: row;
-  align-items: center;
-}
-
-.right-buttons button {
-  flex-shrink: 0;
+/* North re-orient: floated over the canvas corner. Transparent until hovered (the
+   generic button:hover rule then gives it the highlight fill). */
+.map-overlay-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  background: transparent;
 }
 
 button {
@@ -705,47 +702,3 @@ hr {
   border-radius: 8px;
 }
 
-#mapContainer {
-  position: relative;
-}
-
-/* Loader overlay shown while a globe is generating */
-#mapLoader {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-#mapLoader.hidden {
-  display: none;
-}
-
-/* A little spinning globe: shaded sphere with scrolling longitude bands. */
-.globe {
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background-color: #2b6aa0;
-  background-image: radial-gradient(
-      circle at 32% 28%,
-      rgba(255, 255, 255, 0.5),
-      rgba(255, 255, 255, 0) 46%
-    ),
-    repeating-linear-gradient(90deg, #3f8a55 0 12px, #2b6aa0 12px 28px);
-  background-repeat: no-repeat, repeat-x;
-  box-shadow: inset -9px -11px 20px rgba(0, 0, 30, 0.55),
-    inset 7px 8px 12px rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.4);
-  animation: globe-spin 2s linear infinite;
-}
-
-@keyframes globe-spin {
-  from {
-    background-position: 0 0, 0 0;
-  }
-  to {
-    background-position: 0 0, 28px 0;
-  }
-}

@@ -3,7 +3,7 @@ import { qMul, qNormalize, quatBetween, type Quat } from "../common/rotation";
 import { clamp } from "../common/util";
 import { globeRadiusPx } from "./GlobeRenderer";
 
-export type GlobeView = { orientation: Quat; scale: number };
+export type GlobeView = { orientation: Quat; zoom: number };
 
 interface GlobeControllerConfig {
   canvas: HTMLCanvasElement;
@@ -12,8 +12,8 @@ interface GlobeControllerConfig {
   zoomSensitivity?: number;
 }
 
-const DEFAULT_ZOOM_SENS = 0.0006; // scale units per wheel delta (now geometric: ~uniform ratio/notch)
-const PINCH_ZOOM_SENS = 1.2; // scale units per unit of pinch ratio change
+const DEFAULT_ZOOM_SENS = 0.0006; // zoom units per wheel delta (now geometric: ~uniform ratio/notch)
+const PINCH_ZOOM_SENS = 1.2; // zoom units per unit of pinch ratio change
 
 /**
  * Arcball orbit controls. Drag rotates so the world point under the cursor stays
@@ -83,21 +83,21 @@ export class GlobeController {
     });
   }
 
-  /** Zoom to `newScale` keeping the world point under (canvasX, canvasY) fixed. */
-  private zoomAt(canvasX: number, canvasY: number, newScale: number): void {
+  /** Zoom to `newZoom` keeping the world point under (canvasX, canvasY) fixed. */
+  private zoomAt(canvasX: number, canvasY: number, newZoom: number): void {
     const v = this.getView();
-    const from = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, v.scale));
-    const scale = clamp(newScale, 0, 1);
-    const to = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, scale));
+    const from = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, v.zoom));
+    const zoom = clamp(newZoom, 0, 1);
+    const to = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, zoom));
     this.setView({
       orientation: qNormalize(qMul(quatBetween(from, to), v.orientation)),
-      scale,
+      zoom,
     });
   }
 
   /** Drag from the last cursor to the current one → arcball rotation. */
   private dragTo(canvasX: number, canvasY: number): void {
-    const radius = globeRadiusPx(this.canvas, this.getView().scale);
+    const radius = globeRadiusPx(this.canvas, this.getView().zoom);
     this.rotateView(
       this.viewDirAt(this.lastX, this.lastY, radius),
       this.viewDirAt(canvasX, canvasY, radius)
@@ -136,7 +136,7 @@ export class GlobeController {
         e.preventDefault();
         this.cacheRect();
         const [x, y] = this.toCanvas(e.clientX, e.clientY);
-        this.zoomAt(x, y, this.getView().scale + e.deltaY * this.zoomSens);
+        this.zoomAt(x, y, this.getView().zoom - e.deltaY * this.zoomSens);
       },
       { passive: false }
     );
@@ -175,11 +175,11 @@ export class GlobeController {
           const dist = this.touchDistance(e.touches[0], e.touches[1]);
           const ratio = dist / this.pinchDistance;
           this.pinchDistance = dist;
-          // fingers apart (ratio > 1) → zoom in → scale decreases
+          // fingers apart (ratio > 1) → zoom in → zoom increases
           this.zoomAt(
             this.pinchX,
             this.pinchY,
-            this.getView().scale - (ratio - 1) * PINCH_ZOOM_SENS
+            this.getView().zoom + (ratio - 1) * PINCH_ZOOM_SENS
           );
         }
       },

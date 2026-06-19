@@ -82,3 +82,39 @@ export function quatBetween(from: Vec3, to: Vec3): Quat {
 export function quatViewCenter(q: Quat): Vec3 {
   return qRotate(qConjugate(q), { x: 0, y: 0, z: 1 });
 }
+
+/** Spherical interpolation a → b (t in [0,1]), along the shorter arc. */
+export function qSlerp(a: Quat, b: Quat, t: number): Quat {
+  let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+  let bx = b.x;
+  let by = b.y;
+  let bz = b.z;
+  let bw = b.w;
+  if (dot < 0) {
+    // Flip one end so we interpolate the short way around (q and -q are the same rotation).
+    bx = -bx;
+    by = -by;
+    bz = -bz;
+    bw = -bw;
+    dot = -dot;
+  }
+  if (dot > 0.9995) {
+    // Nearly aligned: lerp + normalize avoids the sin(θ)→0 blowup below.
+    return qNormalize({
+      x: a.x + (bx - a.x) * t,
+      y: a.y + (by - a.y) * t,
+      z: a.z + (bz - a.z) * t,
+      w: a.w + (bw - a.w) * t,
+    });
+  }
+  const theta0 = Math.acos(dot);
+  const sinTheta0 = Math.sin(theta0);
+  const s0 = Math.sin(theta0 * (1 - t)) / sinTheta0;
+  const s1 = Math.sin(theta0 * t) / sinTheta0;
+  return {
+    x: s0 * a.x + s1 * bx,
+    y: s0 * a.y + s1 * by,
+    z: s0 * a.z + s1 * bz,
+    w: s0 * a.w + s1 * bw,
+  };
+}

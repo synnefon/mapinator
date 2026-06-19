@@ -1,5 +1,13 @@
 import type { NoiseFunction3D } from "simplex-noise";
 
+// An octave whose amplitude is below this contributes less than ~0.6% of a unit
+// field — well under the renderer's 5-bit colour quantization (~3.2% per channel),
+// so it can't move a pixel. Amplitude only shrinks (gain < 1), so once we're under
+// it every remaining octave is too. This trims only the deep tail of very-low-
+// amplitude waves (e.g. the gentle OCEAN swell) at high zoom; the base octave count
+// and all visible detail are untouched.
+const MIN_OCTAVE_AMPLITUDE = 0.006;
+
 /**
  * Multi-octave fractal (fBm) noise over a 3D position, centered on 0 (the summed
  * octaves). Octave 0 has the given `amplitude` at the given `scale` (wavelength);
@@ -30,6 +38,7 @@ export function fbm3(
   let amp = amplitude;
   let sum = 0;
   for (let i = 0; i < octaves; i++) {
+    if (amp < MIN_OCTAVE_AMPLITUDE) break; // remaining octaves are imperceptible
     sum += amp * noise3D(sx, sy, sz);
     amp *= gain;
     sx *= lacunarity;
