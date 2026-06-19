@@ -69,9 +69,9 @@ const mapCache = new Map<string, GlobeMap>();
 const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
 const PATCH_LEVELS = [
   { aboveDeg: 38, capDeg: 60, points: 110_000, octaves: 1 },
-  { aboveDeg: 22, capDeg: 32, points: 320_000, octaves: 2 },
-  { aboveDeg: 12, capDeg: 17, points: 960_000, octaves: 3 },
-  { aboveDeg: 6.5, capDeg: 10, points: 2_500_000, octaves: 4 }, // max-zoom fidelity
+  { aboveDeg: 22, capDeg: 32, points: 500_000, octaves: 2 },
+  { aboveDeg: 12, capDeg: 17, points: 1_000_000, octaves: 3 },
+  { aboveDeg: 6.5, capDeg: 10, points: 8_000_000, octaves: 4 }, // max-zoom fidelity
 ] as const;
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -165,10 +165,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function render() {
     if (!globalMap) return;
-    globeRenderer.draw(canvas, globalMap, appState.settings, orientation, true);
+    // When a patch is overlaid, skip the base cells it hides (its cap), so a
+    // zoomed-in view doesn't redraw a full globe under the patch.
+    globeRenderer.draw(
+      canvas,
+      globalMap,
+      appState.settings,
+      orientation,
+      true,
+      patchMap?.cap
+    );
     if (patchMap) {
       globeRenderer.draw(canvas, patchMap, appState.settings, orientation, false);
     }
+  }
+
+  // Coalesce renders to one per animation frame: pointer/wheel events can fire
+  // several times per frame, but the globe only needs re-projecting once.
+  let renderPending = false;
+  function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    requestAnimationFrame(() => {
+      renderPending = false;
+      render();
+    });
   }
 
   // Whole-globe vs a dense local patch, decided from the current zoom + orientation.
@@ -244,7 +265,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // patch if the new one isn't ready yet, so we stay crisp while moving.
     globalMap = mapCache.get(gKey) ?? globalMap;
     patchMap = pKey ? mapCache.get(pKey) ?? patchMap : null;
-    render();
+    scheduleRender();
 
     const needGlobal = !mapCache.has(gKey);
     if (!needGlobal && (!pKey || mapCache.has(pKey))) return;
@@ -268,7 +289,7 @@ document.addEventListener("DOMContentLoaded", () => {
               )
             : null;
         if (needGlobal) setLoading(false);
-        render();
+        scheduleRender();
       })
     );
   }
@@ -278,7 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // View / setting change: re-render the current globe now (cheap), then resolve
   // the correct detail/geometry once the gesture settles.
   function drawMap() {
-    render();
+    scheduleRender();
     debouncedEnsureMap();
   }
 

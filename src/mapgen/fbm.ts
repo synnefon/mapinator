@@ -21,13 +21,20 @@ export function fbm3(
   gain: number,
   lacunarity: number
 ): number {
+  // Hoist 1/scale and walk the coordinates by `lacunarity` each octave, so the
+  // hot loop does multiplies only — no per-octave divisions or freq*coord work.
+  const inv = 1 / scale;
+  let sx = x * inv;
+  let sy = y * inv;
+  let sz = z * inv;
   let amp = amplitude;
-  let freq = 1;
   let sum = 0;
   for (let i = 0; i < octaves; i++) {
-    sum += amp * noise3D((freq * x) / scale, (freq * y) / scale, (freq * z) / scale);
+    sum += amp * noise3D(sx, sy, sz);
     amp *= gain;
-    freq *= lacunarity;
+    sx *= lacunarity;
+    sy *= lacunarity;
+    sz *= lacunarity;
   }
   return sum;
 }

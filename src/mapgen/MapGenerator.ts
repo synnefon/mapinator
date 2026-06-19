@@ -1,6 +1,6 @@
 import { geoVoronoi } from "d3-geo-voronoi";
 import { createNoise3D, type NoiseFunction3D } from "simplex-noise";
-import type { GlobeCell, GlobeMap, Vec3 } from "../common/map";
+import type { GlobeMap, Vec3 } from "../common/map";
 import { printSection } from "../common/printUtils";
 import { makeRNG, type RNG } from "../common/random";
 import {
@@ -48,6 +48,10 @@ const GLOBE_POSITIONS_CACHE_CAP = 4;
 // Local-patch cells beyond this fraction of the cap are padding (their Voronoi
 // cells are unbounded toward the rest of the sphere) — kept off-screen, dropped.
 const LOCAL_KEEP_FRACTION = 0.85;
+
+// Inset the occlusion-cull cap by this margin so a ring of global base cells still
+// draws under the patch rim (the base cell straddling the boundary stays, no gap).
+const OCCLUSION_MARGIN_RAD = (3 * Math.PI) / 180;
 
 const smoothstep = (a: number, b: number, x: number) => {
   const t = clamp((x - a) / (b - a));
@@ -111,16 +115,16 @@ export class MapGenerator {
     const pointCount = globePointCount(input.resolution);
     const flavor = this.sampleFlavor();
     const mesh = this.getMesh(pointCount);
-    const cells = mesh.map((cell) => this.buildCell(cell, flavor, 0));
+    const map = this.packMesh(mesh, flavor, 0, pointCount);
 
     printSection(
       "GLOBE SETTINGS",
       { key: "pointCount", value: pointCount },
-      { key: "cells", value: cells.length },
+      { key: "cells", value: map.cellCount },
       { key: "rainfall", value: flavor.rainfall }
     );
 
-    return { cells, rainfall: flavor.rainfall, pointCount };
+    return map;
   }
 
   /**
@@ -154,7 +158,7 @@ export class MapGenerator {
     const voronoi = geoVoronoi(sites.map(vec3ToLonLat));
     const keepCos = Math.cos(halfAngle * LOCAL_KEEP_FRACTION);
 
-    const cells: GlobeCell[] = [];
+    const mesh: MeshCell[] = [];
     for (const feature of voronoi.polygons().features) {
       const geometry = feature.geometry;
       if (!geometry || !geometry.coordinates) continue;
@@ -164,10 +168,18 @@ export class MapGenerator {
       const ring = geometry.coordinates[0].map(([lon, lat]) =>
         lonLatToVec3(lon, lat)
       );
-      cells.push(this.buildCell({ site, ring }, flavor, extraOctaves));
+      mesh.push({ site, ring });
     }
 
-    return { cells, rainfall: flavor.rainfall, pointCount: cells.length };
+    // Cap (inset) the renderer uses to skip global base cells hidden by this patch.
+    const cap = {
+      center,
+      cosKeep: Math.cos(
+        Math.max(0, halfAngle * LOCAL_KEEP_FRACTION - OCCLUSION_MARGIN_RAD)
+      ),
+    };
+
+    return this.packMesh(mesh, flavor, extraOctaves, mesh.length, cap);
   }
 
   /** Global Fibonacci point positions for a count, cached + reused across patches. */
@@ -205,16 +217,43 @@ export class MapGenerator {
     };
   }
 
-  /** Compute one cell's fields from its mesh geometry. */
-  private buildCell(
-    { site, ring }: MeshCell,
+  /**
+   * Pack a mesh (sites + rings) and its computed fields into the flat typed-array
+   * GlobeMap in a single pass: copy geometry into shared buffers and sample
+   * elevation/moisture/ice per cell.
+   */
+  private packMesh(
+    cells: MeshCell[],
     flavor: Flavor,
-    extraOctaves: number
-  ): GlobeCell {
-    return {
-      site,
-      ring,
-      elevation: this.elevationCalc.elevationAt(
+    extraOctaves: number,
+    pointCount: number,
+    cap?: { center: Vec3; cosKeep: number }
+  ): GlobeMap {
+    const n = cells.length;
+    let totalVerts = 0;
+    for (let i = 0; i < n; i++) totalVerts += cells[i].ring.length;
+
+    const sites = new Float32Array(n * 3);
+    const ringOffsets = new Uint32Array(n + 1);
+    const ringVerts = new Float32Array(totalVerts * 3);
+    const elevation = new Float32Array(n);
+    const moisture = new Float32Array(n);
+    const ice = new Float32Array(n);
+
+    let vo = 0;
+    for (let i = 0; i < n; i++) {
+      const { site, ring } = cells[i];
+      sites[3 * i] = site.x;
+      sites[3 * i + 1] = site.y;
+      sites[3 * i + 2] = site.z;
+      ringOffsets[i] = vo;
+      for (let k = 0; k < ring.length; k++) {
+        ringVerts[3 * vo] = ring[k].x;
+        ringVerts[3 * vo + 1] = ring[k].y;
+        ringVerts[3 * vo + 2] = ring[k].z;
+        vo++;
+      }
+      elevation[i] = this.elevationCalc.elevationAt(
         site.x,
         site.y,
         site.z,
@@ -222,9 +261,23 @@ export class MapGenerator {
         flavor.mountainWavelength,
         flavor.oceanWavelength,
         extraOctaves
-      ),
-      moisture: this.moistureAt(site, flavor.moistureWavelength, extraOctaves),
-      ice: this.iceAt(site, flavor.iceCapNorth, flavor.iceCapSouth),
+      );
+      moisture[i] = this.moistureAt(site, flavor.moistureWavelength, extraOctaves);
+      ice[i] = this.iceAt(site, flavor.iceCapNorth, flavor.iceCapSouth);
+    }
+    ringOffsets[n] = vo;
+
+    return {
+      cellCount: n,
+      sites,
+      ringOffsets,
+      ringVerts,
+      elevation,
+      moisture,
+      ice,
+      rainfall: flavor.rainfall,
+      pointCount,
+      cap,
     };
   }
 
