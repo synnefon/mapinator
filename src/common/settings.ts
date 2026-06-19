@@ -59,7 +59,7 @@ export const isValidSaveFile = (fileContent: any): boolean => {
 
 // UI slider 0..1 → actual value (via lerp).
 export const SLIDER_RANGES = {
-  RESOLUTION: [10, 250], // grid cells per axis; higher = finer detail, slower
+  RESOLUTION: [10, 220], // grid cells per axis; higher = finer detail, slower
 } as const;
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
