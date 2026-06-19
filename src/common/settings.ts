@@ -57,7 +57,7 @@ export const isValidSaveFile = (fileContent: any): boolean => {
 
 // UI slider 0..1 → actual value (via lerp).
 export const SLIDER_RANGES = {
-  POINT_COUNT: [400, 96000], // total Voronoi cells on the globe; higher = finer, slower
+  POINT_COUNT: [400, 100_000], // total Voronoi cells on the globe; higher = finer, slower
 } as const;
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
@@ -98,29 +98,45 @@ export const COAST = {
 } as const;
 
 export const MOUNTAIN = {
-  WAVELENGTH: [0.8, 1.3], // coarse — broad inland relief; larger = bigger ranges
-  AMPLITUDE: [0.3, 0.4], // relief deep inland → mountain height
+  WAVELENGTH: [0.5, 1], // coarse — broad inland relief; larger = bigger ranges
+  AMPLITUDE: [0.3, 0.7], // relief deep inland → mountain height
 } as const;
 
 // FEATURE_DETAIL — "erosion": a low-frequency wave that scales the COAST/MOUNTAIN
 // relief amplitude between smooth and rugged regions within one map.
 export const FEATURE_DETAIL = {
   WAVELENGTH: [0.9, 0.9], // larger = broader smooth/rugged zones (per seed)
-  AMPLITUDE: [0.4, 0.7], // FEATURE amplitude [smooth zones, rugged zones]; raise hi for taller/more mountains
+  AMPLITUDE: [0.5, 0.7], // FEATURE amplitude [smooth zones, rugged zones]; raise hi for taller/more mountains
 } as const;
 
 // MOISTURE — drives wet/dry biome coloring.
 export const MOISTURE = {
   WAVELENGTH: [0.28, 0.7], // larger = bigger climate zones
-  AMPLITUDE: 0.5, // higher = stronger wet/dry swings
+  AMPLITUDE: 0.6, // higher = stronger wet/dry swings
   CONTRAST: 0.5, // higher = sharper wet/dry boundaries
+} as const;
+
+// ICE — polar caps. EXTENT is the per-seed |y| (latitude) where the caps begin
+// (one size shared by both poles); higher = smaller caps. ASYMMETRY lets the two
+// poles differ slightly so they aren't identical.
+export const ICE = {
+  EXTENT: [0.7, 0.92], // |y| where ice starts; higher = smaller caps
+  ASYMMETRY: [-0.04, 0.04], // per-pole tweak around the shared extent
+  EDGE: 0.08, // softness of the ice → land transition
+  WOBBLE: 0.06, // irregularity of the cap edge (ragged coastline)
+  FREQ: 2.5, // wobble spatial frequency; higher = more wiggle
 } as const;
 
 // Per-seed wet/dry bias applied at render time (not a wave). higher = wetter.
 export const RAINFALL = [0.45, 0.8] as const;
 
-// Elevation contrast [at low sea, at high sea] (not a wave); higher = more extreme.
-export const CONTRAST = [0.45, 1.0] as const;
+// Fixed elevation contrast applied before coloring (no longer sea-level coupled).
+// Higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones.
+export const ELEVATION_CONTRAST = 0.72;
+
+// Sea level as a waterline in raw-elevation space: slider 0..1 → lerp(MIN, MAX).
+// MIN = lots of land; MAX = mostly ocean (land still renders its full bands).
+export const SEA_LEVEL = { MIN: 0.12, MAX: 0.82 } as const;
 
 // Stops relief from digging below sea level inland (prevents lakes), so
 // amplitude can stay high for tall mountains + jagged coasts. 1 = no inland lakes,

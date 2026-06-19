@@ -62,6 +62,17 @@ export function hexToHsl(hex: string): { h: number; s: number; l: number } {
   return { h: hue, s: saturation, l: lightness };
 }
 
+/** Linearly blend two #rrggbb hex colors (t=0 → a, t=1 → b). */
+export function mixHex(a: string, b: string, t: number): string {
+  const k = Math.max(0, Math.min(1, t));
+  const pa = parseInt(a.replace(/^#/, ""), HEX_BASE);
+  const pb = parseInt(b.replace(/^#/, ""), HEX_BASE);
+  const r = Math.round(((pa >> 16) & 0xff) + (((pb >> 16) & 0xff) - ((pa >> 16) & 0xff)) * k);
+  const g = Math.round(((pa >> 8) & 0xff) + (((pb >> 8) & 0xff) - ((pa >> 8) & 0xff)) * k);
+  const b2 = Math.round((pa & 0xff) + ((pb & 0xff) - (pa & 0xff)) * k);
+  return `#${((1 << 24) | (r << 16) | (g << 8) | b2).toString(HEX_BASE).slice(1)}`;
+}
+
 /**
  * Convert HSL values to a hex color
  */

@@ -36,6 +36,7 @@ export interface GlobeCell {
     ring: Vec3[];
     elevation: number;
     moisture: number;
+    ice: number; // polar ice-cap mask in [0,1] (1 = full ice)
 }
 
 export interface GlobeMap {

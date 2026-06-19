@@ -1,6 +1,6 @@
 import type { GlobeMap } from "../common/map";
 import { hexToHsl, hslToHex } from "../common/colorUtils";
-import { CONTRAST, type MapSettings } from "../common/settings";
+import { ELEVATION_CONTRAST, type MapSettings } from "../common/settings";
 import { applyContrast, clamp, lerp } from "../common/util";
 import { colorAt } from "./BiomeColor";
 
@@ -12,8 +12,19 @@ const GLOBE_MAX_ZOOM = 4; // radius multiplier at scale=0 (zoomed all the way in
 const AMBIENT = 0.4; // limb-darkening floor; lower = more dramatic terminator
 const SHADE_BUCKETS = 32; // quantize shade for the lightness cache
 const HAIRLINE_PX = 1; // stroke each cell in its own color to close seams
+const ICE_COLOR = "#eef6fb"; // pale icy white for polar-cap cells
+const ICE_THRESHOLD = 0.5; // a cell is ice past this mask value (crisp, cell-resolution edge)
 
 export type GlobeOrientation = { yaw: number; pitch: number };
+
+/** Apparent globe radius in px for a zoom. scale=1 fits the canvas; lower zooms in. */
+export function globeRadiusPx(canvas: HTMLCanvasElement, scale: number): number {
+  return (
+    Math.min(canvas.width, canvas.height) *
+    FIT_FACTOR *
+    lerp(GLOBE_MAX_ZOOM, 1, scale)
+  );
+}
 
 type ColorCache = { key: string; map: GlobeMap; colors: string[] };
 
@@ -40,8 +51,7 @@ export class GlobeRenderer {
 
     const cxPx = W / 2;
     const cyPx = H / 2;
-    const radius =
-      Math.min(W, H) * FIT_FACTOR * lerp(GLOBE_MAX_ZOOM, 1, settings.scale);
+    const radius = globeRadiusPx(canvas, settings.scale);
 
     // Rotate a unit vector by yaw (about Y) then pitch (about X); camera looks
     // down +Z, so a point is on the near (visible) hemisphere when rotated z > 0.
@@ -64,6 +74,10 @@ export class GlobeRenderer {
 
       const ring = cell.ring;
       const path = new Path2D();
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
       for (let k = 0; k < ring.length; k++) {
         const v = ring[k];
         const rx = cosYaw * v.x + sinYaw * v.z;
@@ -71,9 +85,15 @@ export class GlobeRenderer {
         const ry = cosPitch * v.y - sinPitch * rz;
         const px = cxPx + rx * radius;
         const py = cyPx - ry * radius;
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
         if (k === 0) path.moveTo(px, py);
         else path.lineTo(px, py);
       }
+      // Off-canvas (e.g. when zoomed in) → skip the costly fill/stroke.
+      if (maxX < 0 || minX > W || maxY < 0 || minY > H) continue;
       path.closePath();
 
       const fill = this.shade(colors[i], AMBIENT + (1 - AMBIENT) * sz);
@@ -96,14 +116,17 @@ export class GlobeRenderer {
       return this.colorCache.colors;
     }
 
-    const elevationContrast = lerp(CONTRAST[0], CONTRAST[1], settings.seaLevel);
     const colors = new Array<string>(map.cells.length);
     for (let i = 0; i < map.cells.length; i++) {
       const cell = map.cells[i];
-      const e = applyContrast(cell.elevation, elevationContrast);
+      // Crisp, cell-resolution ice (like the land cells), not a smooth blend.
+      if (cell.ice > ICE_THRESHOLD) {
+        colors[i] = ICE_COLOR;
+        continue;
+      }
       colors[i] = colorAt(
         settings.theme,
-        e,
+        applyContrast(cell.elevation, ELEVATION_CONTRAST),
         cell.moisture,
         map.rainfall,
         settings.seaLevel

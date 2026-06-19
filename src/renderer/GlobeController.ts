@@ -1,4 +1,5 @@
 import { clamp } from "../common/util";
+import { globeRadiusPx } from "./GlobeRenderer";
 
 export type GlobeView = { yaw: number; pitch: number; scale: number };
 
@@ -11,7 +12,8 @@ interface GlobeControllerConfig {
 }
 
 const PITCH_LIMIT = 1.4; // ~80°; keeps the globe from tumbling over the poles
-const DEFAULT_ROTATE_SENS = 0.005; // radians of rotation per pixel dragged
+const DEFAULT_ROTATE_GAIN = 1; // overall rotate speed (≈1 ≈ cursor-tracking at scale=1)
+const ROTATE_ZOOM_DAMP = 0.6; // 0 = constant angular speed, 1 = full cursor-following
 const DEFAULT_ZOOM_SENS = 0.0012; // scale units per unit of wheel delta
 const PINCH_ZOOM_SENS = 1.2; // scale units per unit of pinch ratio change
 
@@ -30,6 +32,7 @@ export class GlobeController {
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
+  private pxScale = 1; // canvas px per CSS px, captured on drag start
 
   private pinchDistance: number | null = null;
   private pinchStartScale = 0;
@@ -38,7 +41,7 @@ export class GlobeController {
     this.canvas = config.canvas;
     this.getView = config.getView;
     this.setView = config.setView;
-    this.rotateSens = config.rotateSensitivity ?? DEFAULT_ROTATE_SENS;
+    this.rotateSens = config.rotateSensitivity ?? DEFAULT_ROTATE_GAIN;
     this.zoomSens = config.zoomSensitivity ?? DEFAULT_ZOOM_SENS;
     this.canvas.style.cursor = "grab";
     this.attach();
@@ -47,10 +50,18 @@ export class GlobeController {
   /** Drag → rotate, with a "grab" feel (the point under the cursor follows it). */
   private rotateBy(dxPx: number, dyPx: number): void {
     const v = this.getView();
+    // Mouse deltas are CSS px but the globe radius is in canvas px — convert via
+    // pxScale. Compensate for zoom only PARTIALLY (ROTATE_ZOOM_DAMP) so a drag
+    // tracks the surface without going uselessly slow when zoomed in.
+    const refRadius = globeRadiusPx(this.canvas, 1);
+    const zoomFactor = globeRadiusPx(this.canvas, v.scale) / refRadius;
+    const k =
+      ((this.rotateSens * this.pxScale) / refRadius) *
+      Math.pow(zoomFactor, -ROTATE_ZOOM_DAMP);
     this.setView({
       ...v,
-      yaw: v.yaw + dxPx * this.rotateSens,
-      pitch: clamp(v.pitch + dyPx * this.rotateSens, -PITCH_LIMIT, PITCH_LIMIT),
+      yaw: v.yaw + dxPx * k,
+      pitch: clamp(v.pitch + dyPx * k, -PITCH_LIMIT, PITCH_LIMIT),
     });
   }
 
@@ -69,6 +80,7 @@ export class GlobeController {
 
     c.addEventListener("mousedown", (e: MouseEvent) => {
       this.dragging = true;
+      this.pxScale = c.width / c.getBoundingClientRect().width;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
       c.style.cursor = "grabbing";
@@ -102,6 +114,7 @@ export class GlobeController {
       (e: TouchEvent) => {
         if (e.touches.length === 1) {
           this.dragging = true;
+          this.pxScale = c.width / c.getBoundingClientRect().width;
           this.lastX = e.touches[0].clientX;
           this.lastY = e.touches[0].clientY;
         } else if (e.touches.length === 2) {

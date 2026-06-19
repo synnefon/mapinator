@@ -12,8 +12,8 @@ import {
   applyThemeUIColors,
   generateThemeButtonCSS,
 } from "./common/themeColors";
-import { debounce, lerp } from "./common/util";
-import { MapGenerator } from "./mapgen/MapGenerator";
+import { debounce } from "./common/util";
+import { globePointCount, MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { GlobeController } from "./renderer/GlobeController";
 import { GlobeRenderer, type GlobeOrientation } from "./renderer/GlobeRenderer";
@@ -59,9 +59,10 @@ const downloadFile = (c: string | Blob, fname: string, m: string) => {
 
 // --- Setup & State ---
 const mapCache = new Map<string, GlobeMap>();
-// Globe geometry depends only on resolution (point count). Sea level, scale, and
-// theme are applied at render time, so they don't key the cache.
-const getCacheKey = (s: MapSettings) => String(s.resolution);
+// Geometry depends only on resolution (point count). Zoom, sea level, and theme
+// are render-time only, so they don't key the cache (zoom is a pure re-project).
+const getCacheKey = (s: MapSettings) =>
+  String(globePointCount(s.resolution));
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -102,8 +103,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const mapGenerator = new MapGenerator(appState.mapName);
   const globeRenderer = new GlobeRenderer();
-  // Live view orientation, driven by the orbit controls (drag = rotate).
-  const orientation: GlobeOrientation = { yaw: 0, pitch: 0.3 };
+  // Live view orientation, driven by the orbit controls (drag = rotate); reset on regen.
+  const INITIAL_PITCH = 0.0;
+  const orientation: GlobeOrientation = { yaw: 0, pitch: INITIAL_PITCH };
 
   // UI Elements
   const {
@@ -142,20 +144,56 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // --- Map Rendering ---
-  function drawMap() {
-    const cacheKey = getCacheKey(appState.settings);
-    let cached = mapCache.get(cacheKey);
-    if (!cached) {
-      cached = mapGenerator.generateMap(appState.settings);
-      mapCache.set(cacheKey, cached);
+  const mapLoader = document.getElementById("mapLoader");
+  const setLoading = (on: boolean) =>
+    mapLoader?.classList.toggle("hidden", !on);
+
+  // currentMap is whatever's on screen. Rotation/zoom re-project it instantly;
+  // the (debounced) regen swaps in the right detail once a gesture settles.
+  let currentMap: GlobeMap | null = null;
+  const CACHE_CAP = 48;
+
+  function render() {
+    if (currentMap) {
+      globeRenderer.draw(canvas, currentMap, appState.settings, orientation);
     }
-    globeRenderer.draw(canvas, cached, appState.settings, orientation);
   }
 
-  const debouncedDrawMap = debounce(
-    drawMap,
-    lerp(0, 5, appState.settings.resolution, 0, 1)
-  );
+  function ensureMap() {
+    const key = getCacheKey(appState.settings);
+    const cached = mapCache.get(key);
+    if (cached) {
+      currentMap = cached;
+      render();
+      return;
+    }
+    // Generation is synchronous; show the loader and defer two frames so it
+    // actually paints before the main thread blocks on generateMap.
+    setLoading(true);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const generated = mapGenerator.generateMap(appState.settings);
+        mapCache.set(key, generated);
+        while (mapCache.size > CACHE_CAP) {
+          const oldest = mapCache.keys().next().value;
+          if (oldest === undefined) break;
+          mapCache.delete(oldest);
+        }
+        currentMap = generated;
+        setLoading(false);
+        render();
+      })
+    );
+  }
+
+  const debouncedEnsureMap = debounce(ensureMap, 140);
+
+  // View / setting change: re-render the current globe now (cheap), then resolve
+  // the correct detail/geometry once the gesture settles.
+  function drawMap() {
+    render();
+    debouncedEnsureMap();
+  }
 
   // --- UI Helpers ---
   const updateButtonPosition = () => {
@@ -180,7 +218,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }))
     );
     drawTitle(appState.mapName);
-    drawMap();
+    ensureMap();
   }
 
   function loadMap(name: string) {
@@ -206,7 +244,7 @@ document.addEventListener("DOMContentLoaded", () => {
       v = Math.max(def.min, Math.min(def.max, v));
       appState.updateSetting(def.key, v as any);
       ui.updateSliderValue(def.key, v);
-      debouncedDrawMap();
+      drawMap();
     });
   });
 
@@ -217,7 +255,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (radio.checked) {
         appState.updateSetting("theme", radio.value as MapSettings["theme"]);
         applyThemeUIColors(radio.value as MapSettings["theme"]);
-        debouncedDrawMap();
+        drawMap();
       }
     });
   });
@@ -229,6 +267,8 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName = generateMapName();
     mapGenerator.reSeed(appState.mapName);
     mapCache.clear();
+    orientation.yaw = 0;
+    orientation.pitch = INITIAL_PITCH;
     redraw(appState.mapName);
   });
 
@@ -239,7 +279,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.updateSliderValue(def.key, Number(appState.settings[def.key]))
     );
     mapCache.clear();
-    drawMap();
+    ensureMap();
   });
 
   loadTitleBtn.addEventListener("click", () => {

@@ -8,6 +8,7 @@ import {
 } from "../common/biomes";
 import { clamp, lerp } from "../common/util";
 import { hexToHsl, hslToHex } from "../common/colorUtils";
+import { SEA_LEVEL } from "../common/settings";
 
 /** ================================================
  *  Named constants (no magic numbers)
@@ -16,11 +17,6 @@ const EPSILON = 1e-9;
 const EXP_CURVE_K = 4.1;
 const RAINFALL_MIN = 0.01;
 const RAINFALL_SCALE = 25;
-const SEA_LEVEL_SHIFT = 0.5;
-const SEA_LEVEL_RANGE_SCALE = 2.0;
-const ELEVATION_LERP_MIN = -0.9;
-const ELEVATION_LERP_MAX = 0.9;
-const ELEVATION_SHIFT_BASE = 0.1;
 
 /** ================================================
  *  Helpers
@@ -36,11 +32,14 @@ function shapeForRules(
   rainfall: number,
   seaLevel: number
 ): { elevation: number; moisture: number } {
-  let e = lerp(
-    ELEVATION_LERP_MIN - (seaLevel - ELEVATION_SHIFT_BASE),
-    ELEVATION_LERP_MAX - (seaLevel - ELEVATION_SHIFT_BASE),
-    elevation
-  );
+  // seaLevel (0..1) picks a waterline in raw-elevation space: below it renormalizes
+  // to ocean depth [-1,0], above it to land height [0,1] — so land keeps its full
+  // band range at any sea level (no collapse to a single peak at the top).
+  const waterline = lerp(SEA_LEVEL.MIN, SEA_LEVEL.MAX, seaLevel);
+  let e =
+    elevation < waterline
+      ? elevation / Math.max(waterline, EPSILON) - 1
+      : (elevation - waterline) / Math.max(1 - waterline, EPSILON);
 
   let m = Math.pow(moisture, rainfall);
 
@@ -65,7 +64,6 @@ export function colorAt(
 
   const shaped = expCurve(1 - rainfall, EXP_CURVE_K);
   rainfall = Math.max(RAINFALL_MIN, shaped * RAINFALL_SCALE);
-  seaLevel = SEA_LEVEL_RANGE_SCALE * (seaLevel - SEA_LEVEL_SHIFT);
 
   const { elevation: e, moisture: m } = shapeForRules(
     elevation,
