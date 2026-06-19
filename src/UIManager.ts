@@ -54,8 +54,8 @@ export type UIElements = {
 };
 
 export const sliderDefs: readonly SliderDef[] = [
-  { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.01 },
-  { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.01 },
+  { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.05 },
+  { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.05 },
   { key: "scale", idBase: "scale", min: 0, max: 1, step: 0.01 },
 ];
 

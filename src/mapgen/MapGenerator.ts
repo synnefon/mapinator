@@ -4,11 +4,14 @@ import type { BaseMap, WorldMap } from "../common/map";
 import { printSection } from "../common/printUtils";
 import { makeRNG, type RNG } from "../common/random";
 import {
-  DIALS,
-  ELEVATION,
+  COAST,
+  CONTRAST,
   FRACTAL,
   INVARIANTS,
   MOISTURE,
+  MOUNTAIN,
+  OCEAN,
+  RAINFALL,
   SLIDER_RANGES,
   sampleDial,
   scaleZoom,
@@ -19,7 +22,7 @@ import { ElevationCalculator } from "./ElevationCalculator";
 import { fbm } from "./fbm";
 import { PointGenerator } from "./PointGenerator";
 
-// Offset that decorrelates the moisture field from the elevation/continent fields.
+// Offset that decorrelates the moisture field from the elevation/carrier fields.
 const MOISTURE_NOISE_OFFSET = 31.7;
 
 export class MapGenerator {
@@ -48,11 +51,14 @@ export class MapGenerator {
   public generateMap(input: MapSettings): WorldMap {
     const resolution = lerp(...SLIDER_RANGES.RESOLUTION, input.resolution);
 
-    // Per-seed "flavor" dials (terrain/moisture feature scale + rainfall bias).
+    // Per-seed "flavor" dials (feature/moisture wavelength + rainfall bias).
     const flavorRng = makeRNG(this.seed + "-flavor");
-    const terrainFrequency = sampleDial(DIALS.TERRAIN_FREQ, flavorRng);
-    const weatherFrequency = sampleDial(DIALS.WEATHER_FREQ, flavorRng);
-    const rainfall = sampleDial(DIALS.RAINFALL, flavorRng);
+    const coastWavelength = sampleDial(COAST.WAVELENGTH, flavorRng);
+    const mountainWavelength = sampleDial(MOUNTAIN.WAVELENGTH, flavorRng);
+    const moistureWavelength = sampleDial(MOISTURE.WAVELENGTH, flavorRng);
+    const rainfall = sampleDial(RAINFALL, flavorRng);
+    // Appended last so adding it doesn't reshuffle land/moisture dials per seed.
+    const oceanWavelength = sampleDial(OCEAN.WAVELENGTH, flavorRng);
 
     const { centers } = this.pointGenerator.genPoints({ ...input, resolution });
 
@@ -73,11 +79,13 @@ export class MapGenerator {
       delaunay,
     };
 
-    const moistures = this.genMoistures(baseMap, weatherFrequency, input.scale);
+    const moistures = this.genMoistures(baseMap, moistureWavelength, input.scale);
     const elevations = this.genElevations(
       baseMap,
       input.seaLevel,
-      terrainFrequency,
+      coastWavelength,
+      mountainWavelength,
+      oceanWavelength,
       input.scale
     );
 
@@ -86,7 +94,7 @@ export class MapGenerator {
 
   private genMoistures(
     baseMap: BaseMap,
-    weatherFrequency: number,
+    moistureWavelength: number,
     scale: number
   ): Float32Array {
     const { points, numRegions, resolution } = baseMap;
@@ -100,7 +108,7 @@ export class MapGenerator {
         this.noise2D,
         nx,
         ny,
-        weatherFrequency,
+        moistureWavelength,
         MOISTURE.AMPLITUDE,
         FRACTAL.OCTAVES,
         FRACTAL.GAIN,
@@ -111,8 +119,8 @@ export class MapGenerator {
     }
 
     printSection("MOISTURE SETTINGS", {
-      key: "weatherFrequency",
-      value: weatherFrequency,
+      key: "moistureWavelength",
+      value: moistureWavelength,
     });
     return out;
   }
@@ -120,22 +128,26 @@ export class MapGenerator {
   private genElevations(
     baseMap: BaseMap,
     seaLevel: number,
-    terrainFrequency: number,
+    coastWavelength: number,
+    mountainWavelength: number,
+    oceanWavelength: number,
     scale: number
   ): Float32Array {
     const { points, numRegions, resolution } = baseMap;
-    const elevationContrast = lerp(
-      ELEVATION.CONTRAST_LOW_SEA,
-      ELEVATION.CONTRAST_HIGH_SEA,
-      seaLevel
-    );
+    const elevationContrast = lerp(CONTRAST[0], CONTRAST[1], seaLevel);
 
     const zoom = scaleZoom(scale);
     const out = new Float32Array(numRegions);
     for (let r = 0; r < numRegions; r++) {
       const x = lerp(-0.5, 0.5, points[r].x / resolution) * zoom;
       const y = lerp(-0.5, 0.5, points[r].y / resolution) * zoom;
-      const elev = this.elevationCalc.elevationAt(x, y, terrainFrequency);
+      const elev = this.elevationCalc.elevationAt(
+        x,
+        y,
+        coastWavelength,
+        mountainWavelength,
+        oceanWavelength
+      );
       out[r] = this.applyContrast(elev, elevationContrast);
     }
 

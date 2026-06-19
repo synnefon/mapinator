@@ -182,7 +182,10 @@ body {
   /* Indicate it's interactive */
   border: none;
   /* Remove default border */
-  margin-left: 1em;
+  /* Match the label's box metrics so the slider's left edge lines up with its title */
+  display: block;
+  font-size: 0.9rem;
+  margin-left: 0.5em;
 }
 
 /* WebKit browsers */
