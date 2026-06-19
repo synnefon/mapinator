@@ -30,8 +30,6 @@ export type UIElements = {
   // Core elements
   map: HTMLCanvasElement;
   mapTitle: HTMLInputElement;
-  zoomInput: HTMLInputElement;
-  zoomValue: HTMLSpanElement;
 
   // Buttons
   regenBtn: HTMLButtonElement;
@@ -74,8 +72,6 @@ export class UIManager {
       "regenBtn",
       "regenBtnImg",
       "resetSlidersBtn",
-      "zoomInput",
-      "zoomValue",
       "mapTitle",
       "loadTitleBtn",
       "loadTitleBtnImg",

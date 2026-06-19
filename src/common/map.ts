@@ -22,3 +22,25 @@ export interface WorldMap extends BaseMap {
     rainfall: number; // per-seed wet/dry bias, consumed at render time
 }
 
+// === Globe model ===
+export interface Vec3 {
+    x: number;
+    y: number;
+    z: number;
+}
+
+// One Voronoi cell on the globe: its site + polygon ring as unit-sphere vectors,
+// plus raw elevation (pre sea-level contrast) and already-contrasted moisture.
+export interface GlobeCell {
+    site: Vec3;
+    ring: Vec3[];
+    elevation: number;
+    moisture: number;
+}
+
+export interface GlobeMap {
+    cells: GlobeCell[];
+    rainfall: number; // per-seed wet/dry bias, consumed at render time
+    pointCount: number;
+}
+

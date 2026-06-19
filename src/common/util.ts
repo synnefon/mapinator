@@ -28,3 +28,14 @@ export const debounce = <T extends (...args: Parameters<T>) => void>(
     }, delay);
   };
 };
+
+// Contrast curve around the midpoint (0.5). contrast 0..1: <0.5 softens (exp>1),
+// >0.5 sharpens (exp<1). Used for elevation (sea-level dependent) and moisture.
+export const applyContrast = (v: number, contrast: number): number => {
+  const t = clamp(contrast, 0, 1);
+  const u = 2 * v - 1;
+  const exp =
+    t <= 0.5 ? lerp(3.0, 1.0, t / 0.5) : lerp(1.0, 0.2, (t - 0.5) / 0.5);
+  const u2 = Math.sign(u) * Math.pow(Math.abs(u), exp);
+  return clamp((u2 + 1) * 0.5, 0, 1);
+};

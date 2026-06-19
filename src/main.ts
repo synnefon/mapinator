@@ -1,13 +1,12 @@
 import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
 import { MAPINATION_FILE_EXTENSION } from "./common/constants";
-import type { WorldMap } from "./common/map";
+import type { GlobeMap } from "./common/map";
 import { printSection } from "./common/printUtils";
 import {
   isValidSaveFile,
   MAP_DEFAULTS,
   type MapSettings,
-  type NumericSettingKey,
 } from "./common/settings";
 import {
   applyThemeUIColors,
@@ -16,8 +15,8 @@ import {
 import { debounce, lerp } from "./common/util";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
-import { MapRenderer } from "./renderer/MapRenderer";
-import { PanZoomController } from "./renderer/PanZoomController";
+import { GlobeController } from "./renderer/GlobeController";
+import { GlobeRenderer, type GlobeOrientation } from "./renderer/GlobeRenderer";
 import { sliderDefs, UIManager } from "./UIManager";
 
 // --- Utility Functions ---
@@ -59,9 +58,10 @@ const downloadFile = (c: string | Blob, fname: string, m: string) => {
 };
 
 // --- Setup & State ---
-const mapCache = new Map<string, WorldMap>();
-const getCacheKey = (s: MapSettings) =>
-  sliderDefs.map((d) => s[d.key]).join("|");
+const mapCache = new Map<string, GlobeMap>();
+// Globe geometry depends only on resolution (point count). Sea level, scale, and
+// theme are applied at render time, so they don't key the cache.
+const getCacheKey = (s: MapSettings) => String(s.resolution);
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -101,14 +101,14 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const mapGenerator = new MapGenerator(appState.mapName);
-  const mapRenderer = new MapRenderer();
+  const globeRenderer = new GlobeRenderer();
+  // Live view orientation, driven by the orbit controls (drag = rotate).
+  const orientation: GlobeOrientation = { yaw: 0, pitch: 0.3 };
 
   // UI Elements
   const {
     map: canvas,
     mapTitle,
-    zoomInput,
-    zoomValue,
     regenBtn,
     regenBtnImg,
     resetSlidersBtn,
@@ -121,15 +121,23 @@ document.addEventListener("DOMContentLoaded", () => {
     cancelPopupBtn,
   } = ui.getAllElements();
 
-  // Pan/Zoom Controller
-  const panZoomController = new PanZoomController({
+  // Orbit controls: drag = rotate, wheel/pinch = zoom. Mutates orientation + the
+  // scale setting and redraws; geometry is untouched, so this only re-projects.
+  new GlobeController({
     canvas,
-    onRedraw: drawMap,
-    getCachedMap: () => mapCache.get(getCacheKey(appState.settings)) ?? null,
-    momentum: 0.3,
-    onZoomChange: (zoom, scale) => {
-      zoomInput.value = String(zoom);
-      zoomValue.textContent = scale.toFixed(2);
+    getView: () => ({
+      yaw: orientation.yaw,
+      pitch: orientation.pitch,
+      scale: appState.settings.scale,
+    }),
+    setView: (view) => {
+      orientation.yaw = view.yaw;
+      orientation.pitch = view.pitch;
+      if (view.scale !== appState.settings.scale) {
+        appState.updateSetting("scale", view.scale);
+        ui.updateSliderValue("scale", view.scale);
+      }
+      drawMap();
     },
   });
 
@@ -141,14 +149,7 @@ document.addEventListener("DOMContentLoaded", () => {
       cached = mapGenerator.generateMap(appState.settings);
       mapCache.set(cacheKey, cached);
     }
-    mapRenderer.drawCellColors(
-      canvas,
-      cached,
-      appState.settings,
-      panZoomController.panX,
-      panZoomController.panY,
-      panZoomController.viewScale
-    );
+    globeRenderer.draw(canvas, cached, appState.settings, orientation);
   }
 
   const debouncedDrawMap = debounce(
@@ -192,7 +193,6 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName = name;
     mapGenerator.reSeed(name);
     mapCache.clear();
-    panZoomController.resetPan();
     redraw(name);
   }
 
@@ -208,16 +208,6 @@ document.addEventListener("DOMContentLoaded", () => {
       ui.updateSliderValue(def.key, v);
       debouncedDrawMap();
     });
-  });
-
-  // Zoom setup
-  zoomInput.value = String(appState.settings.zoom);
-  panZoomController.setZoom(appState.settings.zoom);
-  zoomValue.textContent = panZoomController.viewScale.toFixed(2);
-  zoomInput.addEventListener("input", () => {
-    appState.updateSetting("zoom", Number(zoomInput.value));
-    panZoomController.setZoom(appState.settings.zoom);
-    drawMap();
   });
 
   // Theme handling
@@ -239,24 +229,15 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName = generateMapName();
     mapGenerator.reSeed(appState.mapName);
     mapCache.clear();
-    panZoomController.resetPan();
     redraw(appState.mapName);
   });
 
   resetSlidersBtn.addEventListener("click", () => {
     fadeOut(resetSlidersBtn);
-    [...sliderDefs.map((d) => d.key), "zoom"].forEach((k) => {
-      appState.updateSetting(
-        k as NumericSettingKey,
-        MAP_DEFAULTS[k as NumericSettingKey]
-      );
-    });
+    sliderDefs.forEach((d) => appState.updateSetting(d.key, MAP_DEFAULTS[d.key]));
     sliderDefs.forEach((def) =>
       ui.updateSliderValue(def.key, Number(appState.settings[def.key]))
     );
-    zoomInput.value = String(appState.settings.zoom);
-    panZoomController.setZoom(appState.settings.zoom);
-    panZoomController.resetPan();
     mapCache.clear();
     drawMap();
   });
@@ -285,7 +266,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const json = JSON.stringify(
       {
         seed: appState.mapName,
-        mapSettings: { ...appState.settings, zoom: undefined },
+        mapSettings: { ...appState.settings },
       },
       null,
       2
@@ -328,7 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (saveFile.mapSettings) {
-      saveFile.mapSettings = { ...MAP_DEFAULTS, ...saveFile.mapSettings, zoom: 0 };
+      saveFile.mapSettings = { ...MAP_DEFAULTS, ...saveFile.mapSettings };
     }
     if (!isValidSaveFile(saveFile)) return;
     appState.settings = saveFile.mapSettings;

@@ -1,11 +1,10 @@
-import { Delaunay } from "d3-delaunay";
-import { createNoise2D, type NoiseFunction2D } from "simplex-noise";
-import type { BaseMap, WorldMap } from "../common/map";
+import { geoVoronoi } from "d3-geo-voronoi";
+import { createNoise3D, type NoiseFunction3D } from "simplex-noise";
+import type { GlobeCell, GlobeMap, Vec3 } from "../common/map";
 import { printSection } from "../common/printUtils";
 import { makeRNG, type RNG } from "../common/random";
 import {
   COAST,
-  CONTRAST,
   FRACTAL,
   INVARIANTS,
   MOISTURE,
@@ -14,20 +13,24 @@ import {
   RAINFALL,
   SLIDER_RANGES,
   sampleDial,
-  scaleZoom,
   type MapSettings,
 } from "../common/settings";
-import { clamp, lerp } from "../common/util";
+import { applyContrast, clamp, lerp } from "../common/util";
 import { ElevationCalculator } from "./ElevationCalculator";
-import { fbm } from "./fbm";
-import { PointGenerator } from "./PointGenerator";
+import { fbm3 } from "./fbm";
+import { fibonacciSphere, lonLatToVec3, vec3ToLonLat } from "./Sphere";
 
-// Offset that decorrelates the moisture field from the elevation/carrier fields.
+// Decorrelate the moisture field from the elevation field.
 const MOISTURE_NOISE_OFFSET = 31.7;
 
+/**
+ * Generates a whole planet's worth of terrain ONCE per seed/resolution: points on
+ * the unit sphere (Fibonacci), a spherical Voronoi mesh (geoVoronoi), and a raw
+ * elevation + moisture per cell from 3D noise. Rotation/zoom never regenerate —
+ * the renderer just re-projects. Sea level / theme are applied at render time.
+ */
 export class MapGenerator {
-  private noise2D: NoiseFunction2D;
-  private pointGenerator: PointGenerator;
+  private noise3D: NoiseFunction3D;
   private rng: RNG;
   private elevationCalc: ElevationCalculator;
   private seed: string;
@@ -35,131 +38,83 @@ export class MapGenerator {
   public constructor(seed: string) {
     this.seed = seed;
     this.rng = makeRNG(seed);
-    this.noise2D = createNoise2D(makeRNG(seed));
-    this.pointGenerator = new PointGenerator(seed);
-    this.elevationCalc = new ElevationCalculator(this.rng, this.noise2D);
+    this.noise3D = createNoise3D(makeRNG(seed));
+    this.elevationCalc = new ElevationCalculator(this.rng, this.noise3D);
   }
 
   public reSeed(seed: string) {
     this.seed = seed;
     this.rng = makeRNG(seed);
-    this.noise2D = createNoise2D(makeRNG(seed));
-    this.pointGenerator = new PointGenerator(seed);
-    this.elevationCalc = new ElevationCalculator(this.rng, this.noise2D);
+    this.noise3D = createNoise3D(makeRNG(seed));
+    this.elevationCalc = new ElevationCalculator(this.rng, this.noise3D);
   }
 
-  public generateMap(input: MapSettings): WorldMap {
-    const resolution = lerp(...SLIDER_RANGES.RESOLUTION, input.resolution);
+  public generateMap(input: MapSettings): GlobeMap {
+    const pointCount = Math.round(
+      lerp(SLIDER_RANGES.POINT_COUNT[0], SLIDER_RANGES.POINT_COUNT[1], input.resolution)
+    );
 
-    // Per-seed "flavor" dials (feature/moisture wavelength + rainfall bias).
+    // Per-seed "flavor" dials (relief/moisture wavelengths + rainfall bias).
     const flavorRng = makeRNG(this.seed + "-flavor");
     const coastWavelength = sampleDial(COAST.WAVELENGTH, flavorRng);
     const mountainWavelength = sampleDial(MOUNTAIN.WAVELENGTH, flavorRng);
     const moistureWavelength = sampleDial(MOISTURE.WAVELENGTH, flavorRng);
     const rainfall = sampleDial(RAINFALL, flavorRng);
-    // Appended last so adding it doesn't reshuffle land/moisture dials per seed.
     const oceanWavelength = sampleDial(OCEAN.WAVELENGTH, flavorRng);
 
-    const { centers } = this.pointGenerator.genPoints({ ...input, resolution });
+    // Points on the sphere → spherical Voronoi cells (computed once).
+    const sites = fibonacciSphere(pointCount);
+    const voronoi = geoVoronoi(sites.map(vec3ToLonLat));
+    const polygons = voronoi.polygons();
 
-    const delaunay = Delaunay.from(
-      centers,
-      (p) => p.x,
-      (p) => p.y
-    );
-
-    const baseMap: BaseMap = {
-      points: centers,
-      resolution,
-      numRegions: centers.length,
-      numTriangles: (delaunay.triangles.length / 3) | 0,
-      numEdges: (delaunay.halfedges.filter((h) => h >= 0).length / 2) | 0,
-      halfedges: delaunay.halfedges,
-      triangles: delaunay.triangles,
-      delaunay,
-    };
-
-    const moistures = this.genMoistures(baseMap, moistureWavelength, input.scale);
-    const elevations = this.genElevations(
-      baseMap,
-      input.seaLevel,
-      coastWavelength,
-      mountainWavelength,
-      oceanWavelength,
-      input.scale
-    );
-
-    return { ...baseMap, elevations, moistures, rainfall };
-  }
-
-  private genMoistures(
-    baseMap: BaseMap,
-    moistureWavelength: number,
-    scale: number
-  ): Float32Array {
-    const { points, numRegions, resolution } = baseMap;
-    const zoom = scaleZoom(scale);
-
-    const out = new Float32Array(numRegions);
-    for (let r = 0; r < numRegions; r++) {
-      const nx = (points[r].x / resolution - 0.5) * zoom + MOISTURE_NOISE_OFFSET;
-      const ny = (points[r].y / resolution - 0.5) * zoom + MOISTURE_NOISE_OFFSET;
-      const raw = fbm(
-        this.noise2D,
-        nx,
-        ny,
-        moistureWavelength,
-        MOISTURE.AMPLITUDE,
-        FRACTAL.OCTAVES,
-        FRACTAL.GAIN,
-        FRACTAL.LACUNARITY
-      );
-      const m = clamp(INVARIANTS.NEUTRAL_CENTER_POINT + raw);
-      out[r] = this.applyContrast(m, MOISTURE.CONTRAST);
-    }
-
-    printSection("MOISTURE SETTINGS", {
-      key: "moistureWavelength",
-      value: moistureWavelength,
-    });
-    return out;
-  }
-
-  private genElevations(
-    baseMap: BaseMap,
-    seaLevel: number,
-    coastWavelength: number,
-    mountainWavelength: number,
-    oceanWavelength: number,
-    scale: number
-  ): Float32Array {
-    const { points, numRegions, resolution } = baseMap;
-    const elevationContrast = lerp(CONTRAST[0], CONTRAST[1], seaLevel);
-
-    const zoom = scaleZoom(scale);
-    const out = new Float32Array(numRegions);
-    for (let r = 0; r < numRegions; r++) {
-      const x = lerp(-0.5, 0.5, points[r].x / resolution) * zoom;
-      const y = lerp(-0.5, 0.5, points[r].y / resolution) * zoom;
-      const elev = this.elevationCalc.elevationAt(
-        x,
-        y,
+    const cells: GlobeCell[] = [];
+    for (const feature of polygons.features) {
+      const geometry = feature.geometry;
+      if (!geometry || !geometry.coordinates) continue; // skip degenerate / Sphere
+      const [siteLon, siteLat] = feature.properties.sitecoordinates;
+      const site = lonLatToVec3(siteLon, siteLat);
+      const ring = geometry.coordinates[0].map(([lon, lat]) => lonLatToVec3(lon, lat));
+      const elevation = this.elevationCalc.elevationAt(
+        site.x,
+        site.y,
+        site.z,
         coastWavelength,
         mountainWavelength,
         oceanWavelength
       );
-      out[r] = this.applyContrast(elev, elevationContrast);
+      cells.push({
+        site,
+        ring,
+        elevation,
+        moisture: this.moistureAt(site, moistureWavelength),
+      });
     }
 
-    return out;
+    printSection(
+      "GLOBE SETTINGS",
+      { key: "pointCount", value: pointCount },
+      { key: "cells", value: cells.length },
+      { key: "moistureWavelength", value: moistureWavelength },
+      { key: "rainfall", value: rainfall }
+    );
+
+    return { cells, rainfall, pointCount };
   }
 
-  private applyContrast(v: number, contrast: number): number {
-    const t = clamp(contrast, 0, 1);
-    const u = 2 * v - 1;
-    const exp =
-      t <= 0.5 ? lerp(3.0, 1.0, t / 0.5) : lerp(1.0, 0.2, (t - 0.5) / 0.5);
-    const u2 = Math.sign(u) * Math.pow(Math.abs(u), exp);
-    return clamp((u2 + 1) * 0.5, 0, 1);
+  /** Moisture in [0,1] at a sphere point; contrast baked in (it's a fixed dial). */
+  private moistureAt(site: Vec3, moistureWavelength: number): number {
+    const raw = fbm3(
+      this.noise3D,
+      site.x + MOISTURE_NOISE_OFFSET,
+      site.y + MOISTURE_NOISE_OFFSET,
+      site.z + MOISTURE_NOISE_OFFSET,
+      moistureWavelength,
+      MOISTURE.AMPLITUDE,
+      FRACTAL.OCTAVES,
+      FRACTAL.GAIN,
+      FRACTAL.LACUNARITY
+    );
+    const m = clamp(INVARIANTS.NEUTRAL_CENTER_POINT + raw);
+    return applyContrast(m, MOISTURE.CONTRAST);
   }
 }

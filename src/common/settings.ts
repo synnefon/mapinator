@@ -3,9 +3,8 @@ import { randomContinuousChoice } from "./random";
 
 export interface MapSettings {
   resolution: number;
-  zoom: number;
   seaLevel: number;
-  scale: number;
+  scale: number; // globe zoom: 1 = whole planet, lower = zoom toward a patch
   theme: Theme;
 }
 
@@ -13,7 +12,6 @@ export type NumericSettingKey = Exclude<keyof MapSettings, "theme">;
 
 export const MAP_DEFAULTS: MapSettings = {
   resolution: 1,
-  zoom: 0,
   seaLevel: 0.5,
   scale: 1,
   theme: "lush",
@@ -59,7 +57,7 @@ export const isValidSaveFile = (fileContent: any): boolean => {
 
 // UI slider 0..1 → actual value (via lerp).
 export const SLIDER_RANGES = {
-  RESOLUTION: [10, 220], // grid cells per axis; higher = finer detail, slower
+  POINT_COUNT: [400, 96000], // total Voronoi cells on the globe; higher = finer, slower
 } as const;
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
