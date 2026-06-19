@@ -87,12 +87,21 @@ export function colorAt(
 /** ================================================
  *  Theme helpers
  *  ================================================ */
+// Theme adjustments are constant per theme, but colorAt runs per cell — cache the
+// resolved object so each cell doesn't rebuild a fresh lightness map (alloc churn).
+const resolvedThemeCache = new Map<
+  Theme,
+  { lightness: Record<ElevationBand, number>; saturationScale: number }
+>();
 function resolveTheme(theme: Theme) {
+  const cached = resolvedThemeCache.get(theme);
+  if (cached) return cached;
   const o = THEME_OVERRIDES[theme] ?? {};
   const lightness: Record<ElevationBand, number> = {
     ...BASE_LIGHTNESS,
     ...(o.lightness ?? {}),
   };
-  const saturationScale = o.saturationScale ?? 1.0;
-  return { lightness, saturationScale };
+  const resolved = { lightness, saturationScale: o.saturationScale ?? 1.0 };
+  resolvedThemeCache.set(theme, resolved);
+  return resolved;
 }

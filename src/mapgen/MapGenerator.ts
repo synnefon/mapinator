@@ -22,7 +22,7 @@ import { ElevationCalculator } from "./ElevationCalculator";
 import { fbm3 } from "./fbm";
 import {
   dot,
-  fibonacciPositions,
+  fibonacciCapSites,
   fibonacciSphere,
   lonLatToVec3,
   vec3ToLonLat,
@@ -41,9 +41,6 @@ const FEATURE_DETAIL_MID =
 // of resolutions stay cached and are reused across seeds. The terrain is a
 // continuous, seeded function of position; the mesh just samples it.
 const MESH_CACHE_CAP = 4;
-
-// Global Fibonacci point sets (for local patches) cached by point count.
-const GLOBE_POSITIONS_CACHE_CAP = 4;
 
 // Local-patch cells beyond this fraction of the cap are padding (their Voronoi
 // cells are unbounded toward the rest of the sphere) — kept off-screen, dropped.
@@ -93,7 +90,6 @@ export class MapGenerator {
   private elevationCalc: ElevationCalculator;
   private seed: string;
   private meshCache = new Map<number, MeshCell[]>();
-  private globePositionsCache = new Map<number, Float32Array>();
 
   public constructor(seed: string) {
     this.seed = seed;
@@ -141,19 +137,9 @@ export class MapGenerator {
     extraOctaves: number
   ): GlobeMap {
     const flavor = this.sampleFlavor();
-    const positions = this.getGlobePositions(globalPoints);
-    const cosCap = Math.cos(halfAngle);
-
-    // Sites = the global points inside the cap (deterministic by position).
-    const sites: Vec3[] = [];
-    for (let i = 0; i < globalPoints; i++) {
-      const x = positions[3 * i];
-      const y = positions[3 * i + 1];
-      const z = positions[3 * i + 2];
-      if (x * center.x + y * center.y + z * center.z >= cosCap) {
-        sites.push({ x, y, z });
-      }
-    }
+    // Sites = the global points inside the cap (deterministic by position), found by
+    // scanning only the cap's index band rather than all `globalPoints`.
+    const sites = fibonacciCapSites(center, halfAngle, globalPoints);
 
     const voronoi = geoVoronoi(sites.map(vec3ToLonLat));
     const keepCos = Math.cos(halfAngle * LOCAL_KEEP_FRACTION);
@@ -180,20 +166,6 @@ export class MapGenerator {
     };
 
     return this.packMesh(mesh, flavor, extraOctaves, mesh.length, cap);
-  }
-
-  /** Global Fibonacci point positions for a count, cached + reused across patches. */
-  private getGlobePositions(n: number): Float32Array {
-    const cached = this.globePositionsCache.get(n);
-    if (cached) return cached;
-    const positions = fibonacciPositions(n);
-    this.globePositionsCache.set(n, positions);
-    while (this.globePositionsCache.size > GLOBE_POSITIONS_CACHE_CAP) {
-      const oldest = this.globePositionsCache.keys().next().value;
-      if (oldest === undefined) break;
-      this.globePositionsCache.delete(oldest);
-    }
-    return positions;
   }
 
   /** Per-seed flavor dials (relief/moisture wavelengths, rainfall, ice caps). */

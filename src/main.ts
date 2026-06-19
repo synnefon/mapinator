@@ -13,7 +13,7 @@ import {
   generateThemeButtonCSS,
 } from "./common/themeColors";
 import { debounce } from "./common/util";
-import { globePointCount, MapGenerator } from "./mapgen/MapGenerator";
+import { globePointCount } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { GlobeController } from "./renderer/GlobeController";
 import { GlobeRenderer, globeRadiusPx } from "./renderer/GlobeRenderer";
@@ -68,11 +68,16 @@ const mapCache = new Map<string, GlobeMap>();
 // Fibonacci density → ~points×capArea cells per patch (~1 KB each; tune for memory).
 const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
 const PATCH_LEVELS = [
-  { aboveDeg: 38, capDeg: 60, points: 110_000, octaves: 1 },
-  { aboveDeg: 22, capDeg: 32, points: 500_000, octaves: 2 },
-  { aboveDeg: 12, capDeg: 17, points: 1_000_000, octaves: 3 },
+  { aboveDeg: 38, capDeg: 60, points: 1_000_000, octaves: 1 },
+  { aboveDeg: 22, capDeg: 32, points: 2_000_000, octaves: 2 },
+  { aboveDeg: 12, capDeg: 17, points: 3_000_000, octaves: 3 },
   { aboveDeg: 6.5, capDeg: 10, points: 8_000_000, octaves: 4 }, // max-zoom fidelity
 ] as const;
+
+// PNG export density floor: a zoomed-in export re-renders its patch at no fewer
+// than this many global points, so the image stays crisp no matter which zoom
+// band is live. Whole-globe (zoomed-out) exports keep their live density.
+const PNG_MIN_EXPORT_POINTS = 4_000_000;
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -111,7 +116,6 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName = generateMapName();
   }
 
-  const mapGenerator = new MapGenerator(appState.mapName);
   const globeRenderer = new GlobeRenderer();
   // Live view orientation (world→view quaternion), driven by the orbit controls;
   // reset on regen. Replaced wholesale by setView (not mutated in place).
@@ -154,13 +158,64 @@ document.addEventListener("DOMContentLoaded", () => {
     mapLoader?.classList.toggle("hidden", !on);
   }
 
+  // Terrain generation runs in a Web Worker so heavy meshing/noise never blocks the
+  // UI thread; the globe's typed arrays transfer back zero-copy. Rotate/zoom only
+  // re-project (reading the cached arrays), so they stay on the main thread.
+  const worker = new Worker(new URL("./mapgen/mapWorker.ts", import.meta.url), {
+    type: "module",
+  });
+  let reqId = 0;
+  const pending = new Map<number, (map: GlobeMap) => void>();
+  // In-flight generation keys, so a repeated view doesn't post duplicate requests.
+  const inFlight = new Set<string>();
+  // Bumped on every seed change; results tagged with a stale epoch are dropped so an
+  // in-flight build from the previous seed can't repopulate the cache.
+  let seedEpoch = 0;
+
+  worker.onmessage = (e: MessageEvent<{ id: number; map: GlobeMap }>) => {
+    const resolve = pending.get(e.data.id);
+    if (!resolve) return;
+    pending.delete(e.data.id);
+    resolve(e.data.map);
+  };
+  worker.onerror = (e) => {
+    console.error("map worker error:", e.message);
+    setLoading(false);
+  };
+
+  type GenRequest =
+    | { kind: "global"; settings: MapSettings }
+    | {
+        kind: "local";
+        center: Vec3;
+        halfAngle: number;
+        points: number;
+        extraOctaves: number;
+      };
+
+  const requestMap = (req: GenRequest): Promise<GlobeMap> =>
+    new Promise((resolve) => {
+      const id = ++reqId;
+      pending.set(id, resolve);
+      worker.postMessage({ id, ...req });
+    });
+
+  const reseedWorker = (seed: string) => {
+    seedEpoch++;
+    inFlight.clear();
+    worker.postMessage({ id: ++reqId, kind: "reSeed", seed });
+  };
+
+  // Seed the worker before the first generate (postMessage ordering keeps it first).
+  reseedWorker(appState.mapName);
+
   // The coarse whole-globe map is always drawn underneath (so panning never leaves
   // a gap); zoomed in, a dense local patch is layered on top. Rotation/zoom
   // re-project instantly; a debounced regen swaps in the right patch on settle.
   let globalMap: GlobeMap | null = null;
   let patchMap: GlobeMap | null = null;
   // Total cached maps. Patches run tens of thousands of cells (~1 KB each), so
-  // this bounds patch memory; the global base is never evicted (see getOrGenerate).
+  // this bounds patch memory; the global base is never evicted (see cacheMap).
   const CACHE_CAP = 8;
 
   function render() {
@@ -236,10 +291,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return `l|${v.level}|${q(v.center.x)}|${q(v.center.y)}|${q(v.center.z)}`;
   };
 
-  function getOrGenerate(key: string, generate: () => GlobeMap): GlobeMap {
-    const existing = mapCache.get(key);
-    if (existing) return existing;
-    const map = generate();
+  function cacheMap(key: string, map: GlobeMap): void {
     mapCache.set(key, map);
     // Evict oldest PATCHES only — regenerating the global base is slow.
     while (mapCache.size > CACHE_CAP) {
@@ -253,7 +305,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       if (!evicted) break;
     }
-    return map;
   }
 
   function ensureMap() {
@@ -267,31 +318,48 @@ document.addEventListener("DOMContentLoaded", () => {
     patchMap = pKey ? mapCache.get(pKey) ?? patchMap : null;
     scheduleRender();
 
-    const needGlobal = !mapCache.has(gKey);
-    if (!needGlobal && (!pKey || mapCache.has(pKey))) return;
+    const needGlobal = !mapCache.has(gKey) && !inFlight.has(gKey);
+    const needPatch =
+      pKey !== null && !mapCache.has(pKey) && !inFlight.has(pKey);
+    if (!needGlobal && !needPatch) return;
+
     // Loader ONLY for a fresh whole-globe build (new seed / first load /
     // resolution change). Patch regen on pan/zoom stays silent.
     if (needGlobal) setLoading(true);
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        globalMap = getOrGenerate(gKey, () =>
-          mapGenerator.generateMap(appState.settings)
-        );
-        patchMap =
-          view.local && pKey
-            ? getOrGenerate(pKey, () =>
-                mapGenerator.generateLocalMap(
-                  view.center,
-                  view.halfAngle,
-                  view.points,
-                  view.extraOctaves
-                )
-              )
-            : null;
-        if (needGlobal) setLoading(false);
+    const epoch = seedEpoch;
+
+    if (needGlobal) {
+      inFlight.add(gKey);
+      requestMap({ kind: "global", settings: { ...appState.settings } }).then(
+        (map) => {
+          inFlight.delete(gKey);
+          if (epoch !== seedEpoch) return; // seed changed mid-flight — drop
+          cacheMap(gKey, map);
+          if (globalKey() === gKey) globalMap = map;
+          setLoading(false);
+          scheduleRender();
+        }
+      );
+    }
+
+    if (needPatch && pKey && view.local) {
+      inFlight.add(pKey);
+      requestMap({
+        kind: "local",
+        center: view.center,
+        halfAngle: view.halfAngle,
+        points: view.points,
+        extraOctaves: view.extraOctaves,
+      }).then((map) => {
+        inFlight.delete(pKey);
+        if (epoch !== seedEpoch) return; // stale
+        cacheMap(pKey, map);
+        // Only display if the current view still wants this exact patch.
+        const cur = currentView();
+        if (cur.local && patchKey(cur) === pKey) patchMap = map;
         scheduleRender();
-      })
-    );
+      });
+    }
   }
 
   const debouncedEnsureMap = debounce(ensureMap, 140);
@@ -337,7 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     appState.mapName = name;
-    mapGenerator.reSeed(name);
+    reseedWorker(name);
     mapCache.clear();
     redraw(name);
   }
@@ -373,7 +441,7 @@ document.addEventListener("DOMContentLoaded", () => {
   regenBtn.addEventListener("click", () => {
     playEffect(regenBtnImg, "spin");
     appState.mapName = generateMapName();
-    mapGenerator.reSeed(appState.mapName);
+    reseedWorker(appState.mapName);
     mapCache.clear();
     orientation = QUAT_IDENTITY;
     appState.settings.scale = 1;
@@ -427,17 +495,18 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   };
 
-  const handleDownloadPNG = () => {
+  // Composite a rendered globe canvas under the titled header and download it.
+  const downloadGlobePNG = (source: HTMLCanvasElement) => {
     const mapTitleText = mapTitle.value || "Untitled Map";
     const exportCanvas = Object.assign(document.createElement("canvas"), {
-      width: canvas.width,
-      height: canvas.height + 60,
+      width: source.width,
+      height: source.height + 60,
     });
     const ctx = exportCanvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#dedede";
     ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-    ctx.drawImage(canvas, 0, 60);
+    ctx.drawImage(source, 0, 60);
     ctx.font = "bold 36px 'Roboto Mono', monospace";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
@@ -447,6 +516,44 @@ document.addEventListener("DOMContentLoaded", () => {
     link.download = `${mapTitleText.replace(/\s+/g, "_")}.png`;
     link.href = dataUrl;
     link.click();
+  };
+
+  const handleDownloadPNG = () => {
+    const view = currentView();
+    // Whole-globe view (or no map yet): export exactly what's on screen.
+    if (!view.local || !globalMap) {
+      downloadGlobePNG(canvas);
+      return;
+    }
+    // Zoomed in: re-render this patch at the export floor (denser than the live zoom
+    // band) onto an offscreen canvas matching the on-screen framing, then export it.
+    // The worker builds it off-thread; the loader covers the wait.
+    const base = globalMap;
+    const points = Math.max(view.points, PNG_MIN_EXPORT_POINTS);
+    setLoading(true);
+    requestMap({
+      kind: "local",
+      center: view.center,
+      halfAngle: view.halfAngle,
+      points,
+      extraOctaves: view.extraOctaves,
+    }).then((patch) => {
+      const mapCanvas = Object.assign(document.createElement("canvas"), {
+        width: canvas.width,
+        height: canvas.height,
+      });
+      globeRenderer.draw(
+        mapCanvas,
+        base,
+        appState.settings,
+        orientation,
+        true,
+        patch.cap
+      );
+      globeRenderer.draw(mapCanvas, patch, appState.settings, orientation, false);
+      setLoading(false);
+      downloadGlobePNG(mapCanvas);
+    });
   };
 
   const onLoadSave = (evt: ProgressEvent<FileReader>) => {

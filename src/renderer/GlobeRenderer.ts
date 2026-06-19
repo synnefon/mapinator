@@ -30,7 +30,6 @@ export function globeRadiusPx(canvas: HTMLCanvasElement, scale: number): number 
 // us fill each distinct color once instead of once per cell.
 type ColorCache = {
   key: string;
-  map: GlobeMap;
   palette: string[];
   colorIdx: Int32Array;
 };
@@ -48,7 +47,10 @@ type SkipCap = { center: Vec3; cosKeep: number };
  * ops instead of one fill+stroke per cell.
  */
 export class GlobeRenderer {
-  private colorCache: ColorCache | null = null;
+  // Per-map color cache: the global base and an overlaid patch are both drawn every
+  // frame, so a single slot would thrash (each call recomputes the other's colors).
+  // A WeakMap keyed by map lets both coexist and frees automatically with the map.
+  private colorCache = new WeakMap<GlobeMap, ColorCache>();
   private shadeCache = new Map<string, string>();
 
   public draw(
@@ -169,13 +171,8 @@ export class GlobeRenderer {
    */
   private getColors(map: GlobeMap, settings: MapSettings): ColorCache {
     const key = `${settings.theme}|${settings.seaLevel}`;
-    if (
-      this.colorCache &&
-      this.colorCache.map === map &&
-      this.colorCache.key === key
-    ) {
-      return this.colorCache;
-    }
+    const cached = this.colorCache.get(map);
+    if (cached && cached.key === key) return cached;
 
     const iceColor = iceColorFor(settings.theme); // matches this theme's snowiest peak
     const { elevation, moisture, ice, cellCount, rainfall } = map;
@@ -207,8 +204,9 @@ export class GlobeRenderer {
       colorIdx[i] = intern(hex);
     }
 
-    this.colorCache = { key, map, palette, colorIdx };
-    return this.colorCache;
+    const entry: ColorCache = { key, palette, colorIdx };
+    this.colorCache.set(map, entry);
+    return entry;
   }
 
   /**

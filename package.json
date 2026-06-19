@@ -12,18 +12,14 @@
     "deploy": "gh-pages -d dist"
   },
   "devDependencies": {
-    "@types/d3-delaunay": "^6.0.4",
-    "@types/delaunator": "^5.0.3",
     "@types/seedrandom": "^3.0.8",
     "typescript": "~5.9.3",
     "vite": "^7.1.7"
   },
   "dependencies": {
     "@types/d3-geo": "^3.1.0",
-    "d3-delaunay": "^6.0.4",
     "d3-geo": "^3.1.1",
     "d3-geo-voronoi": "^2.1.0",
-    "delaunator": "^5.0.1",
     "gh-pages": "^6.3.0",
     "seedrandom": "^3.0.5",
     "simplex-noise": "^4.0.3",

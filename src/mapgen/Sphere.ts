@@ -39,21 +39,43 @@ export function lonLatToVec3(lon: number, lat: number): Vec3 {
 export const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
 
 /**
- * Global Fibonacci-sphere positions as a flat [x,y,z, …] Float32Array. The layout
- * depends only on the point count, so meshing the subset that falls in a view's cap
- * gives STABLE cell shapes as you pan (overlapping views share the same points)
- * rather than a fresh tessellation each move.
+ * The points of the size-`n` Fibonacci sphere that fall inside the spherical cap
+ * around `center` with the given `halfAngle`. The full set's layout depends only on
+ * `n`, so meshing the subset in a view's cap gives STABLE cell shapes as you pan
+ * (overlapping views share the same points) rather than a fresh tessellation.
+ *
+ * Fibonacci y decreases monotonically with index, so the cap's y-band is a
+ * contiguous index slice: we scan only that slice and compute each position on the
+ * fly — no full-set array (millions of points → tens of MB) and no scan of all `n`.
  */
-export function fibonacciPositions(n: number): Float32Array {
-  const out = new Float32Array(n * 3);
+export function fibonacciCapSites(
+  center: Vec3,
+  halfAngle: number,
+  n: number
+): Vec3[] {
   const denom = Math.max(1, n - 1);
-  for (let i = 0; i < n; i++) {
+  const cosCap = Math.cos(halfAngle);
+  const { x: cx, y: cy, z: cz } = center;
+
+  // A cap constrains p.y to [yMin, yMax] (extrema of the linear functional p·ŷ over
+  // the cap, whose axis makes angle phi with ŷ). Map that band to indices via
+  // y = 1 - 2i/denom (decreasing in i), widening by floor/ceil so no edge point is
+  // missed; the cosCap test below drops the band's out-of-cap longitudes.
+  const phi = Math.acos(clamp(cy, -1, 1));
+  const yMax = Math.cos(Math.max(0, phi - halfAngle));
+  const yMin = Math.cos(Math.min(Math.PI, phi + halfAngle));
+  const iAtY = (y: number) => ((1 - y) * denom) / 2;
+  const iMin = Math.max(0, Math.floor(iAtY(yMax)));
+  const iMax = Math.min(n - 1, Math.ceil(iAtY(yMin)));
+
+  const sites: Vec3[] = [];
+  for (let i = iMin; i <= iMax; i++) {
     const y = 1 - (i / denom) * 2;
     const r = Math.sqrt(Math.max(0, 1 - y * y));
     const a = i * GOLDEN_ANGLE;
-    out[3 * i] = Math.cos(a) * r;
-    out[3 * i + 1] = y;
-    out[3 * i + 2] = Math.sin(a) * r;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (x * cx + y * cy + z * cz >= cosCap) sites.push({ x, y, z });
   }
-  return out;
+  return sites;
 }
