@@ -89,6 +89,7 @@ const POINT_RATIO = 2; // density ratio between adjacent levels (≈1.4× finer 
 const FINEST_ABOVE_DEG = 6; // view radius (°) the finest level enters at → sets the target cell size
 const CAP_MARGIN = 1.5; // patch cap radius ÷ view radius (pan preload)
 const MAX_EXTRA_OCTAVES = 4; // extra fractal octaves at the finest level
+const FIRST_LEVEL_EARLY = 1.25; // coarsest patch activates this much sooner (larger view radius)
 
 type PatchLevel = {
   aboveDeg: number;
@@ -109,7 +110,10 @@ function buildPatchLevels(): PatchLevel[] {
   const last = points.length - 1;
   return points.map((p, i) => {
     const cosAbove = Math.max(-1, Math.min(1, 1 - (2 * targetCells) / p));
-    const aboveDeg = (Math.acos(cosAbove) * 180) / Math.PI;
+    let aboveDeg = (Math.acos(cosAbove) * 180) / Math.PI;
+    // Let the first patch kick in a bit sooner (its on-screen cells run slightly
+    // coarser as a result); the rest of the ladder is unchanged.
+    if (i === 0) aboveDeg *= FIRST_LEVEL_EARLY;
     return {
       points: p,
       aboveDeg,

@@ -71,7 +71,7 @@ export const FRACTAL = {
 // to a base height (abyss → shelf edge → inland).
 export const CONTINENT = {
   WAVELENGTH: [1.5, 2.5], // larger = bigger, fewer continents
-  WARP: [0.55, 0.55], // higher = more organic, wandering coasts
+  WARP: [0.35, 0.65], // higher = more organic, wandering coasts
   OCTAVES: 5.5, // carrier octaves; more = more island sizes / richer coasts
   AMPLITUDE: [0.8, 0.8], // higher = more decisive land/ocean split, sharper coasts
   SHELF: [0.4, 0.62], // [ocean edge, full inland] continentalness band; wider = gentler coasts

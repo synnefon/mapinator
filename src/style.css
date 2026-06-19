@@ -395,7 +395,7 @@ select[multiple] optgroup {
   text-align: left;
   cursor: text;
   user-select: text;
-  padding: 0.1em 2em 0.1em 0.3em; /* right pad leaves room for the floating check */
+  padding: 0.1em 0.3em; /* check floats over the right (absolute), so no reserved pad */
   width: 100%; /* full column width */
   box-sizing: border-box;
   transition: font-size 0.15s ease;
