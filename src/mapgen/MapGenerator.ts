@@ -1,6 +1,6 @@
 import { geoVoronoi } from "d3-geo-voronoi";
 import { createNoise3D, type NoiseFunction3D } from "simplex-noise";
-import type { GlobeMap, Vec3 } from "../common/map";
+import type { GlobeMap, MeshCell, Vec3 } from "../common/map";
 import { printSection } from "../common/printUtils";
 import { makeRNG, type RNG } from "../common/random";
 import {
@@ -20,8 +20,8 @@ import {
 import { applyContrast, clamp, lerp } from "../common/util";
 import { ElevationCalculator } from "./ElevationCalculator";
 import { fbm3 } from "./fbm";
+import { capDelaunayMesh } from "./CapMesh";
 import {
-  dot,
   fibonacciCapSites,
   fibonacciSphere,
   lonLatToVec3,
@@ -54,8 +54,6 @@ const smoothstep = (a: number, b: number, x: number) => {
   const t = clamp((x - a) / (b - a));
   return t * t * (3 - 2 * t);
 };
-
-type MeshCell = { site: Vec3; ring: Vec3[] };
 
 // Per-seed dials shared by the global mesh and every local patch, so a zoomed-in
 // patch lines up exactly with the same continents/biomes (just finer).
@@ -141,21 +139,10 @@ export class MapGenerator {
     // scanning only the cap's index band rather than all `globalPoints`.
     const sites = fibonacciCapSites(center, halfAngle, globalPoints);
 
-    const voronoi = geoVoronoi(sites.map(vec3ToLonLat));
+    // Mesh the cap with stereographic + planar Delaunay (exact geodesic Voronoi, far
+    // faster than spherical geoVoronoi); rim/unbounded cells are dropped inside.
     const keepCos = Math.cos(halfAngle * LOCAL_KEEP_FRACTION);
-
-    const mesh: MeshCell[] = [];
-    for (const feature of voronoi.polygons().features) {
-      const geometry = feature.geometry;
-      if (!geometry || !geometry.coordinates) continue;
-      const [siteLon, siteLat] = feature.properties.sitecoordinates;
-      const site = lonLatToVec3(siteLon, siteLat);
-      if (dot(site, center) < keepCos) continue; // padding ring → off-screen, drop
-      const ring = geometry.coordinates[0].map(([lon, lat]) =>
-        lonLatToVec3(lon, lat)
-      );
-      mesh.push({ site, ring });
-    }
+    const mesh = capDelaunayMesh(sites, center, keepCos);
 
     // Cap (inset) the renderer uses to skip global base cells hidden by this patch.
     const cap = {
@@ -213,6 +200,7 @@ export class MapGenerator {
     const ice = new Float32Array(n);
 
     let vo = 0;
+    let maxChord2 = 0; // largest squared site→ring-vert distance (cull radius)
     for (let i = 0; i < n; i++) {
       const { site, ring } = cells[i];
       sites[3 * i] = site.x;
@@ -220,9 +208,17 @@ export class MapGenerator {
       sites[3 * i + 2] = site.z;
       ringOffsets[i] = vo;
       for (let k = 0; k < ring.length; k++) {
-        ringVerts[3 * vo] = ring[k].x;
-        ringVerts[3 * vo + 1] = ring[k].y;
-        ringVerts[3 * vo + 2] = ring[k].z;
+        const rx = ring[k].x;
+        const ry = ring[k].y;
+        const rz = ring[k].z;
+        ringVerts[3 * vo] = rx;
+        ringVerts[3 * vo + 1] = ry;
+        ringVerts[3 * vo + 2] = rz;
+        const dx = rx - site.x;
+        const dy = ry - site.y;
+        const dz = rz - site.z;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > maxChord2) maxChord2 = d2;
         vo++;
       }
       elevation[i] = this.elevationCalc.elevationAt(
@@ -249,6 +245,7 @@ export class MapGenerator {
       ice,
       rainfall: flavor.rainfall,
       pointCount,
+      maxRingRadius: Math.sqrt(maxChord2),
       cap,
     };
   }

@@ -12,7 +12,7 @@ interface GlobeControllerConfig {
   zoomSensitivity?: number;
 }
 
-const DEFAULT_ZOOM_SENS = 0.0012; // scale units per unit of wheel delta
+const DEFAULT_ZOOM_SENS = 0.0006; // scale units per wheel delta (now geometric: ~uniform ratio/notch)
 const PINCH_ZOOM_SENS = 1.2; // scale units per unit of pinch ratio change
 
 /**

@@ -3,7 +3,7 @@ import type { GlobeMap, Vec3 } from "../common/map";
 import { hexToHsl, hslToHex } from "../common/colorUtils";
 import type { Quat } from "../common/rotation";
 import { ELEVATION_CONTRAST, type MapSettings } from "../common/settings";
-import { applyContrast, clamp, lerp } from "../common/util";
+import { applyContrast, clamp } from "../common/util";
 import { colorAt } from "./BiomeColor";
 
 /** ================================================
@@ -15,13 +15,19 @@ const AMBIENT = 0.4; // limb-darkening floor; lower = more dramatic terminator
 const SHADE_BUCKETS = 32; // quantize shade for the lightness cache
 const HAIRLINE_PX = 1; // stroke each cell in its own color to close seams
 const ICE_THRESHOLD = 0.5; // a cell is ice past this mask value (crisp, cell-resolution edge)
+// On-screen cell radius (px) below which we stroke each color group to hide the
+// ~1px AA seams between cells; above it cells are big enough to skip that pass.
+const SEAM_STROKE_MAX_CELL_PX = 10;
 
 /** Apparent globe radius in px for a zoom. scale=1 fits the canvas; lower zooms in. */
 export function globeRadiusPx(canvas: HTMLCanvasElement, scale: number): number {
+  // Geometric (not linear) zoom: equal scale steps give equal radius RATIOS, so the
+  // wheel feels uniform across the range instead of lurching near the whole-globe
+  // view. Endpoints are unchanged: scale=1 → ×1, scale=0 → ×GLOBE_MAX_ZOOM.
   return (
     Math.min(canvas.width, canvas.height) *
     FIT_FACTOR *
-    lerp(GLOBE_MAX_ZOOM, 1, scale)
+    Math.pow(GLOBE_MAX_ZOOM, 1 - scale)
   );
 }
 
@@ -90,8 +96,9 @@ export class GlobeRenderer {
 
     // One Path2D per distinct (palette index, shade bucket); filled once at the end.
     const groups = new Map<number, Path2D>();
-    const xs: number[] = []; // reused projected-ring scratch (one cell at a time)
-    const ys: number[] = [];
+    // Conservative on-screen radius of any cell: a cell whose projected site is
+    // farther than this outside the canvas has its whole ring off-canvas too.
+    const cullR = map.maxRingRadius * radius;
 
     for (let i = 0; i < cellCount; i++) {
       const sx = sites[3 * i];
@@ -108,34 +115,15 @@ export class GlobeRenderer {
       const rsz = sz + qw * stz + (qx * sty - qy * stx);
       if (rsz <= 0) continue; // back hemisphere — skip
 
-      const start = ringOffsets[i];
-      const end = ringOffsets[i + 1];
-      const len = end - start;
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (let k = 0; k < len; k++) {
-        const b = 3 * (start + k);
-        const vx = ringVerts[b];
-        const vy = ringVerts[b + 1];
-        const vz = ringVerts[b + 2];
-        const tx = 2 * (qy * vz - qz * vy);
-        const ty = 2 * (qz * vx - qx * vz);
-        const tz = 2 * (qx * vy - qy * vx);
-        const rx = vx + qw * tx + (qy * tz - qz * ty);
-        const ry = vy + qw * ty + (qz * tx - qx * tz);
-        const px = cxPx + rx * radius;
-        const py = cyPx - ry * radius;
-        xs[k] = px;
-        ys[k] = py;
-        if (px < minX) minX = px;
-        if (px > maxX) maxX = px;
-        if (py < minY) minY = py;
-        if (py > maxY) maxY = py;
+      // Project the site and reject the cell if its bounding circle is off-canvas,
+      // BEFORE rotating/projecting every ring vertex (the costly part).
+      const rsx = sx + qw * stx + (qy * stz - qz * sty);
+      const rsy = sy + qw * sty + (qz * stx - qx * stz);
+      const psx = cxPx + rsx * radius;
+      const psy = cyPx - rsy * radius;
+      if (psx < -cullR || psx > W + cullR || psy < -cullR || psy > H + cullR) {
+        continue;
       }
-      // Off-canvas (e.g. when zoomed in) → skip the costly path build/fill.
-      if (maxX < 0 || minX > W || maxY < 0 || minY > H) continue;
 
       const bucket = Math.round(
         clamp(AMBIENT + (1 - AMBIENT) * rsz, 0, 1) * SHADE_BUCKETS
@@ -146,22 +134,42 @@ export class GlobeRenderer {
         path = new Path2D();
         groups.set(gkey, path);
       }
-      path.moveTo(xs[0], ys[0]);
-      for (let k = 1; k < len; k++) path.lineTo(xs[k], ys[k]);
+
+      const start = ringOffsets[i];
+      const end = ringOffsets[i + 1];
+      for (let k = start; k < end; k++) {
+        const b = 3 * k;
+        const vx = ringVerts[b];
+        const vy = ringVerts[b + 1];
+        const vz = ringVerts[b + 2];
+        const tx = 2 * (qy * vz - qz * vy);
+        const ty = 2 * (qz * vx - qx * vz);
+        const tz = 2 * (qx * vy - qy * vx);
+        const rx = vx + qw * tx + (qy * tz - qz * ty);
+        const ry = vy + qw * ty + (qz * tx - qx * tz);
+        const px = cxPx + rx * radius;
+        const py = cyPx - ry * radius;
+        if (k === start) path.moveTo(px, py);
+        else path.lineTo(px, py);
+      }
       path.closePath();
     }
 
-    // One fill + one stroke per distinct color. The hairline stroke (same color)
-    // closes the sub-pixel seams between adjacent cells.
+    // Fill each distinct color once. When cells are small on screen, also stroke
+    // (same color) to close the ~1px AA seams between them; when they're large the
+    // seam is hidden and that second pass is skipped.
+    const strokeSeams = cullR < SEAM_STROKE_MAX_CELL_PX;
     for (const [gkey, path] of groups) {
       const paletteIdx = (gkey / (SHADE_BUCKETS + 1)) | 0;
       const bucket = gkey - paletteIdx * (SHADE_BUCKETS + 1);
       const fill = this.shade(palette[paletteIdx], bucket);
       ctx.fillStyle = fill;
       ctx.fill(path);
-      ctx.strokeStyle = fill;
-      ctx.lineWidth = HAIRLINE_PX;
-      ctx.stroke(path);
+      if (strokeSeams) {
+        ctx.strokeStyle = fill;
+        ctx.lineWidth = HAIRLINE_PX;
+        ctx.stroke(path);
+      }
     }
   }
 

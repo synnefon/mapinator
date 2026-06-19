@@ -5,6 +5,10 @@ export interface Vec3 {
     z: number;
 }
 
+// One Voronoi cell before packing: its site and the polygon ring around it (Vec3s
+// on the unit sphere). Produced by the global/local meshers, consumed by packMesh.
+export type MeshCell = { site: Vec3; ring: Vec3[] };
+
 // Typed-array-backed globe: every per-cell field lives in a flat array for
 // cache-friendly iteration, low GC pressure, and zero-copy transfer from the
 // generation worker. A cell's polygon ring is the slice
@@ -19,6 +23,9 @@ export interface GlobeMap {
     ice: Float32Array; // [0,1] polar ice-cap mask (1 = full ice)
     rainfall: number; // per-seed wet/dry bias, consumed at render time
     pointCount: number;
+    // Max chord from any site to its own ring verts → a conservative per-cell
+    // bounding radius the renderer scales to px to cull off-screen cells early.
+    maxRingRadius: number;
     // Local patches only: the spherical cap they cover, so the renderer can
     // occlusion-cull the global base cells hidden beneath the patch.
     cap?: { center: Vec3; cosKeep: number };

@@ -52,20 +52,30 @@ export function qFromAxisAngle(
 
 /** Smallest rotation taking unit vector `from` to unit vector `to`. */
 export function quatBetween(from: Vec3, to: Vec3): Quat {
-  const d = Math.max(-1, Math.min(1, from.x * to.x + from.y * to.y + from.z * to.z));
-  if (d > 0.999999) return QUAT_IDENTITY;
-  let ax = from.y * to.z - from.z * to.y;
-  let ay = from.z * to.x - from.x * to.z;
-  let az = from.x * to.y - from.y * to.x;
-  let len = Math.hypot(ax, ay, az);
-  if (len < 1e-9) {
-    // antiparallel — spin 180° about any axis perpendicular to `from`
-    ax = from.y;
-    ay = -from.x;
-    az = 0;
-    len = Math.hypot(ax, ay, az) || 1;
+  const d = from.x * to.x + from.y * to.y + from.z * to.z;
+  // Robust "quaternion between vectors": vector part = from × to (= axis·sin θ),
+  // w = 1 + cos θ, then normalize. No acos and no near-identity early-out, so tiny
+  // rotations stay exact — at high zoom each drag step is a sub-degree rotation, and
+  // an acos/threshold path rounds those to identity (the drag would stall).
+  let x = from.y * to.z - from.z * to.y;
+  let y = from.z * to.x - from.x * to.z;
+  let z = from.x * to.y - from.y * to.x;
+  let w = 1 + d;
+  if (w < 1e-9) {
+    // (Near-)antiparallel: 180° about any axis perpendicular to `from`.
+    if (Math.abs(from.x) > Math.abs(from.z)) {
+      x = -from.y;
+      y = from.x;
+      z = 0;
+    } else {
+      x = 0;
+      y = -from.z;
+      z = from.y;
+    }
+    w = 0;
   }
-  return qFromAxisAngle(ax / len, ay / len, az / len, Math.acos(d));
+  const len = Math.hypot(x, y, z, w) || 1;
+  return { x: x / len, y: y / len, z: z / len, w: w / len };
 }
 
 /** World point currently facing the camera (the one that maps to view +Z). */
