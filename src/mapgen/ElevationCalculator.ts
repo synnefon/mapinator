@@ -28,6 +28,9 @@ const WARP_OFFSET_Z = 9.3;
 const EROSION_OFFSET_X = 11.3;
 const EROSION_OFFSET_Y = 7.9;
 const EROSION_OFFSET_Z = 3.1;
+const WARP_VAR_OFFSET_X = 17.4;
+const WARP_VAR_OFFSET_Y = 23.1;
+const WARP_VAR_OFFSET_Z = 8.6;
 
 /**
  * Continentalness-based elevation (model B), sampled on the unit sphere.
@@ -42,7 +45,6 @@ export class ElevationCalculator {
   private coastAmplitude: number;
   private mountainAmplitude: number;
   private continentWavelength: number;
-  private continentWarp: number;
   private continentAmplitude: number;
   private erosionWavelength: number;
   private oceanAmplitude: number;
@@ -52,7 +54,6 @@ export class ElevationCalculator {
     this.coastAmplitude = sampleDial(COAST.AMPLITUDE, rng);
     this.mountainAmplitude = sampleDial(MOUNTAIN.AMPLITUDE, rng);
     this.continentWavelength = sampleDial(CONTINENT.WAVELENGTH, rng);
-    this.continentWarp = sampleDial(CONTINENT.WARP, rng);
     this.continentAmplitude = sampleDial(CONTINENT.AMPLITUDE, rng);
     this.erosionWavelength = sampleDial(FEATURE_DETAIL.WAVELENGTH, rng);
     this.oceanAmplitude = sampleDial(OCEAN.AMPLITUDE, rng);
@@ -62,7 +63,6 @@ export class ElevationCalculator {
       { key: "coastAmplitude", value: this.coastAmplitude },
       { key: "mountainAmplitude", value: this.mountainAmplitude },
       { key: "continentWavelength", value: this.continentWavelength },
-      { key: "continentWarp", value: this.continentWarp },
       { key: "continentAmplitude", value: this.continentAmplitude },
       { key: "erosionWavelength", value: this.erosionWavelength },
       { key: "oceanAmplitude", value: this.oceanAmplitude }
@@ -184,12 +184,13 @@ export class ElevationCalculator {
    * only add finer detail on top.
    */
   private continentalness(x: number, y: number, z: number): number {
+    const warp = this.warpAmount(x, y, z); // varies across the map (very-low-freq wave)
     const wx =
-      x + this.continentWarp * this.continentNoise(x + WARP_OFFSET_X, y + WARP_OFFSET_Y, z + WARP_OFFSET_Z);
+      x + warp * this.continentNoise(x + WARP_OFFSET_X, y + WARP_OFFSET_Y, z + WARP_OFFSET_Z);
     const wy =
-      y + this.continentWarp * this.continentNoise(x - WARP_OFFSET_Y, y - WARP_OFFSET_Z, z - WARP_OFFSET_X);
+      y + warp * this.continentNoise(x - WARP_OFFSET_Y, y - WARP_OFFSET_Z, z - WARP_OFFSET_X);
     const wz =
-      z + this.continentWarp * this.continentNoise(x + WARP_OFFSET_Z, y - WARP_OFFSET_X, z + WARP_OFFSET_Y);
+      z + warp * this.continentNoise(x + WARP_OFFSET_Z, y - WARP_OFFSET_X, z + WARP_OFFSET_Y);
     const sum = fbm3(
       this.noise3D,
       wx,
@@ -202,6 +203,25 @@ export class ElevationCalculator {
       FRACTAL.LACUNARITY
     );
     return clamp(INVARIANTS.NEUTRAL_CENTER_POINT + sum);
+  }
+
+  /**
+   * Domain-warp strength at a point, varied across the map by a very-low-frequency wave
+   * (CONTINENT.WARP_VAR_WAVELENGTH) between CONTINENT.WARP's min/max — so some regions
+   * get wandering, organic coasts and others smoother ones. It's a function of position,
+   * so it's identical at every zoom level (the global mesh and the dense patches sample
+   * the same field), needing no per-zoom handling.
+   */
+  private warpAmount(x: number, y: number, z: number): number {
+    const t =
+      INVARIANTS.NEUTRAL_CENTER_POINT +
+      0.5 *
+        this.noise3D(
+          x / CONTINENT.WARP_VAR_WAVELENGTH + WARP_VAR_OFFSET_X,
+          y / CONTINENT.WARP_VAR_WAVELENGTH + WARP_VAR_OFFSET_Y,
+          z / CONTINENT.WARP_VAR_WAVELENGTH + WARP_VAR_OFFSET_Z
+        );
+    return lerp(CONTINENT.WARP[0], CONTINENT.WARP[1], clamp(t));
   }
 
   /** Raw carrier-scale noise (lower frequency than the relief waves). */

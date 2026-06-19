@@ -309,8 +309,17 @@ export class MapGenerator {
     capNorth: number,
     capSouth: number
   ): number {
-    // Open water never ices (for now); only land above the elevation midpoint snows.
-    if (elevation <= INVARIANTS.NEUTRAL_CENTER_POINT) return 0;
+    // Lower-lying land pokes through the ice (shows terrain) toward the equator, but that
+    // fades out a little before each pole so the exact poles are solid: the land
+    // threshold drops from LAND_THRESHOLD toward POLE_THRESHOLD (≈ sea level → all land
+    // ices) as |y| approaches the pole.
+    const solid = smoothstep(
+      ICE.SOLID_LAT - ICE.SOLID_FADE,
+      ICE.SOLID_LAT,
+      Math.abs(site.y)
+    );
+    const landThreshold = lerp(ICE.LAND_THRESHOLD, ICE.POLE_THRESHOLD, solid);
+    if (elevation <= landThreshold) return 0;
     // Ruffle the snow line: a base wave (slightly lopsided, asymmetrical outline) plus a
     // finer octave at 3× (ragged edge). Only the edge moves; the interior stays solid.
     const f = ICE.RUFFLE_FREQ;

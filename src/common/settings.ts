@@ -62,7 +62,7 @@ export const SLIDER_RANGES = {
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
 export const FRACTAL = {
-  OCTAVES: 7, // more = finer detail, costlier
+  OCTAVES: 6, // more = finer detail, costlier
   GAIN: 0.7, // amplitude falloff per octave; higher = rougher
   LACUNARITY: 2, // wavelength shrink per octave
 } as const;
@@ -71,7 +71,10 @@ export const FRACTAL = {
 // to a base height (abyss → shelf edge → inland).
 export const CONTINENT = {
   WAVELENGTH: [1.5, 2.5], // larger = bigger, fewer continents
-  WARP: [0.35, 0.65], // higher = more organic, wandering coasts
+  // Domain-warp strength (higher = more organic, wandering coasts), VARIED across the
+  // map [min..max] by a very-low-frequency wave so some regions are wavier than others.
+  WARP: [0.45, 0.65],
+  WARP_VAR_WAVELENGTH: 1, // wavelength of that wave; larger = broader warp regions (lower freq)
   OCTAVES: 5.5, // carrier octaves; more = more island sizes / richer coasts
   AMPLITUDE: [0.8, 0.8], // higher = more decisive land/ocean split, sharper coasts
   SHELF: [0.4, 0.62], // [ocean edge, full inland] continentalness band; wider = gentler coasts
@@ -122,6 +125,14 @@ export const ICE = {
   EDGE: 0.04, // width (in |y|) of the soft equatorward blend; smaller = crisper edge
   RUFFLE: 0.035, // how far the snow line wanders (|y|) → asymmetrical, ragged edge
   RUFFLE_FREQ: 4, // base scale of the ruffle (a finer octave at 3× rides on top)
+  // Lower-lying land "pokes through" the ice (shows terrain) toward the equator, then
+  // fades to solid a little before each pole. Toward the equator only land above
+  // LAND_THRESHOLD ices (lower land shows green); approaching a pole the threshold drops
+  // to POLE_THRESHOLD (≈ sea level → all land ices) over SOLID_FADE, fully solid by SOLID_LAT.
+  LAND_THRESHOLD: 0.5, // equatorward: land below this pokes through (shows terrain)
+  POLE_THRESHOLD: 0.48, // near a pole: ice all land down to ~sea level (no poke-through)
+  SOLID_LAT: 0.95, // |y| at/after which the cap is fully solid — "a little before the pole"
+  SOLID_FADE: 0.12, // |y| span over which the poke-through fades out approaching SOLID_LAT
 } as const;
 
 // FEATURE_DETAIL — "erosion": a low-frequency wave that scales the COAST/MOUNTAIN

@@ -474,17 +474,33 @@ document.addEventListener("DOMContentLoaded", () => {
     ensureMap();
   }
 
+  // Switch to the map with this seed/name, keeping the current view. Used when loading a
+  // save file (which restores its own settings). New maps go through loadNewMap.
   function loadMap(name: string) {
+    appState.mapName = name; // setter upper-cases it (case-insensitive keys)
+    reseedWorker(appState.mapName);
+    mapCache.clear();
+    redraw();
+  }
+
+  // Reset the view to the default whole-globe, north-up orientation (the regen reset).
+  function resetView() {
+    orientation = QUAT_IDENTITY;
+    appState.settings.zoom = 0;
+    ui.updateSliderValue("zoom", 0);
+  }
+
+  // Generate / switch to a NEW map (regen button or a typed name): always reset the view
+  // first, then load — so a new map starts from the default view every time.
+  function loadNewMap(name: string) {
     if (!name.trim()) {
       alert("Please enter the name of a map to load in");
       appState.mapName = "";
       mapTitle.value = "";
       return;
     }
-    appState.mapName = name;
-    reseedWorker(name);
-    mapCache.clear();
-    redraw(name);
+    resetView();
+    loadMap(name);
   }
 
   // --- Bind Sliders ---
@@ -517,13 +533,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Button handlers ---
   regenBtn.addEventListener("click", () => {
     playEffect(regenBtnImg, "spin");
-    appState.mapName = generateMapName();
-    reseedWorker(appState.mapName);
-    mapCache.clear();
-    orientation = QUAT_IDENTITY;
-    appState.settings.zoom = 0;
-    ui.updateSliderValue("zoom", 0);
-    redraw(appState.mapName);
+    loadNewMap(generateMapName());
   });
 
   // Re-orient north, animating the globe into place. Zoomed in: a pure roll about the view
@@ -559,15 +569,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadTitleBtn.addEventListener("click", () => {
     playEffect(loadTitleBtnImg, "bounce");
-    loadMap(mapTitle.value.trim());
+    loadNewMap(mapTitle.value.trim());
   });
 
   mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
       const val = mapTitle.value.trim();
-      if (val !== appState.mapName) {
-        loadMap(val);
+      if (val.toUpperCase() !== appState.mapName) {
+        loadNewMap(val);
         playEffect(loadTitleBtnImg, "bounce");
         setTimeout(() => mapTitle.blur(), 400);
       }

@@ -34,7 +34,8 @@ export class AppState {
     };
 
     const urlMapName = urlParams.get("name") || urlParams.get("seed");
-    this._mapName = urlMapName || "";
+    // Map keys are case-insensitive — always stored upper case (see the mapName setter).
+    this._mapName = (urlMapName || "").toUpperCase();
   }
 
   get settings() {
@@ -57,7 +58,7 @@ export class AppState {
     this._selectedLanguages = value;
   }
   set mapName(value) {
-    this._mapName = value;
+    this._mapName = value.toUpperCase(); // map keys are case-insensitive
   }
   set syncingFreq(value) {
     this._syncingFreq = value;

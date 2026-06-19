@@ -393,6 +393,7 @@ select[multiple] optgroup {
   font-weight: 700;
   font-size: 1.4em; /* shrunk to fit the sidebar */
   text-align: left;
+  text-transform: uppercase; /* map keys are case-insensitive — show them upper case */
   cursor: text;
   user-select: text;
   padding: 0.1em 0.3em; /* check floats over the right (absolute), so no reserved pad */
