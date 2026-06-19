@@ -1,7 +1,7 @@
 import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
 import { MAPINATION_FILE_EXTENSION } from "./common/constants";
-import type { GlobeMap } from "./common/map";
+import type { GlobeMap, Vec3 } from "./common/map";
 import { printSection } from "./common/printUtils";
 import {
   isValidSaveFile,
@@ -16,7 +16,8 @@ import { debounce } from "./common/util";
 import { globePointCount, MapGenerator } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { GlobeController } from "./renderer/GlobeController";
-import { GlobeRenderer, type GlobeOrientation } from "./renderer/GlobeRenderer";
+import { GlobeRenderer, globeRadiusPx } from "./renderer/GlobeRenderer";
+import { QUAT_IDENTITY, quatViewCenter, type Quat } from "./common/rotation";
 import { sliderDefs, UIManager } from "./UIManager";
 
 // --- Utility Functions ---
@@ -59,10 +60,19 @@ const downloadFile = (c: string | Blob, fname: string, m: string) => {
 
 // --- Setup & State ---
 const mapCache = new Map<string, GlobeMap>();
-// Geometry depends only on resolution (point count). Zoom, sea level, and theme
-// are render-time only, so they don't key the cache (zoom is a pure re-project).
-const getCacheKey = (s: MapSettings) =>
-  String(globePointCount(s.resolution));
+
+// Level-of-detail: zoomed out (visible cap > ~38°) we draw the whole-globe mesh;
+// zoomed in we mesh a cap BIGGER than the view (`capDeg` = preload margin so
+// panning is already loaded) from the global point set, layering `octaves` of
+// finer detail. 5 levels (global + 4 patch) span the zoom range. `points` = global
+// Fibonacci density → ~points×capArea cells per patch (~1 KB each; tune for memory).
+const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
+const PATCH_LEVELS = [
+  { aboveDeg: 38, capDeg: 60, points: 110_000, octaves: 1 },
+  { aboveDeg: 22, capDeg: 32, points: 320_000, octaves: 2 },
+  { aboveDeg: 12, capDeg: 17, points: 960_000, octaves: 3 },
+  { aboveDeg: 6.5, capDeg: 10, points: 2_500_000, octaves: 4 }, // max-zoom fidelity
+] as const;
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -103,9 +113,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const mapGenerator = new MapGenerator(appState.mapName);
   const globeRenderer = new GlobeRenderer();
-  // Live view orientation, driven by the orbit controls (drag = rotate); reset on regen.
-  const INITIAL_PITCH = 0.0;
-  const orientation: GlobeOrientation = { yaw: 0, pitch: INITIAL_PITCH };
+  // Live view orientation (world→view quaternion), driven by the orbit controls;
+  // reset on regen. Replaced wholesale by setView (not mutated in place).
+  let orientation: Quat = QUAT_IDENTITY;
 
   // UI Elements
   const {
@@ -127,14 +137,9 @@ document.addEventListener("DOMContentLoaded", () => {
   // scale setting and redraws; geometry is untouched, so this only re-projects.
   new GlobeController({
     canvas,
-    getView: () => ({
-      yaw: orientation.yaw,
-      pitch: orientation.pitch,
-      scale: appState.settings.scale,
-    }),
+    getView: () => ({ orientation, scale: appState.settings.scale }),
     setView: (view) => {
-      orientation.yaw = view.yaw;
-      orientation.pitch = view.pitch;
+      orientation = view.orientation;
       if (view.scale !== appState.settings.scale) {
         appState.updateSetting("scale", view.scale);
         ui.updateSliderValue("scale", view.scale);
@@ -145,42 +150,124 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- Map Rendering ---
   const mapLoader = document.getElementById("mapLoader");
-  const setLoading = (on: boolean) =>
+  const setLoading = (on: boolean) => {
     mapLoader?.classList.toggle("hidden", !on);
+  }
 
-  // currentMap is whatever's on screen. Rotation/zoom re-project it instantly;
-  // the (debounced) regen swaps in the right detail once a gesture settles.
-  let currentMap: GlobeMap | null = null;
-  const CACHE_CAP = 48;
+  // The coarse whole-globe map is always drawn underneath (so panning never leaves
+  // a gap); zoomed in, a dense local patch is layered on top. Rotation/zoom
+  // re-project instantly; a debounced regen swaps in the right patch on settle.
+  let globalMap: GlobeMap | null = null;
+  let patchMap: GlobeMap | null = null;
+  // Total cached maps. Patches run tens of thousands of cells (~1 KB each), so
+  // this bounds patch memory; the global base is never evicted (see getOrGenerate).
+  const CACHE_CAP = 8;
 
   function render() {
-    if (currentMap) {
-      globeRenderer.draw(canvas, currentMap, appState.settings, orientation);
+    if (!globalMap) return;
+    globeRenderer.draw(canvas, globalMap, appState.settings, orientation, true);
+    if (patchMap) {
+      globeRenderer.draw(canvas, patchMap, appState.settings, orientation, false);
     }
   }
 
-  function ensureMap() {
-    const key = getCacheKey(appState.settings);
-    const cached = mapCache.get(key);
-    if (cached) {
-      currentMap = cached;
-      render();
-      return;
+  // Whole-globe vs a dense local patch, decided from the current zoom + orientation.
+  type LocalView = {
+    local: true;
+    level: number;
+    center: Vec3;
+    halfAngle: number;
+    points: number;
+    extraOctaves: number;
+  };
+  type View = { local: false } | LocalView;
+
+  function currentView(): View {
+    const radiusPx = globeRadiusPx(canvas, appState.settings.scale);
+    // angular radius from the view center to the canvas corner (covers the view)
+    const halfDeg =
+      (Math.asin(
+        Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
+      ) *
+        180) /
+      Math.PI;
+    // finest level whose band still contains this zoom; -1 → whole globe
+    let level = -1;
+    for (let i = 0; i < PATCH_LEVELS.length; i++) {
+      if (halfDeg < PATCH_LEVELS[i].aboveDeg) level = i;
     }
-    // Generation is synchronous; show the loader and defer two frames so it
-    // actually paints before the main thread blocks on generateMap.
-    setLoading(true);
+    if (level < 0) return { local: false };
+    const lv = PATCH_LEVELS[level];
+    return {
+      local: true,
+      level,
+      center: quatViewCenter(orientation),
+      halfAngle: (lv.capDeg * Math.PI) / 180,
+      points: lv.points,
+      extraOctaves: lv.octaves,
+    };
+  }
+
+  const globalKey = () => `g|${globePointCount(appState.settings.resolution)}`;
+  const patchKey = (v: LocalView) => {
+    const step = v.halfAngle * PATCH_RECENTER;
+    const q = (n: number) => Math.round(n / step);
+    return `l|${v.level}|${q(v.center.x)}|${q(v.center.y)}|${q(v.center.z)}`;
+  };
+
+  function getOrGenerate(key: string, generate: () => GlobeMap): GlobeMap {
+    const existing = mapCache.get(key);
+    if (existing) return existing;
+    const map = generate();
+    mapCache.set(key, map);
+    // Evict oldest PATCHES only — regenerating the global base is slow.
+    while (mapCache.size > CACHE_CAP) {
+      let evicted = false;
+      for (const k of mapCache.keys()) {
+        if (k.startsWith("l|")) {
+          mapCache.delete(k);
+          evicted = true;
+          break;
+        }
+      }
+      if (!evicted) break;
+    }
+    return map;
+  }
+
+  function ensureMap() {
+    const view = currentView();
+    const gKey = globalKey();
+    const pKey = view.local ? patchKey(view) : null;
+
+    // Render whatever's already cached now (covers the gesture); keep the previous
+    // patch if the new one isn't ready yet, so we stay crisp while moving.
+    globalMap = mapCache.get(gKey) ?? globalMap;
+    patchMap = pKey ? mapCache.get(pKey) ?? patchMap : null;
+    render();
+
+    const needGlobal = !mapCache.has(gKey);
+    if (!needGlobal && (!pKey || mapCache.has(pKey))) return;
+    // Loader ONLY for a fresh whole-globe build (new seed / first load /
+    // resolution change). Patch regen on pan/zoom stays silent.
+    if (needGlobal) setLoading(true);
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        const generated = mapGenerator.generateMap(appState.settings);
-        mapCache.set(key, generated);
-        while (mapCache.size > CACHE_CAP) {
-          const oldest = mapCache.keys().next().value;
-          if (oldest === undefined) break;
-          mapCache.delete(oldest);
-        }
-        currentMap = generated;
-        setLoading(false);
+        globalMap = getOrGenerate(gKey, () =>
+          mapGenerator.generateMap(appState.settings)
+        );
+        patchMap =
+          view.local && pKey
+            ? getOrGenerate(pKey, () =>
+                mapGenerator.generateLocalMap(
+                  view.center,
+                  view.halfAngle,
+                  view.points,
+                  view.extraOctaves
+                )
+              )
+            : null;
+        if (needGlobal) setLoading(false);
         render();
       })
     );
@@ -267,8 +354,9 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.mapName = generateMapName();
     mapGenerator.reSeed(appState.mapName);
     mapCache.clear();
-    orientation.yaw = 0;
-    orientation.pitch = INITIAL_PITCH;
+    orientation = QUAT_IDENTITY;
+    appState.settings.scale = 1;
+    ui.updateSliderValue("scale", 1);
     redraw(appState.mapName);
   });
 

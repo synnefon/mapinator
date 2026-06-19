@@ -1,74 +1,109 @@
+import type { Vec3 } from "../common/map";
+import { qMul, qNormalize, quatBetween, type Quat } from "../common/rotation";
 import { clamp } from "../common/util";
 import { globeRadiusPx } from "./GlobeRenderer";
 
-export type GlobeView = { yaw: number; pitch: number; scale: number };
+export type GlobeView = { orientation: Quat; scale: number };
 
 interface GlobeControllerConfig {
   canvas: HTMLCanvasElement;
   getView: () => GlobeView;
   setView: (view: GlobeView) => void;
-  rotateSensitivity?: number;
   zoomSensitivity?: number;
 }
 
-const PITCH_LIMIT = 1.4; // ~80°; keeps the globe from tumbling over the poles
-const DEFAULT_ROTATE_GAIN = 1; // overall rotate speed (≈1 ≈ cursor-tracking at scale=1)
-const ROTATE_ZOOM_DAMP = 0.6; // 0 = constant angular speed, 1 = full cursor-following
 const DEFAULT_ZOOM_SENS = 0.0012; // scale units per unit of wheel delta
 const PINCH_ZOOM_SENS = 1.2; // scale units per unit of pinch ratio change
 
 /**
- * Orbit controls for the globe: drag (mouse or one finger) rotates, wheel /
- * trackpad scroll / pinch zooms. Reads + writes the view via callbacks; it never
- * touches geometry, so a change only re-projects (cheap), never regenerates.
+ * Arcball orbit controls. Drag rotates so the world point under the cursor stays
+ * under the cursor (true direct manipulation, correct at any tilt); wheel/pinch
+ * zooms toward the cursor (the point under it stays put). Both are expressed as a
+ * single rotation: "spin the globe so view-direction A moves to view-direction B".
  */
 export class GlobeController {
   private canvas: HTMLCanvasElement;
   private getView: () => GlobeView;
   private setView: (view: GlobeView) => void;
-  private rotateSens: number;
   private zoomSens: number;
 
   private dragging = false;
-  private lastX = 0;
+  private lastX = 0; // last cursor, in canvas pixels
   private lastY = 0;
-  private pxScale = 1; // canvas px per CSS px, captured on drag start
+  // Canvas rect, cached at gesture start (client px → canvas px).
+  private rectLeft = 0;
+  private rectTop = 0;
+  private pxScale = 1;
 
   private pinchDistance: number | null = null;
-  private pinchStartScale = 0;
+  private pinchX = 0;
+  private pinchY = 0;
 
   constructor(config: GlobeControllerConfig) {
     this.canvas = config.canvas;
     this.getView = config.getView;
     this.setView = config.setView;
-    this.rotateSens = config.rotateSensitivity ?? DEFAULT_ROTATE_GAIN;
     this.zoomSens = config.zoomSensitivity ?? DEFAULT_ZOOM_SENS;
     this.canvas.style.cursor = "grab";
     this.attach();
   }
 
-  /** Drag → rotate, with a "grab" feel (the point under the cursor follows it). */
-  private rotateBy(dxPx: number, dyPx: number): void {
+  private cacheRect(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    this.rectLeft = rect.left;
+    this.rectTop = rect.top;
+    this.pxScale = this.canvas.width / rect.width; // canvas px per CSS px
+  }
+
+  private toCanvas(clientX: number, clientY: number): [number, number] {
+    return [
+      (clientX - this.rectLeft) * this.pxScale,
+      (clientY - this.rectTop) * this.pxScale,
+    ];
+  }
+
+  /** Unit sphere point (view space) under a canvas-pixel position at this radius. */
+  private viewDirAt(canvasX: number, canvasY: number, radius: number): Vec3 {
+    const nx = (canvasX - this.canvas.width / 2) / radius;
+    const ny = -(canvasY - this.canvas.height / 2) / radius;
+    const r2 = nx * nx + ny * ny;
+    if (r2 >= 1) {
+      const s = 1 / Math.sqrt(r2); // off the disk → clamp to the limb
+      return { x: nx * s, y: ny * s, z: 0 };
+    }
+    return { x: nx, y: ny, z: Math.sqrt(1 - r2) };
+  }
+
+  /** Spin so the world point at view-dir `from` moves to view-dir `to`. */
+  private rotateView(from: Vec3, to: Vec3): void {
     const v = this.getView();
-    // Mouse deltas are CSS px but the globe radius is in canvas px — convert via
-    // pxScale. Compensate for zoom only PARTIALLY (ROTATE_ZOOM_DAMP) so a drag
-    // tracks the surface without going uselessly slow when zoomed in.
-    const refRadius = globeRadiusPx(this.canvas, 1);
-    const zoomFactor = globeRadiusPx(this.canvas, v.scale) / refRadius;
-    const k =
-      ((this.rotateSens * this.pxScale) / refRadius) *
-      Math.pow(zoomFactor, -ROTATE_ZOOM_DAMP);
     this.setView({
       ...v,
-      yaw: v.yaw + dxPx * k,
-      pitch: clamp(v.pitch + dyPx * k, -PITCH_LIMIT, PITCH_LIMIT),
+      orientation: qNormalize(qMul(quatBetween(from, to), v.orientation)),
     });
   }
 
-  /** Set globe zoom (clamped to the slider range). scale=1 = whole planet. */
-  private setScale(scale: number): void {
+  /** Zoom to `newScale` keeping the world point under (canvasX, canvasY) fixed. */
+  private zoomAt(canvasX: number, canvasY: number, newScale: number): void {
     const v = this.getView();
-    this.setView({ ...v, scale: clamp(scale, 0, 1) });
+    const from = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, v.scale));
+    const scale = clamp(newScale, 0, 1);
+    const to = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, scale));
+    this.setView({
+      orientation: qNormalize(qMul(quatBetween(from, to), v.orientation)),
+      scale,
+    });
+  }
+
+  /** Drag from the last cursor to the current one → arcball rotation. */
+  private dragTo(canvasX: number, canvasY: number): void {
+    const radius = globeRadiusPx(this.canvas, this.getView().scale);
+    this.rotateView(
+      this.viewDirAt(this.lastX, this.lastY, radius),
+      this.viewDirAt(canvasX, canvasY, radius)
+    );
+    this.lastX = canvasX;
+    this.lastY = canvasY;
   }
 
   private touchDistance(a: Touch, b: Touch): number {
@@ -79,18 +114,15 @@ export class GlobeController {
     const c = this.canvas;
 
     c.addEventListener("mousedown", (e: MouseEvent) => {
+      this.cacheRect();
       this.dragging = true;
-      this.pxScale = c.width / c.getBoundingClientRect().width;
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
+      [this.lastX, this.lastY] = this.toCanvas(e.clientX, e.clientY);
       c.style.cursor = "grabbing";
     });
-    // On window so a drag keeps working past the canvas edge.
     window.addEventListener("mousemove", (e: MouseEvent) => {
       if (!this.dragging) return;
-      this.rotateBy(e.clientX - this.lastX, e.clientY - this.lastY);
-      this.lastX = e.clientX;
-      this.lastY = e.clientY;
+      const [x, y] = this.toCanvas(e.clientX, e.clientY);
+      this.dragTo(x, y);
     });
     window.addEventListener("mouseup", () => {
       if (!this.dragging) return;
@@ -98,30 +130,35 @@ export class GlobeController {
       c.style.cursor = "grab";
     });
 
-    // Wheel / trackpad two-finger scroll / pinch → zoom. Scroll up = zoom in.
     c.addEventListener(
       "wheel",
       (e: WheelEvent) => {
         e.preventDefault();
-        this.setScale(this.getView().scale + e.deltaY * this.zoomSens);
+        this.cacheRect();
+        const [x, y] = this.toCanvas(e.clientX, e.clientY);
+        this.zoomAt(x, y, this.getView().scale + e.deltaY * this.zoomSens);
       },
       { passive: false }
     );
 
-    // Touch: one finger rotates, two fingers pinch-zoom.
     c.addEventListener(
       "touchstart",
       (e: TouchEvent) => {
+        this.cacheRect();
         if (e.touches.length === 1) {
           this.dragging = true;
-          this.pxScale = c.width / c.getBoundingClientRect().width;
-          this.lastX = e.touches[0].clientX;
-          this.lastY = e.touches[0].clientY;
+          [this.lastX, this.lastY] = this.toCanvas(
+            e.touches[0].clientX,
+            e.touches[0].clientY
+          );
         } else if (e.touches.length === 2) {
           e.preventDefault();
           this.dragging = false;
           this.pinchDistance = this.touchDistance(e.touches[0], e.touches[1]);
-          this.pinchStartScale = this.getView().scale;
+          [this.pinchX, this.pinchY] = this.toCanvas(
+            (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            (e.touches[0].clientY + e.touches[1].clientY) / 2
+          );
         }
       },
       { passive: false }
@@ -131,16 +168,19 @@ export class GlobeController {
       (e: TouchEvent) => {
         if (e.touches.length === 1 && this.dragging) {
           e.preventDefault();
-          const t = e.touches[0];
-          this.rotateBy(t.clientX - this.lastX, t.clientY - this.lastY);
-          this.lastX = t.clientX;
-          this.lastY = t.clientY;
+          const [x, y] = this.toCanvas(e.touches[0].clientX, e.touches[0].clientY);
+          this.dragTo(x, y);
         } else if (e.touches.length === 2 && this.pinchDistance !== null) {
           e.preventDefault();
           const dist = this.touchDistance(e.touches[0], e.touches[1]);
           const ratio = dist / this.pinchDistance;
+          this.pinchDistance = dist;
           // fingers apart (ratio > 1) → zoom in → scale decreases
-          this.setScale(this.pinchStartScale - (ratio - 1) * PINCH_ZOOM_SENS);
+          this.zoomAt(
+            this.pinchX,
+            this.pinchY,
+            this.getView().scale - (ratio - 1) * PINCH_ZOOM_SENS
+          );
         }
       },
       { passive: false }

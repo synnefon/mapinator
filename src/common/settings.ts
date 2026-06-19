@@ -70,9 +70,9 @@ export const FRACTAL = {
 // CONTINENT — carrier wave: decides land vs water, then a shaping curve maps it
 // to a base height (abyss → shelf edge → inland).
 export const CONTINENT = {
-  WAVELENGTH: [2, 3], // larger = bigger, fewer continents
-  WARP: [0.2, 0.55], // higher = more organic, wandering coasts
-  OCTAVES: 5, // carrier octaves; more = more island sizes / richer coasts
+  WAVELENGTH: [1.5, 2.5], // larger = bigger, fewer continents
+  WARP: [0.55, 0.55], // higher = more organic, wandering coasts
+  OCTAVES: 5.5, // carrier octaves; more = more island sizes / richer coasts
   AMPLITUDE: [0.8, 0.8], // higher = more decisive land/ocean split, sharper coasts
   SHELF: [0.4, 0.62], // [ocean edge, full inland] continentalness band; wider = gentler coasts
   ABYSS_HEIGHT: 0.0, // floor at deepest ocean (C=0); lower = deeper abyssal plains
@@ -98,21 +98,14 @@ export const COAST = {
 } as const;
 
 export const MOUNTAIN = {
-  WAVELENGTH: [0.5, 1], // coarse — broad inland relief; larger = bigger ranges
-  AMPLITUDE: [0.3, 0.7], // relief deep inland → mountain height
-} as const;
-
-// FEATURE_DETAIL — "erosion": a low-frequency wave that scales the COAST/MOUNTAIN
-// relief amplitude between smooth and rugged regions within one map.
-export const FEATURE_DETAIL = {
-  WAVELENGTH: [0.9, 0.9], // larger = broader smooth/rugged zones (per seed)
-  AMPLITUDE: [0.5, 0.7], // FEATURE amplitude [smooth zones, rugged zones]; raise hi for taller/more mountains
+  WAVELENGTH: [0.5, 0.8], // coarse — broad inland relief; larger = bigger ranges
+  AMPLITUDE: [0.3, 0.5], // relief deep inland → mountain height
 } as const;
 
 // MOISTURE — drives wet/dry biome coloring.
 export const MOISTURE = {
-  WAVELENGTH: [0.28, 0.7], // larger = bigger climate zones
-  AMPLITUDE: 0.6, // higher = stronger wet/dry swings
+  WAVELENGTH: [0.5, 0.7], // larger = bigger climate zones
+  AMPLITUDE: 0.4, // higher = stronger wet/dry swings
   CONTRAST: 0.5, // higher = sharper wet/dry boundaries
 } as const;
 
@@ -120,15 +113,22 @@ export const MOISTURE = {
 // (one size shared by both poles); higher = smaller caps. ASYMMETRY lets the two
 // poles differ slightly so they aren't identical.
 export const ICE = {
-  EXTENT: [0.7, 0.92], // |y| where ice starts; higher = smaller caps
+  EXTENT: [0.8, 0.92], // |y| where ice starts; higher = smaller caps
   ASYMMETRY: [-0.04, 0.04], // per-pole tweak around the shared extent
   EDGE: 0.08, // softness of the ice → land transition
   WOBBLE: 0.06, // irregularity of the cap edge (ragged coastline)
   FREQ: 2.5, // wobble spatial frequency; higher = more wiggle
 } as const;
 
+// FEATURE_DETAIL — "erosion": a low-frequency wave that scales the COAST/MOUNTAIN
+// relief amplitude between smooth and rugged regions within one map.
+export const FEATURE_DETAIL = {
+  WAVELENGTH: [0.8, 1.5], // larger = broader smooth/rugged zones (per seed)
+  AMPLITUDE: [0.5, 0.7], // FEATURE amplitude [smooth zones, rugged zones]; raise hi for taller/more mountains
+} as const;
+
 // Per-seed wet/dry bias applied at render time (not a wave). higher = wetter.
-export const RAINFALL = [0.45, 0.8] as const;
+export const RAINFALL = [0.65, 0.8] as const;
 
 // Fixed elevation contrast applied before coloring (no longer sea-level coupled).
 // Higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones.

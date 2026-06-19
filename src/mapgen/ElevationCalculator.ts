@@ -76,7 +76,8 @@ export class ElevationCalculator {
     z: number,
     coastWavelength: number,
     mountainWavelength: number,
-    oceanWavelength: number
+    oceanWavelength: number,
+    extraOctaves: number
   ): number {
     const C = this.continentalness(x, y, z);
     // Shelf ramp: 0 out in open ocean → 1 once fully inland. Sets the base height
@@ -104,7 +105,7 @@ export class ElevationCalculator {
       z,
       oceanWavelength,
       this.oceanAmplitude,
-      FRACTAL.OCTAVES,
+      FRACTAL.OCTAVES + extraOctaves,
       FRACTAL.GAIN,
       FRACTAL.LACUNARITY
     );
@@ -115,7 +116,7 @@ export class ElevationCalculator {
       z,
       coastWavelength,
       this.coastAmplitude,
-      FRACTAL.OCTAVES,
+      FRACTAL.OCTAVES + extraOctaves,
       FRACTAL.GAIN,
       FRACTAL.LACUNARITY
     );
@@ -126,7 +127,7 @@ export class ElevationCalculator {
       z,
       mountainWavelength,
       this.mountainAmplitude,
-      FRACTAL.OCTAVES,
+      FRACTAL.OCTAVES + extraOctaves,
       FRACTAL.GAIN,
       FRACTAL.LACUNARITY
     );
@@ -179,7 +180,7 @@ export class ElevationCalculator {
    * broad smooth regions (FEATURE_DETAIL.AMPLITUDE[0]) and rugged ones ([1]), so
    * one map has both flat plains and jagged highlands.
    */
-  private erosionAmplitudeAt(x: number, y: number, z: number): number {
+  public erosionAmplitudeAt(x: number, y: number, z: number): number {
     const e = this.noise3D(
       x / this.erosionWavelength + EROSION_OFFSET_X,
       y / this.erosionWavelength + EROSION_OFFSET_Y,

@@ -1,4 +1,5 @@
 import { clamp } from "./util";
+import { mixHex } from "./colorUtils";
 
 // ===================== Public Types =====================
 export type Theme =
@@ -63,30 +64,6 @@ export function getElevationBandNameRaw(elevation: number): {
   return firstBreak!;
 }
 
-const elevationBand = (e: number): ElevationFamily => {
-  if (e < 0) return "OCEAN";
-  const band = getElevationBandNameRaw(e)!;
-  return band.colorFamily;
-};
-
-// ===================== Moisture Discretization =====================
-const MOISTURE_BAND_BREAKS: readonly {
-  band: MoistureBand;
-  breakPoint: number;
-}[] = [
-  { band: "DRY", breakPoint: 0.2 },
-  { band: "MID", breakPoint: 0.6 },
-  { band: "WET", breakPoint: 1 },
-] as const;
-
-const moistureBand = (m: number): MoistureBand => {
-  m = clamp(m);
-  const ret = MOISTURE_BAND_BREAKS.find(
-    ({ breakPoint }) => m <= breakPoint
-  )?.band;
-  return ret!;
-};
-
 // ===================== Theme → BiomeKey → Hex =====================
 export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
   default: {
@@ -137,23 +114,23 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     // OCEAN: "#44447a",
     OCEAN: "#34699A",
 
-    // very high — misty rock faces and mossy peaks
-    DRY_VERY_HIGH: "#bfb9a4",
-    MID_VERY_HIGH: "#c4c2bc",
-    WET_VERY_HIGH: "#E7E8E9",
+    // very high — snow caps (white)
+    DRY_VERY_HIGH: "#d9dbdd", // wind-scoured pale rock/snow
+    MID_VERY_HIGH: "#eef1f3", // snow
+    WET_VERY_HIGH: "#ffffff", // deep snow
 
-    // high — elevated forest canopy, cooler and lighter greens
-    DRY_HIGH: "#7eaa5b", // bright olive canopy, sun-bleached tops
-    MID_HIGH: "#649a4b", // balanced mid-green ridge forests
-    WET_HIGH: "#4d8f45", // humid alpine growth, moderate depth
+    // high — bare mountain rock (gray → near-black when wet)
+    DRY_HIGH: "#9d978b", // light gray rock
+    MID_HIGH: "#7c776f", // mid gray rock
+    WET_HIGH: "#585450", // dark wet rock, near-black
 
-    // medium — lowland jungle and wetlands, denser and darker
-    DRY_MEDIUM: "#557d3f", // drier forest interior, rich shadows
+    // medium — dry = tan steppe, wetter = green
+    DRY_MEDIUM: "#b59f70", // arid-palette tan
     MID_MEDIUM: "#457339", // deeper tone, mossy undercanopy
     WET_MEDIUM: "#356a33", // saturated jungle floor / wet fern green
 
-    // low — tropical basins, rich soil, river systems
-    DRY_LOW: "#9e8e61", // earthy, sun-touched loam
+    // low — dry = sand desert, wetter = green basin
+    DRY_LOW: "#d0c293", // arid-palette sand
     MID_LOW: "#3e6432", // fertile wet ground, near rivers
     WET_LOW: "#27582c", // darkest floodplain, soaked with water
   },
@@ -326,18 +303,65 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
   },
 };
 
-// ===================== Color lookup =====================
+// ===================== Color lookup (blended) =====================
+// Family + moisture "stops" at representative positions; the color is bilinearly
+// blended between the surrounding stops so biomes transition smoothly instead of
+// snapping at band edges. The result is quantized downstream (colorAt) so the
+// total palette stays small.
+const LAND_FAMILY_STOPS: { family: ElevationFamily; center: number }[] = [
+  { family: "LOW", center: 0.11 },
+  { family: "MEDIUM", center: 0.37 },
+  { family: "HIGH", center: 0.635 },
+  { family: "VERY_HIGH", center: 0.875 },
+];
+const MOISTURE_STOPS: { band: MoistureBand; center: number }[] = [
+  { band: "DRY", center: 0.1 },
+  { band: "MID", center: 0.4 },
+  { band: "WET", center: 0.8 },
+];
+
+/** Color for a family, blended across the moisture stops. */
+const familyMoistureColor = (
+  theme: Theme,
+  family: ElevationFamily,
+  moisture: number
+): string => {
+  const colorAtBand = (band: MoistureBand) =>
+    (BiomeColors[theme][`${band}_${family}` as BiomeKey] ??
+      BiomeColors.default[`${band}_${family}` as BiomeKey])!;
+  for (let i = 0; i < MOISTURE_STOPS.length - 1; i++) {
+    const lo = MOISTURE_STOPS[i];
+    const hi = MOISTURE_STOPS[i + 1];
+    if (moisture <= hi.center) {
+      const t = clamp((moisture - lo.center) / (hi.center - lo.center));
+      return mixHex(colorAtBand(lo.band), colorAtBand(hi.band), t);
+    }
+  }
+  return colorAtBand(MOISTURE_STOPS[MOISTURE_STOPS.length - 1].band);
+};
 
 export function colorFor(
   theme: Theme,
   elevation: number,
   moisture: number
 ): string {
-  const eBand = elevationBand(elevation);
-  if (eBand === "OCEAN") return BiomeColors[theme].OCEAN;
-
-  const mBand = moistureBand(moisture);
-
-  const key = `${mBand}_${eBand}` as BiomeKey;
-  return (BiomeColors[theme][key] ?? BiomeColors.default[key])!;
+  if (elevation < 0) return BiomeColors[theme].OCEAN;
+  for (let i = 0; i < LAND_FAMILY_STOPS.length - 1; i++) {
+    const lo = LAND_FAMILY_STOPS[i];
+    const hi = LAND_FAMILY_STOPS[i + 1];
+    if (elevation <= hi.center) {
+      const t = clamp((elevation - lo.center) / (hi.center - lo.center));
+      return mixHex(
+        familyMoistureColor(theme, lo.family, moisture),
+        familyMoistureColor(theme, hi.family, moisture),
+        t
+      );
+    }
+  }
+  const top = LAND_FAMILY_STOPS[LAND_FAMILY_STOPS.length - 1];
+  return familyMoistureColor(theme, top.family, moisture);
 }
+
+/** Per-theme polar-ice color: matches the theme's snowiest peak (WET_VERY_HIGH). */
+export const iceColorFor = (theme: Theme): string =>
+  BiomeColors[theme].WET_VERY_HIGH;

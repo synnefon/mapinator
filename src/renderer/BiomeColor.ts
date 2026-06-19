@@ -7,7 +7,7 @@ import {
   type Theme,
 } from "../common/biomes";
 import { clamp, lerp } from "../common/util";
-import { hexToHsl, hslToHex } from "../common/colorUtils";
+import { hexToHsl, hslToHex, quantizeColor } from "../common/colorUtils";
 import { SEA_LEVEL } from "../common/settings";
 
 /** ================================================
@@ -80,7 +80,8 @@ export function colorAt(
   const s2 = clamp(s * (adj.saturationScale ?? 1));
   const delta = adj.lightness[eBand.band] ?? 0;
   const l2 = clamp(l + delta);
-  return hslToHex(h, s2, l2);
+  // Quantize so the blend stays smooth-ish but the total palette stays small.
+  return quantizeColor(hslToHex(h, s2, l2));
 }
 
 /** ================================================

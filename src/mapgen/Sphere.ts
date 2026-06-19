@@ -34,3 +34,26 @@ export function lonLatToVec3(lon: number, lat: number): Vec3 {
   const cosLat = Math.cos(la);
   return { x: cosLat * Math.cos(lo), y: Math.sin(la), z: cosLat * Math.sin(lo) };
 }
+
+// ===================== Vector helpers =====================
+export const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
+
+/**
+ * Global Fibonacci-sphere positions as a flat [x,y,z, …] Float32Array. The layout
+ * depends only on the point count, so meshing the subset that falls in a view's cap
+ * gives STABLE cell shapes as you pan (overlapping views share the same points)
+ * rather than a fresh tessellation each move.
+ */
+export function fibonacciPositions(n: number): Float32Array {
+  const out = new Float32Array(n * 3);
+  const denom = Math.max(1, n - 1);
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i / denom) * 2;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const a = i * GOLDEN_ANGLE;
+    out[3 * i] = Math.cos(a) * r;
+    out[3 * i + 1] = y;
+    out[3 * i + 2] = Math.sin(a) * r;
+  }
+  return out;
+}
