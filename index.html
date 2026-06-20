@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/mapinator/assets/index-B2uNy-KA.js"></script>
-  <link rel="stylesheet" crossorigin href="/mapinator/assets/index-CWbj1sU9.css">
+  <script type="module" crossorigin src="/mapinator/assets/index-CsBQSZZH.js"></script>
+  <link rel="stylesheet" crossorigin href="/mapinator/assets/index-axUWTEbg.css">
 </head>
 
 <body>
@@ -40,21 +40,7 @@
       </button>
     </div>
 
-    <!-- 2. theme -->
-    <div id="themeSelectContainer">
-      <label>theme</label>
-      <div id="themeRadioList">
-        <label><input type="radio" class="theme-radio" name="theme" value="lush" checked> LUSH</label>
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="default"> DEFAULT</label> -->
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="arid"> ARID</label> -->
-        <label><input type="radio" class="theme-radio" name="theme" value="grayscale"> GRAYSCALE</label>
-        <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> RAINBOW</label>
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="volcano"> VOLCANO</label> -->
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="oasis"> OASIS</label> -->
-      </div>
-    </div>
-
-    <!-- 3. sliders + reset -->
+    <!-- 2. sliders + reset -->
     <div class="settings-section">
       <label>map settings</label>
       <div class="toolbar">
@@ -71,6 +57,20 @@
     </div>
       <div class="reset-sliders-btn-container">
         <button id="resetSlidersBtn">reset</button>
+      </div>
+    </div>
+
+    <!-- 3. theme -->
+    <div id="themeSelectContainer">
+      <label>theme</label>
+      <div id="themeRadioList">
+        <label><input type="radio" class="theme-radio" name="theme" value="lush" checked> LUSH</label>
+        <!-- <label><input type="radio" class="theme-radio" name="theme" value="default"> DEFAULT</label> -->
+        <!-- <label><input type="radio" class="theme-radio" name="theme" value="arid"> ARID</label> -->
+        <label><input type="radio" class="theme-radio" name="theme" value="grayscale"> GRAYSCALE</label>
+        <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> RAINBOW</label>
+        <!-- <label><input type="radio" class="theme-radio" name="theme" value="volcano"> VOLCANO</label> -->
+        <!-- <label><input type="radio" class="theme-radio" name="theme" value="oasis"> OASIS</label> -->
       </div>
     </div>
 
@@ -95,11 +95,9 @@
       <!-- Map overlay: re-orient north. A DOM element over the canvas, so it never
            appears in the PNG export (which composites only the canvas bitmap). -->
       <button id="northBtn" class="map-overlay-btn img-button-container" title="point north">
-        <!-- Two crossed blades (a thin 3D needle) so the compass doesn't vanish edge-on. -->
-        <span id="northCompass">
-          <img class="button-img" src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3e%3cpath%20d='M12%201.5%20L20.5%2021.5%20L12%2016.8%20L3.5%2021.5%20Z'%20fill='%23000'/%3e%3c/svg%3e"></img>
-          <img class="button-img" src="data:image/svg+xml,%3csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3e%3cpath%20d='M12%201.5%20L20.5%2021.5%20L12%2016.8%20L3.5%2021.5%20Z'%20fill='%23000'/%3e%3c/svg%3e"></img>
-        </span>
+        <!-- Real 3D compass needle (Zdog), spun each frame in main.ts to point at north. Its
+             own canvas, separate from the map, so it never lands in the PNG export. -->
+        <canvas id="northCompass" width="50" height="50"></canvas>
       </button>
     </div>
   </div>
