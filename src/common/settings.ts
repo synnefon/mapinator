@@ -78,7 +78,7 @@ export const LOD = {
   EAGER_MAX_POINTS: 2_500_000, // during motion, generate patches up to here live; heavier waits for the settle
 
   // --- ladder shape ---
-  MIN_PATCH_POINTS: 300_000, // coarsest patch — a gentle step above the global mesh
+  MIN_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh
   POINT_RATIO: 2, // density ratio between levels; smaller = more, finer-spaced bands
   CAP_MARGIN: 1.5, // patch cap radius ÷ view radius (pan preload)
   PATCH_RECENTER: 0.12, // regen when the view center moves this fraction of the cap
