@@ -3,6 +3,8 @@ import { getLuminance, hexToRgb, hexToRgba } from "./colorUtils";
 
 export interface ThemeUIColors {
   bg: string;
+  menuBg: string;
+  menuText: string;
   text: string;
   highlight: string;
   highlightText: string;
@@ -19,42 +21,56 @@ export interface ThemeUIColors {
 export const THEME_UI_COLORS: Record<Theme, ThemeUIColors> = {
   default: {
     bg:"rgb(200, 200, 200)",
+    menuBg: "rgb(200, 200, 200)",
+    menuText: "rgb(200, 200, 200)",
     text:"#000000",
     highlight: "#0000ff",
     highlightText: "rgb(200, 200, 200)",
   },
   arid: {
     bg: "#131322",
+    menuBg: "#131322",
+    menuText: "#bbae8c",
     text: "#bbae8c",
     highlight: "#96854d",
     highlightText: "#181828",
   },
   lush: {
     bg: "rgb(10, 10, 10)",
+    menuBg: "rgb(184, 201, 193)",
+    menuText: "rgb(42, 42, 42)",
     text:"#b8c9c1",
     highlight: "rgb(0, 0, 255)",
     highlightText:"#b8c9c1",
   },
   rainbow: {
     bg: "#5900FF",
+    menuBg: "#5900FF",
+    menuText: "#f8961e",
     text: "#f8961e",
     highlight: "#f94144",
     highlightText: "#e8f5e9",
   },
   oasis: {
     bg: "#A89168",
+    menuBg: "#A89168",
+    menuText: "#04009A",
     text: "#04009A",
     highlight: "#E3D2A6",
     highlightText: "#04009A",
   },
   grayscale: {
     bg: "rgb(63, 63, 63)",
+    menuBg: "rgb(63, 63, 63)",
+    menuText: "rgb(200, 200, 200)",
     text: "#e0e0e0",
     highlight: "rgb(184, 184, 184)",
     highlightText: "rgb(63, 63, 63)",
   },
   volcano: {
     bg: "#1A1A1A", 
+    menuBg: "#1A1A1A",
+    menuText: "#907168",
     text: "#907168",
     highlight: "#78493C",
     highlightText: "#CDCEC4",
@@ -95,6 +111,8 @@ export function applyThemeUIColors(theme: Theme): void {
   const root = document.documentElement;
 
   root.style.setProperty("--bg", colors.bg);
+  root.style.setProperty("--menuBg", colors.menuBg);
+  root.style.setProperty("--menuText", colors.menuText);
   root.style.setProperty("--text", colors.text);
   root.style.setProperty("--highlight", colors.highlight);
   root.style.setProperty("--highlightText", colors.highlightText);

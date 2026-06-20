@@ -67,18 +67,19 @@ export const SLIDER_RANGES = {
  *  ===================================================================== */
 export const LOD = {
   // --- detail ceiling (max / deepest zoom) ---
-  MAX_PATCH_POINTS: 15_000_000, // finest level's point density = max-zoom fidelity; raise = sharper deepest zoom
+  MAX_PATCH_POINTS: 11_000_000, // finest level's point density = max-zoom fidelity; raise = sharper deepest zoom
   MAX_EXTRA_OCTAVES: 6, // extra fractal octaves at the finest level (fine surface detail)
   MAX_ZOOM: 26, // radius multiplier at zoom 1; deeper = finest cells spread over less area = sharper
 
   // --- when detail kicks in (higher-def earlier) ---
-  BAND_SHIFT: 1.7, // >1 = detail appears EARLIER (bands trigger at a wider view); <1 = later/closer
-  FINEST_ABOVE_DEG: 6, // view radius (°) the finest level enters at → on-screen cell size; smaller = sharper but later
+  // Density ramps geometrically from the global mesh (zoom 0) to MAX_PATCH_POINTS (zoom 1);
+  // DETAIL_BIAS bends that curve. >1 = detail appears earlier, 1 = even, <1 = later.
+  DETAIL_BIAS: 1.5,
   EAGER_MAX_POINTS: 2_500_000, // during motion, generate patches up to here live; heavier waits for the settle
 
   // --- ladder shape ---
-  MIN_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh
-  POINT_RATIO: 1.7, // density ratio between levels; smaller = more, finer-spaced bands
+  MIN_PATCH_POINTS: 300_000, // coarsest patch — a gentle step above the global mesh
+  POINT_RATIO: 2, // density ratio between levels; smaller = more, finer-spaced bands
   CAP_MARGIN: 1.5, // patch cap radius ÷ view radius (pan preload)
   PATCH_RECENTER: 0.12, // regen when the view center moves this fraction of the cap
 

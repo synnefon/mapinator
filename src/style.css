@@ -1,7 +1,9 @@
 :root {
   --bg: #131322;
+  --menuBg: #131322;
+  --menuText: #131322;
   --text: #131322;
-  --track: var(--text);
+  --track: var(--menuText);
   --highlight: #131322;
   --highlightText: #131322;
 
@@ -11,7 +13,7 @@
   font-size: 2vh;
 
   color-scheme: light dark;
-  color: var(--text);
+  color: var(--menuText);
   background-color: var(--bg);
   text-rendering: optimizeLegibility;
 }
@@ -49,7 +51,7 @@ img.button-img {
 
 button.img-button-container img.button-img,
 button.img-button-container-small img.button-img-small {
-  background-color: var(--text);
+  background-color: var(--menuText);
   mask-size: contain;
   mask-repeat: no-repeat;
   mask-position: center;
@@ -83,12 +85,12 @@ body {
   width: 25vw;
   height: 100vh;
   z-index: 8;
-  background: var(--bg);
+  background: var(--menuBg);
   display: flex;
   flex-direction: column;
   gap: 1.6rem;
-  padding-left: 2em;
-  padding-right: 1em;
+  padding-left: 1.5em; /* equal L/R so the content block is centred in the bar */
+  padding-right: 1.5em;
   padding-top: 1em;
   box-sizing: border-box;
   transition: transform 0.4s ease, opacity 0.3s ease;
@@ -111,8 +113,8 @@ body.tools-collapsed .left-sidebar {
   transform: translateY(-50%);
   z-index: 9;
   border: none;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--menuBg);
+  color: var(--menuText);
   font-size: 1.6rem;
   line-height: 1;
   padding: 16px 10px;
@@ -125,7 +127,7 @@ body.tools-collapsed #toolsToggle {
   left: 0;
 }
 #toolsToggle:hover {
-  background: var(--bg);
+  background: var(--menuBg);
   color: var(--highlight);
 }
 
@@ -144,7 +146,7 @@ body.tools-collapsed #toolsToggle {
   display: flex;
   flex-direction: column;
   gap: 0.85vh;
-  border: 4px solid var(--text);
+  border: 4px solid var(--menuText);
   padding: 0.5em 0.5em 1.3em; /* extra space below the last slider before the box edge */
   box-sizing: border-box;
   overflow-y: auto;
@@ -179,6 +181,7 @@ body.tools-collapsed #toolsToggle {
 
 #resetSlidersBtn {
   width: 100%;
+  color: var(--menuText);
 }
 
 *.enable-transition {
@@ -257,7 +260,7 @@ body.tools-collapsed #toolsToggle {
 
 /* WebKit browsers */
 input[type="range"]::-webkit-slider-runnable-track {
-  background: var(--bg);
+  background: var(--menuBg);
   height: 8px;
   border: 2px solid var(--track);
   border-radius: 8px; /* match the rounded boxes (the global *{} radius skips pseudo-elements) */
@@ -310,7 +313,7 @@ input[type="checkbox"] {
   outline: none;
   width: 1.7em;
   height: 1.7em;
-  border: 4px solid var(--text);
+  border: 4px solid var(--menuText);
   cursor: pointer;
   background-color: var(--bg);
 }
@@ -355,9 +358,9 @@ input[type="checkbox"]:indeterminate::after {
 
 #themeRadioList {
   overflow-y: auto;
-  border: 4px solid var(--text);
+  border: 4px solid var(--menuText);
   padding: 0.5em;
-  background-color: var(--bg);
+  background-color: var(--menuBg);
 }
 
 #themeRadioList label {
@@ -382,7 +385,7 @@ input[type="radio"]:active {
 
 input[type="radio"]:checked {
   background-color: var(--highlight);
-  color: var(--text);
+  color: var(--menuText);
 }
 
 .theme-radio {
@@ -391,9 +394,9 @@ input[type="radio"]:checked {
 }
 
 select {
-  background-color: var(--bg);
-  border: 4px solid var(--text);
-  color: var(--text);
+  background-color: var(--menuBg);
+  border: 4px solid var(--menuText);
+  color: var(--menuText);
   font-family: 'Roboto Mono', monospace;
   font-weight: 400;
   font-size: 0.8em;
@@ -414,7 +417,7 @@ select[multiple] option:checked {
 
 select[multiple] optgroup {
   font-weight: bold;
-  color: var(--text);
+  color: var(--menuText);
 }
 
 ::selection {
@@ -445,9 +448,9 @@ select[multiple] optgroup {
   min-width: 0; /* allow the input to shrink within the flex row */
   border: none;
   border-bottom: 2px solid transparent; /* underline hidden until focus/hover; 2px reserved so no jump */
-  background-color: var(--bg);
+  background-color: var(--menuBg);
   border-radius: 0px;
-  color: var(--text);
+  color: var(--menuText);
   outline: none;
   font-family: 'Roboto Mono', monospace;
   font-weight: 700;
@@ -521,6 +524,8 @@ select[multiple] optgroup {
   align-items: center;
   justify-content: center;
   padding: 0.45rem; /* equal padding so the (rotating) compass icon sits centred */
+  background-color: var(--bg);
+  border: 2px solid var(--text);
 }
 
 /* North compass: a real 3D needle rendered with Zdog into this canvas (built + spun in
@@ -536,10 +541,10 @@ button {
   font-family: inherit;
   font-size: 1rem;
   padding: 0.5rem 1rem;
-  border: 4px solid var(--text);
+  border: 4px solid var(--menuText);
   background: #111;
-  color: var(--text);
-  background-color: var(--bg);
+  color: var(--menuText);
+  background-color: var(--menuBg);
   cursor: pointer;
   transition: background 0.2s ease;
 }
@@ -595,8 +600,8 @@ h4 {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  /* background: var(--bg); */
-  border: 4px solid var(--text);
+  /* background: var(--menuBg); */
+  border: 4px solid var(--bg);
   padding: 1rem;
 }
 
@@ -674,9 +679,9 @@ img.button-img-small {
 #languageCheckboxList {
   max-height: 40vh;
   overflow-y: scroll;
-  border: 4px solid var(--text);
+  border: 4px solid var(--menuText);
   padding: 0.5em;
-  background-color: var(--bg);
+  background-color: var(--menuBg);
   scrollbar-gutter: stable;
 }
 
@@ -685,14 +690,14 @@ img.button-img-small {
 }
 
 *::-webkit-scrollbar-track {
-  background: var(--bg);
+  background: var(--menuBg);
   /* border: 2px solid var(--text); */
-  border-right: 4px solid var(--text);
-  border-left: 4px solid var(--text);
+  border-right: 4px solid var(--menuText);
+  border-left: 4px solid var(--menuText);
 }
 
 *::-webkit-scrollbar-thumb {
-  background: var(--text);
+  background: var(--menuText);
   border-radius: 0px;
 }
 
@@ -709,7 +714,7 @@ img.button-img-small {
 
 hr {
   height: 2px;
-  border-top: 2px dashed var(--text);
+  border-top: 2px dashed var(--menuText);
   /* Red dashed line */
   width: stretch;
 }
@@ -722,7 +727,7 @@ hr {
   font-weight: bold;
   font-size: 0.9em;
   margin-bottom: 0.3em;
-  color: var(--text);
+  color: var(--menuText);
   cursor: pointer;
   user-select: none;
   display: block;
@@ -763,12 +768,12 @@ hr {
 
   .sidebar {
     border-right: none;
-    border-bottom: 2px solid var(--text);
+    border-bottom: 2px solid var(--menuText);
   }
 }
 
 .downloadPopupBtn:hover {
-  color: var(--text);
+  color: var(--menuText);
 }
 
 * {

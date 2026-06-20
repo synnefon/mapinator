@@ -1,17 +1,8 @@
 import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
-import { MAPINATION_FILE_EXTENSION } from "./common/constants";
 import type { GlobeMap, Vec3 } from "./common/map";
-import {
-  isValidSaveFile,
-  LOD,
-  MAP_DEFAULTS,
-  type MapSettings,
-} from "./common/settings";
-import {
-  applyThemeUIColors,
-  generateThemeButtonCSS,
-} from "./common/themeColors";
+import { LOD, MAP_DEFAULTS, type MapSettings } from "./common/settings";
+import { generateThemeButtonCSS } from "./common/themeColors";
 import { debounce } from "./common/util";
 import { globePointCount } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
@@ -29,99 +20,58 @@ import {
   qSlerp,
   type Quat,
 } from "./common/rotation";
-import { sliderDefs, UIManager } from "./UIManager";
-
-// --- Utility Functions ---
-const playEffect = (el: HTMLElement, effect: "bounce" | "spin") => {
-  el.classList.remove(effect);
-  void el.offsetWidth;
-  el.classList.add(effect);
-};
-
-const fadeOut = (btn: HTMLButtonElement) => {
-  btn.classList.add("clicked");
-  requestAnimationFrame(() => {
-    btn.classList.add("enable-transition");
-    setTimeout(() => {
-      btn.classList.remove("clicked");
-      const off = (e: { propertyName: string }) => {
-        if (e.propertyName === "background-color") {
-          btn.classList.remove("enable-transition");
-          btn.removeEventListener("transitionend", off);
-        }
-      };
-      btn.addEventListener("transitionend", off);
-    }, 222);
-  });
-};
-
-const downloadFile = (c: string | Blob, fname: string, m: string) => {
-  const blob = c instanceof Blob ? c : new Blob([c], { type: m });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fname;
-  document.body.appendChild(link);
-  link.click();
-  setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, 100);
-};
+import { UIManager } from "./UIManager";
+import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 
 // --- Setup & State ---
 const mapCache = new Map<string, GlobeMap>();
 
-// Level-of-detail. Zoomed out (view radius > the coarsest `aboveDeg`) we draw the
-// whole-globe mesh; zoomed in we mesh a cap BIGGER than the view (`capDeg` = preload
-// margin so panning is already loaded) from the global Fibonacci point set, layering
-// `octaves` of finer detail. `points` is that global density → ~points·capArea cells.
+// Level-of-detail. Zoomed out we draw the whole-globe mesh; zoomed in we mesh a cap BIGGER
+// than the view (CAP_MARGIN = preload so panning is already loaded) from the global Fibonacci
+// point set, layering `octaves` of finer detail. `points` is that density.
 //
-// The ladder is DERIVED from the knobs below, not hand-placed, so fidelity stays
-// uniform: `points` steps geometrically (×POINT_RATIO) from MIN to MAX — a SMALLER ratio
-// packs more, finer-spaced bands across the same zoom range — and each level's activation
-// angle is solved so every level ENTERS the screen at the same cell size (anchored by the
-// finest level at FINEST_ABOVE_DEG). BAND_SHIFT then nudges every trigger a bit more
-// zoomed-in. Cells in view ≈ points·(1−cos halfDeg)/2; holding that constant ⇒ points·(1−
-// cos aboveDeg) constant ⇒ every patch is ~the same cell count (~equal gen time).
-// All tunable in settings.ts (LOD). Destructured so the ladder math below reads cleanly.
+// The ladder is DERIVED, not hand-placed: `points` steps geometrically (×POINT_RATIO) from the
+// global mesh up to MAX_PATCH_POINTS, and each rung's activation ZOOM is where that same
+// geometric density curve (global at zoom 0 → max at zoom 1) reaches its density. DETAIL_BIAS
+// bends the curve earlier/later. All tunable in settings.ts (LOD); destructured for the math.
 const {
   PATCH_RECENTER,
   MAX_PATCH_POINTS,
   MIN_PATCH_POINTS,
   POINT_RATIO,
-  FINEST_ABOVE_DEG,
-  BAND_SHIFT,
+  DETAIL_BIAS,
   CAP_MARGIN,
   MAX_EXTRA_OCTAVES,
   EAGER_MAX_POINTS,
   PNG_MIN_EXPORT_POINTS,
 } = LOD;
+// The global mesh is the curve's zoom-0 anchor (rung 0, 0 extra octaves).
+const GLOBAL_POINTS = globePointCount(MAP_DEFAULTS.resolution);
 
 type PatchLevel = {
-  aboveDeg: number;
-  capDeg: number;
+  aboveZoom: number; // activate this level once zoom ≥ this (0..1)
   points: number;
   octaves: number;
 };
 
-/** LOD ladder, coarsest → finest, generated from the constants above. */
+/** LOD ladder, coarsest → finest, sampled from the geometric density-vs-zoom curve. */
 function buildPatchLevels(): PatchLevel[] {
   const points: number[] = [];
   for (let p = MAX_PATCH_POINTS; p >= MIN_PATCH_POINTS; p /= POINT_RATIO) {
     points.unshift(p);
   }
-  // Cell-size target, anchored by the finest level entering at FINEST_ABOVE_DEG.
-  const targetCells =
-    (MAX_PATCH_POINTS * (1 - Math.cos((FINEST_ABOVE_DEG * Math.PI) / 180))) / 2;
+  // Geometric curve: global density at zoom 0 → MAX_PATCH_POINTS at zoom 1. A rung of density p
+  // sits at t = ln(p/global)/ln(max/global). We shift each trigger half a rung earlier so a
+  // level is active around the zoom it best fits (and the finest gets a band, not just zoom 1).
+  const span = Math.log(MAX_PATCH_POINTS / GLOBAL_POINTS);
+  const halfRung = (0.5 * Math.log(POINT_RATIO)) / span;
   return points.map((p, i) => {
-    const cosAbove = Math.max(-1, Math.min(1, 1 - (2 * targetCells) / p));
-    // BAND_SHIFT pulls every level's trigger a bit more zoomed-in.
-    const aboveDeg = (((Math.acos(cosAbove) * 180) / Math.PI) * BAND_SHIFT).toFixed(2);
+    const t = Math.log(p / GLOBAL_POINTS) / span; // 0..1 along the curve (1 at MAX)
+    // DETAIL_BIAS > 1 pulls denser detail to lower zoom (earlier).
+    const aboveZoom = Math.pow(Math.max(0, Math.min(1, t - halfRung)), DETAIL_BIAS);
     return {
       points: p,
-      aboveDeg: parseFloat(aboveDeg),
-      capDeg: parseFloat((parseFloat(aboveDeg) * CAP_MARGIN).toFixed(2)),
+      aboveZoom: parseFloat(aboveZoom.toFixed(4)),
       // Octaves spread evenly from the global mesh (rung 0, 0 extra octaves) up to the finest
       // patch (MAX_EXTRA_OCTAVES). Patch i is rung i+1 of points.length rungs above the global.
       octaves: Math.round((MAX_EXTRA_OCTAVES * (i + 1)) / points.length),
@@ -131,11 +81,6 @@ function buildPatchLevels(): PatchLevel[] {
 const PATCH_LEVELS: PatchLevel[] = buildPatchLevels();
 console.log("\nPATCH_LEVELS");
 console.table(PATCH_LEVELS);
-
-
-// Map titles are capped at this length: generated names retry/truncate to fit, and the
-// input blocks typing past it.
-const MAX_TITLE_LEN = 18;
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -194,56 +139,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let northAnim: number | null = null;
   // Whole-globe vs detail-patch, last seen — so the tools auto-toggle only when it flips.
   let lastLocal: boolean | null = null;
+  // Filled in by setupMenuBar (below): main calls these for auto-collapse (setView) and to
+  // show the current map name in the title input (redraw).
+  let setToolsCollapsed: (collapsed: boolean) => void = () => {};
+  let setTitle: (name: string) => void = () => {};
 
-  // UI Elements
-  const {
-    map: canvas,
-    mapTitle,
-    regenBtn,
-    regenBtnImg,
-    northBtn,
-    resetSlidersBtn,
-    loadTitleBtn,
-    loadTitleBtnImg,
-    downloadBtn,
-    uploadBtn,
-    downloadPNGBtn,
-    downloadSaveBtn,
-    cancelPopupBtn,
-  } = ui.getAllElements();
-  mapTitle.maxLength = MAX_TITLE_LEN; // block typing past the limit (1b)
-
-  // Shrink the title font (down to a floor) so the title + check never overflow the menu bar.
-  const MAX_TITLE_FONT_EM = 2.4;
-  const MIN_TITLE_FONT_PX = 12;
-  const fitTitleFont = () => {
-    const rootPx =
-      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    const maxPx = MAX_TITLE_FONT_EM * rootPx;
-    mapTitle.style.fontSize = `${maxPx}px`;
-    const avail = mapTitle.clientWidth; // flex-allocated width (no horizontal padding)
-    const needed = mapTitle.scrollWidth; // text width at the max font
-    if (needed > avail && avail > 0) {
-      // Monospace width scales with font size, so one proportional step fits it.
-      const px = Math.max(MIN_TITLE_FONT_PX, ((maxPx * avail) / needed) * 0.97);
-      mapTitle.style.fontSize = `${px}px`;
-    }
-  };
-  mapTitle.addEventListener("input", fitTitleFont);
-  window.addEventListener("resize", fitTitleFont);
-  document.fonts?.ready.then(fitTitleFont); // re-fit once the title font has loaded
-
-  // Tools sidebar floats above the map; collapsible any time via the toggle, and auto
-  // opened/closed when a MAP zoom gesture crosses globe↔detail (see setView). The toggle glyph
-  // points the way it'll move: "<" collapses, ">" opens.
-  const toolsToggle = document.getElementById("toolsToggle");
-  const setToolsCollapsed = (collapsed: boolean) => {
-    document.body.classList.toggle("tools-collapsed", collapsed);
-    if (toolsToggle) toolsToggle.textContent = collapsed ? ">" : "<";
-  };
-  toolsToggle?.addEventListener("click", () =>
-    setToolsCollapsed(!document.body.classList.contains("tools-collapsed"))
-  );
+  // UI Elements (main keeps the canvas + the north overlay; the rest live in the menu).
+  const { map: canvas, northBtn } = ui.getAllElements();
 
   // The north button's 3D compass needle (Zdog), spun each frame to point at north.
   const northCanvas = northBtn.querySelector<HTMLCanvasElement>("#northCompass");
@@ -436,26 +338,26 @@ document.addEventListener("DOMContentLoaded", () => {
   type View = { local: false } | LocalView;
 
   function currentView(): View {
-    const radiusPx = globeRadiusPx(canvas, appState.settings.zoom);
-    // angular radius from the view center to the canvas corner (covers the view)
-    const halfDeg =
-      (Math.asin(
-        Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
-      ) *
-        180) /
-      Math.PI;
-    // finest level whose band still contains this zoom; -1 → whole globe
+    const zoom = appState.settings.zoom;
+    // finest level whose activation zoom we've reached; -1 → whole globe
     let level = -1;
     for (let i = 0; i < PATCH_LEVELS.length; i++) {
-      if (halfDeg < PATCH_LEVELS[i].aboveDeg) level = i;
+      if (zoom >= PATCH_LEVELS[i].aboveZoom) level = i;
     }
     if (level < 0) return { local: false };
     const lv = PATCH_LEVELS[level];
+    // Cap covers the view at this level's activation zoom (its widest, most zoomed-out point)
+    // plus margin. Tied to lv.aboveZoom (fixed per level) → stable within a band for cache reuse.
+    const radiusPx = globeRadiusPx(canvas, lv.aboveZoom);
+    const halfAngle =
+      Math.asin(
+        Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
+      ) * CAP_MARGIN;
     return {
       local: true,
       level,
       center: quatViewCenter(orientation),
-      halfAngle: (lv.capDeg * Math.PI) / 180,
+      halfAngle,
       points: lv.points,
       extraOctaves: lv.octaves,
     };
@@ -555,16 +457,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- UI Helpers ---
-  const drawTitle = (name: string) => {
-    mapTitle.value = name;
-    fitTitleFont(); // new title → re-fit the font to the menu width
-  };
-
   function redraw(newName?: string) {
     if (newName) {
       appState.mapName = newName;
     }
-    drawTitle(appState.mapName);
+    setTitle(appState.mapName);
     ensureMap();
   }
 
@@ -591,47 +488,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!name.trim()) {
       alert("Please enter the name of a map to load in");
       appState.mapName = "";
-      mapTitle.value = "";
+      setTitle("");
       return;
     }
     resetView();
     loadMap(name);
   }
-
-  // --- Bind Sliders ---
-  sliderDefs.forEach((def) => {
-    const slider = ui.getSlider(def.key);
-    ui.updateSliderValue(def.key, Number(appState.settings[def.key]));
-    slider.input.addEventListener("input", () => {
-      let v = Number(slider.input.value);
-      if (!Number.isFinite(v)) v = Number(MAP_DEFAULTS[def.key]);
-      v = Math.max(def.min, Math.min(def.max, v));
-      appState.updateSetting(def.key, v as any);
-      ui.updateSliderValue(def.key, v);
-      drawMap();
-    });
-  });
-
-  // Theme handling
-  ui.themeRadios.forEach((radio) => {
-    radio.checked = radio.value === appState.settings.theme;
-    radio.addEventListener("change", () => {
-      if (radio.checked) {
-        appState.updateSetting("theme", radio.value as MapSettings["theme"]);
-        applyThemeUIColors(radio.value as MapSettings["theme"]);
-        needle?.recolor();
-        drawMap();
-      }
-    });
-  });
-  applyThemeUIColors(appState.settings.theme);
-  needle?.recolor();
-
-  // --- Button handlers ---
-  regenBtn.addEventListener("click", () => {
-    playEffect(regenBtnImg, "spin");
-    loadNewMap(generateMapName());
-  });
 
   // Re-orient north, animating the globe into place. Zoomed in: a pure roll about the view
   // axis — keep your exact spot, just level north (no N/S or E/W movement). Whole-globe:
@@ -654,54 +516,9 @@ document.addEventListener("DOMContentLoaded", () => {
     animateOrientationTo(target);
   });
 
-  resetSlidersBtn.addEventListener("click", () => {
-    fadeOut(resetSlidersBtn);
-    sliderDefs.forEach((d) => appState.updateSetting(d.key, MAP_DEFAULTS[d.key]));
-    sliderDefs.forEach((def) =>
-      ui.updateSliderValue(def.key, Number(appState.settings[def.key]))
-    );
-    mapCache.clear();
-    ensureMap();
-  });
-
-  loadTitleBtn.addEventListener("click", () => {
-    playEffect(loadTitleBtnImg, "bounce");
-    loadNewMap(mapTitle.value.trim());
-  });
-
-  mapTitle.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const val = mapTitle.value.trim();
-      if (val.toUpperCase() !== appState.mapName) {
-        loadNewMap(val);
-        playEffect(loadTitleBtnImg, "bounce");
-        setTimeout(() => mapTitle.blur(), 400);
-      }
-    }
-  });
-
-  // --- Download/Upload ---
-  const handleDownloadSave = () => {
-    const mapTitleText = mapTitle.value || "Untitled Map";
-    const json = JSON.stringify(
-      {
-        seed: appState.mapName,
-        mapSettings: { ...appState.settings },
-      },
-      null,
-      2
-    );
-    downloadFile(
-      json,
-      `${mapTitleText.replace(/\s+/g, "_")}${MAPINATION_FILE_EXTENSION}`,
-      "application/json"
-    );
-  };
-
   // Composite a rendered globe canvas under the titled header and download it.
-  const downloadGlobePNG = (source: HTMLCanvasElement) => {
-    const mapTitleText = mapTitle.value || "Untitled Map";
+  const downloadGlobePNG = (source: HTMLCanvasElement, title: string) => {
+    const mapTitleText = title || "Untitled Map";
     const exportCanvas = Object.assign(document.createElement("canvas"), {
       width: source.width,
       height: source.height + 60,
@@ -726,11 +543,11 @@ document.addEventListener("DOMContentLoaded", () => {
     link.click();
   };
 
-  const handleDownloadPNG = () => {
+  const downloadPNG = (title: string) => {
     const view = currentView();
     // Whole-globe view (or no map yet): export exactly what's on screen.
     if (!view.local || !globalMap) {
-      downloadGlobePNG(canvas);
+      downloadGlobePNG(canvas, title);
       return;
     }
     // Zoomed in: re-render this patch at the export floor (denser than the live zoom
@@ -756,89 +573,26 @@ document.addEventListener("DOMContentLoaded", () => {
         patch.cap
       );
       globeRenderer.draw(canvas, patch, appState.settings, orientation, false);
-      downloadGlobePNG(canvas);
+      downloadGlobePNG(canvas, title);
       scheduleRender(); // restore the live (normal-density) view
     });
   };
 
-  const onLoadSave = (evt: ProgressEvent<FileReader>) => {
-    let saveFile: any;
-    try {
-      saveFile = JSON.parse(evt.target?.result as string);
-    } catch {
-      alert("Failed to load map file.");
-      return;
-    }
-    if (saveFile.mapSettings) {
-      saveFile.mapSettings = { ...MAP_DEFAULTS, ...saveFile.mapSettings };
-    }
-    if (!isValidSaveFile(saveFile)) return;
-    appState.settings = saveFile.mapSettings;
-    ui.themeRadios.forEach(
-      (radio) => (radio.checked = radio.value === saveFile.mapSettings.theme)
-    );
-    applyThemeUIColors(saveFile.mapSettings.theme);
-    needle?.recolor();
-    loadMap(saveFile.seed);
-  };
-  const handleUpload = () => {
-    const input = Object.assign(document.createElement("input"), {
-      type: "file",
-      accept: MAPINATION_FILE_EXTENSION,
-    });
-    input.onchange = (e: Event) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = onLoadSave;
-      reader.readAsText(file);
-    };
-    input.click();
-  };
-
-  // --- Popup management ---
-  const popupBackdrop = document.getElementById("popupBackdrop");
-  const handleCancelPopup = () => {
-    if (popupBackdrop) popupBackdrop.classList.remove("show");
-    document.removeEventListener("keydown", escHandler);
-    document.removeEventListener("click", clickHandler);
-  };
-  const escHandler = (e: KeyboardEvent) => {
-    if (e.key === "Escape") handleCancelPopup();
-  };
-  const clickHandler = (e: MouseEvent) => {
-    if (e.target === popupBackdrop) handleCancelPopup();
-  };
-  if (popupBackdrop) {
-    new MutationObserver((muts) =>
-      muts.forEach(
-        (m) =>
-          m.attributeName === "class" &&
-          popupBackdrop.classList.contains("show") &&
-          (document.addEventListener("keydown", escHandler),
-          popupBackdrop.addEventListener("click", clickHandler))
-      )
-    ).observe(popupBackdrop, { attributes: true });
-  }
-
-  // Download/Upload buttons
-  downloadBtn.addEventListener("click", () => {
-    playEffect(downloadBtn, "bounce");
-    popupBackdrop && popupBackdrop.classList.add("show");
+  // Wire up the left-sidebar menu (title, tools toggle, sliders, theme, IO buttons).
+  const menu = setupMenuBar({
+    appState,
+    ui,
+    needle,
+    generateMapName,
+    drawMap,
+    ensureMap,
+    clearMapCache: () => mapCache.clear(),
+    loadMap,
+    loadNewMap,
+    downloadPNG,
   });
-  uploadBtn.addEventListener("click", () => {
-    playEffect(uploadBtn, "bounce");
-    handleUpload();
-  });
-  downloadPNGBtn.addEventListener("click", () => {
-    handleDownloadPNG();
-    handleCancelPopup();
-  });
-  downloadSaveBtn.addEventListener("click", () => {
-    handleDownloadSave();
-    handleCancelPopup();
-  });
-  cancelPopupBtn.addEventListener("click", handleCancelPopup);
+  setToolsCollapsed = menu.setToolsCollapsed;
+  setTitle = menu.setTitle;
 
   // --- Initialize ---
   redraw();
