@@ -201,6 +201,13 @@ export class MapGenerator {
       // Sampled once here and shared: it scales the terrain relief AND modulates
       // the moisture swing, so computing it per-cell avoids a duplicate noise lookup.
       const erosion = this.elevationCalc.erosionAmplitudeAt(site.x, site.y, site.z);
+      // Continentalness: computed ONCE here, then shared by elevation and the moisture
+      // water-proximity layer — so the carrier fBm isn't evaluated twice per cell.
+      const continentalness = this.elevationCalc.continentalnessAt(
+        site.x,
+        site.y,
+        site.z
+      );
       elevation[i] = this.elevationCalc.elevationAt(
         site.x,
         site.y,
@@ -209,13 +216,15 @@ export class MapGenerator {
         flavor.mountainWavelength,
         flavor.oceanWavelength,
         extraOctaves,
-        erosion
+        erosion,
+        continentalness
       );
       moisture[i] = this.moistureAt(
         site,
         flavor.moistureWavelength,
         extraOctaves,
-        erosion
+        erosion,
+        continentalness
       );
       ice[i] = this.iceAt(site, elevation[i], flavor.iceCapNorth, flavor.iceCapSouth);
     }
@@ -268,7 +277,8 @@ export class MapGenerator {
     site: Vec3,
     moistureWavelength: number,
     extraOctaves: number,
-    erosion: number
+    erosion: number,
+    continentalness: number
   ): number {
     const raw = fbm3(
       this.noise3D,
@@ -284,7 +294,17 @@ export class MapGenerator {
     // Modulate the moisture swing by the same FEATURE_DETAIL field as terrain:
     // more wet/dry variation in rugged regions, smoother in calm ones.
     const detail = erosion / FEATURE_DETAIL_MID;
-    const m = clamp(INVARIANTS.NEUTRAL_CENTER_POINT + raw * detail);
+    let m = clamp(INVARIANTS.NEUTRAL_CENTER_POINT + raw * detail);
+    // Maritime humidity: pull moisture toward wet near water, up to WATER_PROXIMITY_EFFECT
+    // (0 = off). Full across the coastal band (continentalness ≤ INLAND_FALLOFF), then dries
+    // toward the interior — DESERT_STEEPNESS sets the rate (>1 = deserts ramp in fast just past
+    // the coast; 1 = linear; <1 = humidity lingers inland).
+    const inland = clamp(
+      (continentalness - MOISTURE.INLAND_FALLOFF) /
+        Math.max(1e-6, 1 - MOISTURE.INLAND_FALLOFF)
+    );
+    const waterProximity = Math.pow(1 - inland, MOISTURE.DESERT_STEEPNESS);
+    m = lerp(m, 1, MOISTURE.WATER_PROXIMITY_EFFECT * waterProximity);
     return applyContrast(m, MOISTURE.CONTRAST);
   }
 

@@ -459,7 +459,12 @@ select[multiple] optgroup {
   text-transform: uppercase; /* map keys are case-insensitive — show them upper case */
   cursor: text;
   user-select: text;
-  padding: 0.1em 0; /* no side padding: the title text lines up with the other elements */
+  padding: 0; /* no side padding: the title text lines up with the other elements */
+  /* Fixed height in rem (not em) so the auto-shrinking font never changes the box height and
+     reflows the menu below. line-height:1 overrides the inherited 2.5 so the line fits the box;
+     the input centres its single line vertically as the font shrinks. */
+  height: 3.4rem;
+  line-height: 1;
   white-space: nowrap;
   overflow: hidden;
   box-sizing: border-box;

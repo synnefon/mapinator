@@ -154,7 +154,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.uniform1f(st.uRadius, radius);
     gl.uniform1f(st.uDepthBias, clear ? 0 : PATCH_DEPTH_BIAS);
     // NDC spans 2 across the canvas, so a width-fraction offset is 2× in NDC.
-    gl.uniform1f(st.uOffsetX, 2 * LOD.GLOBE_OFFSET_X);
+    gl.uniform1f(st.uOffsetX, 2 * LOD.GLOBE_OFFSET_FRACTION);
     gl.uniform1f(st.uAmbient, AMBIENT);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, entry.posBuf);

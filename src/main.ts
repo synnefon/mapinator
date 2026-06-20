@@ -27,23 +27,23 @@ import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 const mapCache = new Map<string, GlobeMap>();
 
 // Level-of-detail. Zoomed out we draw the whole-globe mesh; zoomed in we mesh a cap BIGGER
-// than the view (CAP_MARGIN = preload so panning is already loaded) from the global Fibonacci
+// than the view (PATCH_PRELOAD_MARGIN = preload so panning is already loaded) from the global Fibonacci
 // point set, layering `octaves` of finer detail. `points` is that density.
 //
-// The ladder is DERIVED, not hand-placed: `points` steps geometrically (×POINT_RATIO) from the
-// global mesh up to MAX_PATCH_POINTS, and each rung's activation ZOOM is where that same
+// The ladder is DERIVED, not hand-placed: `points` steps geometrically (×DENSITY_STEP_RATIO) from the
+// global mesh up to FINEST_PATCH_POINTS, and each rung's activation ZOOM is where that same
 // geometric density curve (global at zoom 0 → max at zoom 1) reaches its density. DETAIL_BIAS
 // bends the curve earlier/later. All tunable in settings.ts (LOD); destructured for the math.
 const {
-  PATCH_RECENTER,
-  MAX_PATCH_POINTS,
-  MIN_PATCH_POINTS,
-  POINT_RATIO,
+  RECENTER_FRACTION,
+  FINEST_PATCH_POINTS,
+  COARSEST_PATCH_POINTS,
+  DENSITY_STEP_RATIO,
   DETAIL_BIAS,
-  CAP_MARGIN,
-  MAX_EXTRA_OCTAVES,
-  EAGER_MAX_POINTS,
-  PNG_MIN_EXPORT_POINTS,
+  PATCH_PRELOAD_MARGIN,
+  FINEST_EXTRA_OCTAVES,
+  MAX_LIVE_POINTS,
+  MIN_EXPORT_POINTS,
 } = LOD;
 // The global mesh is the curve's zoom-0 anchor (rung 0, 0 extra octaves).
 const GLOBAL_POINTS = globePointCount(MAP_DEFAULTS.resolution);
@@ -57,14 +57,14 @@ type PatchLevel = {
 /** LOD ladder, coarsest → finest, sampled from the geometric density-vs-zoom curve. */
 function buildPatchLevels(): PatchLevel[] {
   const points: number[] = [];
-  for (let p = MAX_PATCH_POINTS; p >= MIN_PATCH_POINTS; p /= POINT_RATIO) {
+  for (let p = FINEST_PATCH_POINTS; p >= COARSEST_PATCH_POINTS; p /= DENSITY_STEP_RATIO) {
     points.unshift(p);
   }
-  // Geometric curve: global density at zoom 0 → MAX_PATCH_POINTS at zoom 1. A rung of density p
+  // Geometric curve: global density at zoom 0 → FINEST_PATCH_POINTS at zoom 1. A rung of density p
   // sits at t = ln(p/global)/ln(max/global). We shift each trigger half a rung earlier so a
   // level is active around the zoom it best fits (and the finest gets a band, not just zoom 1).
-  const span = Math.log(MAX_PATCH_POINTS / GLOBAL_POINTS);
-  const halfRung = (0.5 * Math.log(POINT_RATIO)) / span;
+  const span = Math.log(FINEST_PATCH_POINTS / GLOBAL_POINTS);
+  const halfRung = (0.5 * Math.log(DENSITY_STEP_RATIO)) / span;
   return points.map((p, i) => {
     const t = Math.log(p / GLOBAL_POINTS) / span; // 0..1 along the curve (1 at MAX)
     // DETAIL_BIAS > 1 pulls denser detail to lower zoom (earlier).
@@ -73,8 +73,8 @@ function buildPatchLevels(): PatchLevel[] {
       points: p,
       aboveZoom: parseFloat(aboveZoom.toFixed(4)),
       // Octaves spread evenly from the global mesh (rung 0, 0 extra octaves) up to the finest
-      // patch (MAX_EXTRA_OCTAVES). Patch i is rung i+1 of points.length rungs above the global.
-      octaves: Math.round((MAX_EXTRA_OCTAVES * (i + 1)) / points.length),
+      // patch (FINEST_EXTRA_OCTAVES). Patch i is rung i+1 of points.length rungs above the global.
+      octaves: Math.round((FINEST_EXTRA_OCTAVES * (i + 1)) / points.length),
     };
   });
 }
@@ -352,7 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const halfAngle =
       Math.asin(
         Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
-      ) * CAP_MARGIN;
+      ) * PATCH_PRELOAD_MARGIN;
     return {
       local: true,
       level,
@@ -365,7 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const globalKey = () => `g|${globePointCount(appState.settings.resolution)}`;
   const patchKey = (v: LocalView) => {
-    const step = v.halfAngle * PATCH_RECENTER;
+    const step = v.halfAngle * RECENTER_FRACTION;
     const q = (n: number) => Math.round(n / step);
     return `l|${v.level}|${q(v.center.x)}|${q(v.center.y)}|${q(v.center.z)}`;
   };
@@ -402,7 +402,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const needGlobal = !mapCache.has(gKey) && !inFlight.has(gKey);
     // While moving (eager), defer the heaviest levels to the debounced settle so detail
     // ramps up smoothly without a long mid-gesture generation hitch.
-    const deferHeavy = eager && view.local && view.points > EAGER_MAX_POINTS;
+    const deferHeavy = eager && view.local && view.points > MAX_LIVE_POINTS;
     const needPatch =
       pKey !== null &&
       view.local &&
@@ -449,7 +449,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const debouncedEnsureMap = debounce(() => ensureMap(false), 140);
 
   // View / setting change: re-render now (cheap), ramp detail up live as the view moves
-  // (eager, capped by EAGER_MAX_POINTS), then fill in the heaviest level once it settles.
+  // (eager, capped by MAX_LIVE_POINTS), then fill in the heaviest level once it settles.
   function drawMap() {
     scheduleRender();
     ensureMap(true);
@@ -556,7 +556,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // WebGL path can't read back an offscreen canvas it never drew to). The worker
     // builds the dense patch off-thread.
     const base = globalMap;
-    const points = Math.max(view.points, PNG_MIN_EXPORT_POINTS);
+    const points = Math.max(view.points, MIN_EXPORT_POINTS);
     requestMap({
       kind: "local",
       center: view.center,

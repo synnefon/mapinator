@@ -67,26 +67,26 @@ export const SLIDER_RANGES = {
  *  ===================================================================== */
 export const LOD = {
   // --- detail ceiling (max / deepest zoom) ---
-  MAX_PATCH_POINTS: 11_000_000, // finest level's point density = max-zoom fidelity; raise = sharper deepest zoom
-  MAX_EXTRA_OCTAVES: 6, // extra fractal octaves at the finest level (fine surface detail)
-  MAX_ZOOM: 26, // radius multiplier at zoom 1; deeper = finest cells spread over less area = sharper
+  FINEST_PATCH_POINTS: 11_000_000, // finest level's point density = max-zoom fidelity; raise = sharper deepest zoom
+  FINEST_EXTRA_OCTAVES: 6, // extra fractal octaves at the finest level (fine surface detail)
+  MAX_ZOOM_SCALE: 26, // radius multiplier at zoom 1; deeper = finest cells spread over less area = sharper
 
   // --- when detail kicks in (higher-def earlier) ---
-  // Density ramps geometrically from the global mesh (zoom 0) to MAX_PATCH_POINTS (zoom 1);
+  // Density ramps geometrically from the global mesh (zoom 0) to FINEST_PATCH_POINTS (zoom 1);
   // DETAIL_BIAS bends that curve. >1 = detail appears earlier, 1 = even, <1 = later.
   DETAIL_BIAS: 1.5,
-  EAGER_MAX_POINTS: 2_500_000, // during motion, generate patches up to here live; heavier waits for the settle
+  MAX_LIVE_POINTS: 2_500_000, // during motion, generate patches up to here live; heavier waits for the settle
 
   // --- ladder shape ---
-  MIN_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh
-  POINT_RATIO: 2, // density ratio between levels; smaller = more, finer-spaced bands
-  CAP_MARGIN: 1.5, // patch cap radius ÷ view radius (pan preload)
-  PATCH_RECENTER: 0.12, // regen when the view center moves this fraction of the cap
+  COARSEST_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh
+  DENSITY_STEP_RATIO: 2, // density ratio between levels; smaller = more, finer-spaced bands
+  PATCH_PRELOAD_MARGIN: 1.5, // patch cap radius ÷ view radius (pan preload)
+  RECENTER_FRACTION: 0.12, // regen when the view center moves this fraction of the cap
 
   // --- misc ---
-  FIT_FACTOR: 0.46, // globe radius ÷ min(canvas w, h) at zoom 0 (whole-globe fit)
-  GLOBE_OFFSET_X: 0.125, // globe nudged right by this fraction of canvas width (room beside the menu)
-  PNG_MIN_EXPORT_POINTS: 4_000_000, // zoomed-in PNG export density floor
+  GLOBE_FIT_FRACTION: 0.46, // globe radius ÷ min(canvas w, h) at zoom 0 (whole-globe fit)
+  GLOBE_OFFSET_FRACTION: 0.125, // globe nudged right by this fraction of canvas width (room beside the menu)
+  MIN_EXPORT_POINTS: 4_000_000, // zoomed-in PNG export density floor
 } as const;
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
@@ -140,6 +140,15 @@ export const MOISTURE = {
   AMPLITUDE: 0.4, // higher = stronger wet/dry swings
   CONTRAST: 0.5, // higher = sharper wet/dry boundaries
   NOISE_OFFSET: 31.7, // decorrelates the moisture noise from the elevation field
+  // Maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland.
+  // 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline.
+  WATER_PROXIMITY_EFFECT: 1,
+  // Continentalness at which maritime humidity starts falling off inland (full at/below it,
+  // 0 by the deep interior). Lower = effect hugs the coast; higher = reaches deeper inland.
+  INLAND_FALLOFF: .1,
+  // Desertification rate beyond the coastal band: how steeply humidity drops toward the
+  // interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland.
+  DESERT_STEEPNESS: 99,
 } as const;
 
 // ICE — polar snow caps on LAND (open water doesn't ice, for now). Land is snow poleward

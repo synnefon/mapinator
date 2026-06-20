@@ -70,8 +70,9 @@ export class ElevationCalculator {
 
   /**
    * Top-level elevation in [0,1] at a unit-sphere point: base + scaled relief.
-   * `erosion` is the FEATURE_DETAIL amplitude at this point (see erosionAmplitudeAt);
-   * the caller passes it in so it isn't recomputed here and again for moisture.
+   * `erosion` is the FEATURE_DETAIL amplitude and `C` the continentalness at this point; the
+   * caller passes both in (see continentalnessAt) so they aren't recomputed here and again for
+   * moisture / water-proximity.
    */
   public elevationAt(
     x: number,
@@ -81,9 +82,9 @@ export class ElevationCalculator {
     mountainWavelength: number,
     oceanWavelength: number,
     extraOctaves: number,
-    erosion: number
+    erosion: number,
+    C: number
   ): number {
-    const C = this.continentalness(x, y, z);
     // Shelf ramp: 0 out in open ocean → 1 once fully inland. Sets the base height
     // and blends ocean relief into land relief across the continental shelf.
     const shelf = smoothstep(CONTINENT.SHELF[0], CONTINENT.SHELF[1], C);
@@ -179,10 +180,10 @@ export class ElevationCalculator {
 
   /**
    * Low-frequency, domain-warped, multi-octave carrier field → [0,1]. Owns the
-   * land/water structure (continents + islands + coastlines); the relief waves
-   * only add finer detail on top.
+   * land/water structure (continents + islands + coastlines); the relief waves only add finer
+   * detail on top. Computed once per cell and shared (elevation + moisture water-proximity).
    */
-  private continentalness(x: number, y: number, z: number): number {
+  public continentalnessAt(x: number, y: number, z: number): number {
     const warp = this.warpAmount(x, y, z); // varies across the map (very-low-freq wave)
     const wx =
       x + warp * this.continentNoise(x + WARP_OFFSET_X, y + WARP_OFFSET_Y, z + WARP_OFFSET_Z);

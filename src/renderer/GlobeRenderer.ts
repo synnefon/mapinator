@@ -9,8 +9,8 @@ import { computeCellColors } from "./BiomeColor";
  *  Named constants (no magic numbers)
  *  ================================================ */
 // Zoom mapping dials live in settings.ts (LOD); aliased here for the radius math below.
-const FIT_FACTOR = LOD.FIT_FACTOR; // globe radius as a fraction of min(canvas w, h) at zoom=0 (whole globe)
-const GLOBE_MAX_ZOOM = LOD.MAX_ZOOM; // radius multiplier at zoom=1 (deepest zoom; spread over the LOD levels)
+const FIT_FACTOR = LOD.GLOBE_FIT_FRACTION; // globe radius as a fraction of min(canvas w, h) at zoom=0 (whole globe)
+const GLOBE_MAX_ZOOM = LOD.MAX_ZOOM_SCALE; // radius multiplier at zoom=1 (deepest zoom; spread over the LOD levels)
 const AMBIENT = 0.4; // limb-darkening floor; lower = more dramatic terminator
 const SHADE_BUCKETS = 32; // quantize shade for the lightness cache
 const HAIRLINE_PX = 1; // stroke each cell in its own color to close seams
