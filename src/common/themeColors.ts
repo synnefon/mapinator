@@ -30,7 +30,7 @@ export const THEME_UI_COLORS: Record<Theme, ThemeUIColors> = {
     highlightText: "#181828",
   },
   lush: {
-    bg: "rgb(15, 15, 15)",
+    bg: "rgb(10, 10, 10)",
     text:"#b8c9c1",
     highlight: "rgb(0, 0, 255)",
     highlightText:"#b8c9c1",

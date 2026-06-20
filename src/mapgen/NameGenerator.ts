@@ -11,6 +11,9 @@ export interface CountryGenOptions {
   lang?: Language;
 }
 
+const NUMBERS = [...Array(100)].map((_, i) => i.toString());
+const LETTERS = [...Array(26)].map((_, i) => String.fromCharCode(65 + i)).map((letter) => letter.toUpperCase());
+
 export class NameGenerator {
   private rng: RNG;
 
@@ -43,7 +46,7 @@ export class NameGenerator {
       languageConfigs[lang].suffixes,
       this.rng
     ).toLowerCase();
-    const MAX_RETRIES = 8;
+    const MAX_RETRIES = 20;
 
     let stem = "";
     let raw = "";
@@ -53,7 +56,7 @@ export class NameGenerator {
       const coreSylCount = weightedRandomChoice(syllableChoices, this.rng);
 
       stem = this.tidyStemVsSuffix(this.buildStem(coreSylCount, lang), suffix);
-      raw = stem + suffix;
+      raw = stem + suffix + this.planetNumberSuffix(this.rng);
 
       if (this.isPronounceable(raw, lang)) {
         return raw;
@@ -71,6 +74,17 @@ export class NameGenerator {
     }
 
     return vowelSoftened || clusterSoftened || raw;
+  }
+
+  private planetNumberSuffix(rng: RNG): string {
+    const prob = rng();
+    if (prob > 0.4) {
+      return "";
+    } else if (prob > 0.1) {
+      return "-" + randomChoice(NUMBERS, rng);
+    } else {
+      return "-" + randomChoice(NUMBERS, rng) + randomChoice(LETTERS, rng);
+    }
   }
 
   private softenClusters(s: string, language: Language): string {

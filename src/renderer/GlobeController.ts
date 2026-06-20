@@ -6,6 +6,7 @@ import {
   quatBetween,
   type Quat,
 } from "../common/rotation";
+import { LOD } from "../common/settings";
 import { clamp } from "../common/util";
 import { globeRadiusPx } from "./GlobeRenderer";
 
@@ -83,7 +84,10 @@ export class GlobeController {
 
   /** Unit sphere point (view space) under a canvas-pixel position at this radius. */
   private viewDirAt(canvasX: number, canvasY: number, radius: number): Vec3 {
-    const nx = (canvasX - this.canvas.width / 2) / radius;
+    // Globe centre is shifted right by GLOBE_OFFSET_X of the width (matches the shader's
+    // uOffsetX), so hit-testing must use the same shifted centre.
+    const centerX = this.canvas.width * (0.5 + LOD.GLOBE_OFFSET_X);
+    const nx = (canvasX - centerX) / radius;
     const ny = -(canvasY - this.canvas.height / 2) / radius;
     const r2 = nx * nx + ny * ny;
     if (r2 >= 1) {

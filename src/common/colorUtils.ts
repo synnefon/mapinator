@@ -98,15 +98,6 @@ export function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
- * Convert a color value to a hex component
- */
-export function toHexComponent(colorValue: number, matchValue: number): string {
-  return Math.round((colorValue + matchValue) * RGB_MAX)
-    .toString(HEX_BASE)
-    .padStart(HEX_COMP1NT_LENGTH, "0");
-}
-
-/**
  * Convert RGB values (0-255) to a hex color string
  */
 function rgbToHex(r: number, g: number, b: number): string {

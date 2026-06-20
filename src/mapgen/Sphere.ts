@@ -35,9 +35,6 @@ export function lonLatToVec3(lon: number, lat: number): Vec3 {
   return { x: cosLat * Math.cos(lo), y: Math.sin(la), z: cosLat * Math.sin(lo) };
 }
 
-// ===================== Vector helpers =====================
-export const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
-
 /**
  * The points of the size-`n` Fibonacci sphere that fall inside the spherical cap
  * around `center` with the given `halfAngle`. The full set's layout depends only on

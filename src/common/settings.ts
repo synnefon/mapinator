@@ -60,6 +60,34 @@ export const SLIDER_RANGES = {
   POINT_COUNT: [400, 100_000], // total Voronoi cells on the globe; higher = finer, slower
 } as const;
 
+/* ======================================================================
+ *  Globe level-of-detail dials — trade fidelity vs. generation cost.
+ *  Tune freely; the LOD ladder (main.ts) and zoom mapping (GlobeRenderer)
+ *  are derived from these.
+ *  ===================================================================== */
+export const LOD = {
+  // --- detail ceiling (max / deepest zoom) ---
+  MAX_PATCH_POINTS: 15_000_000, // finest level's point density = max-zoom fidelity; raise = sharper deepest zoom
+  MAX_EXTRA_OCTAVES: 6, // extra fractal octaves at the finest level (fine surface detail)
+  MAX_ZOOM: 26, // radius multiplier at zoom 1; deeper = finest cells spread over less area = sharper
+
+  // --- when detail kicks in (higher-def earlier) ---
+  BAND_SHIFT: 1.7, // >1 = detail appears EARLIER (bands trigger at a wider view); <1 = later/closer
+  FINEST_ABOVE_DEG: 6, // view radius (°) the finest level enters at → on-screen cell size; smaller = sharper but later
+  EAGER_MAX_POINTS: 2_500_000, // during motion, generate patches up to here live; heavier waits for the settle
+
+  // --- ladder shape ---
+  MIN_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh
+  POINT_RATIO: 1.7, // density ratio between levels; smaller = more, finer-spaced bands
+  CAP_MARGIN: 1.5, // patch cap radius ÷ view radius (pan preload)
+  PATCH_RECENTER: 0.12, // regen when the view center moves this fraction of the cap
+
+  // --- misc ---
+  FIT_FACTOR: 0.46, // globe radius ÷ min(canvas w, h) at zoom 0 (whole-globe fit)
+  GLOBE_OFFSET_X: 0.125, // globe nudged right by this fraction of canvas width (room beside the menu)
+  PNG_MIN_EXPORT_POINTS: 4_000_000, // zoomed-in PNG export density floor
+} as const;
+
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
 export const FRACTAL = {
   OCTAVES: 6, // more = finer detail, costlier
@@ -162,9 +190,6 @@ export const SEA_LEVEL = { MIN: 0.12, MAX: 0.82 } as const;
 // amplitude can stay high for tall mountains + jagged coasts. 1 = no inland lakes,
 // 0 = lakes everywhere; coasts keep full downward relief (bays) regardless.
 export const INLAND_SINK_DAMP = 0.82;
-
-// Point-grid jitter; higher = more irregular cell shapes.
-export const JITTER = 0.5;
 
 // Mesh / LOD infrastructure (not terrain shape).
 export const MESH = {

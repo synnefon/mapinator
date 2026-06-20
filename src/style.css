@@ -66,26 +66,67 @@ img.button-img-small.bounce {
   background-color: var(--highlightText);
 }
 
-/* Layout */
+/* Layout — the map fills the whole page; the tools sidebar floats above it (left), and can
+   slide off to the left. */
 body {
   margin: 0;
   height: 100vh;
   width: 100vw;
-  display: grid;
-  grid-template-columns: 25vw 75vw;
-  align-items: start;
+  overflow: hidden; /* the app is one full-page view; panels scroll internally */
 }
 
-/* Left Sidebar — even gap between the 4 sections (title / theme / settings / buttons). */
+/* Left Sidebar — floats above the map; even gap between the 4 sections. */
 .left-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 25vw;
+  height: 100vh;
+  z-index: 8;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   gap: 1.6rem;
   padding-left: 2em;
   padding-right: 1em;
-  margin-top: 1em;
-  width: 100%;
+  padding-top: 1em;
   box-sizing: border-box;
+  transition: transform 0.4s ease, opacity 0.3s ease;
+}
+
+/* Tools collapsed (toggle button, or auto on a map zoom gesture — see main.ts): the sidebar
+   slides off to the left. The map already fills the page underneath, so nothing reflows. */
+body.tools-collapsed .left-sidebar {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Sidebar toggle — a vertically-centred tab on the menu's right edge (rounded on the right),
+   sliding with the menu. */
+#toolsToggle {
+  position: fixed;
+  top: 50%;
+  left: 25vw;
+  transform: translateY(-50%);
+  z-index: 9;
+  border: none;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 16px 10px;
+  cursor: pointer;
+  border-radius: 0 10px 10px 0; /* tab protruding from the menu's right edge */
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.25);
+  transition: left 0.4s ease, color 0.2s ease;
+}
+body.tools-collapsed #toolsToggle {
+  left: 0;
+}
+#toolsToggle:hover {
+  background: var(--bg);
+  color: var(--highlight);
 }
 
 /* Section 3 wrapper: keeps its label + sliders + reset tight, so the 1.6rem sidebar
@@ -219,13 +260,14 @@ input[type="range"]::-webkit-slider-runnable-track {
   background: var(--bg);
   height: 8px;
   border: 2px solid var(--track);
+  border-radius: 8px; /* match the rounded boxes (the global *{} radius skips pseudo-elements) */
 }
 
 /* Firefox */
 input[type="range"]::-moz-range-track {
   background: var(--bg);
   height: 8px;
-  /* border-radius: 4px; */
+  border-radius: 8px; /* match the rounded boxes */
   border: 2px solid var(--track);
 }
 
@@ -384,23 +426,23 @@ select[multiple] optgroup {
 /* Map area — now just the canvas; controls live in the left sidebar. Centre the
    (larger) globe in the column. */
 #mapContainer {
-  width: 100%;
-  height: calc(100vh - 1em);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  margin-top: 1em;
-  overflow-y: auto;
+  position: fixed;
+  inset: 0; /* fill the whole page; the tools float above it */
+  overflow: hidden;
 }
 
-/* 1. Title bar — full column width; the check mark floats at its right edge. */
+/* 1. Title bar — input + check in a row; the title font auto-shrinks (main.ts) so the two
+   never overflow the menu bar. */
 #titleContainer {
-  position: relative;
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
 }
 
 #mapTitle {
+  flex: 1;
+  min-width: 0; /* allow the input to shrink within the flex row */
   border: none;
   border-bottom: 2px solid transparent; /* underline hidden until focus/hover; 2px reserved so no jump */
   background-color: var(--bg);
@@ -409,35 +451,24 @@ select[multiple] optgroup {
   outline: none;
   font-family: 'Roboto Mono', monospace;
   font-weight: 700;
-  font-size: 2.4em; /* large title */
+  font-size: 2.4em; /* max; main.ts shrinks it to fit the menu bar */
   text-align: left;
   text-transform: uppercase; /* map keys are case-insensitive — show them upper case */
   cursor: text;
   user-select: text;
   padding: 0.1em 0; /* no side padding: the title text lines up with the other elements */
-  /* Grow to fit a long title, with the full column width as the floor: field-sizing sizes the
-     input to its content (modern browsers), min-width keeps the original width. position +
-     z-index let a long title spill over the map instead of being clipped behind it. */
-  field-sizing: content;
-  width: auto;
-  min-width: 100%;
-  max-width: 60vw;
-  position: relative;
-  z-index: 7;
+  white-space: nowrap;
+  overflow: hidden;
   box-sizing: border-box;
-  transition: font-size 0.15s ease;
 }
 
 #mapTitle:focus,
 #mapTitle:hover {
-  border-bottom-color: var(--text); /* underline highlights on focus/hover */
+  border-bottom-color: var(--highlight); /* underline highlights on focus/hover */
 }
 
 #loadTitleBtn {
-  position: absolute; /* float at the right edge of the full-width title */
-  right: -2.5em;
-  top: 50%;
-  transform: translateY(-50%);
+  flex: 0 0 auto; /* fixed-size check, kept in the row to the right of the title */
   padding: 0px;
   height: 1.7em;
   width: 1.7em;
@@ -448,19 +479,21 @@ select[multiple] optgroup {
   border: none;
 }
 
-#mapTitle:focus+#loadTitleBtn,
+#mapTitle:focus + #loadTitleBtn,
+#titleContainer:hover #loadTitleBtn,
 #loadTitleBtn:hover {
   opacity: 1;
   pointer-events: auto;
 }
 
 
-/* Square globe sized as large as fits: bounded by the map column's width and the
-   viewport height (so it never overflows and forces a scroll). The frame is the
-   positioning context for map overlays (e.g. the north button). */
+/* The map frame fills the page. It's the positioning context for the map overlays (north
+   compass). The canvas bitmap is sized to the viewport in main.ts so the globe isn't
+   letterboxed or stretched. */
 #mapFrame {
   position: relative;
-  width: min(92%, 94vh);
+  width: 100%;
+  height: 100%;
   line-height: 0;
 }
 
@@ -468,10 +501,12 @@ select[multiple] optgroup {
    the globe's edge is self-evident. */
 #map {
   box-sizing: border-box;
-  height: auto;
   width: 100%;
+  height: 100%;
   display: block;
   cursor: grab;
+  /* Edge-to-edge: the canvas fills the page. The globe's rightward offset is a render-space
+     shift (LOD.GLOBE_OFFSET_X, applied in the shader + controller), so no canvas gap. */
 }
 
 /* North re-orient: floated over the canvas corner. Transparent until hovered (the

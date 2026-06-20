@@ -4,6 +4,7 @@ import { MAPINATION_FILE_EXTENSION } from "./common/constants";
 import type { GlobeMap, Vec3 } from "./common/map";
 import {
   isValidSaveFile,
+  LOD,
   MAP_DEFAULTS,
   type MapSettings,
 } from "./common/settings";
@@ -83,17 +84,19 @@ const mapCache = new Map<string, GlobeMap>();
 // finest level at FINEST_ABOVE_DEG). BAND_SHIFT then nudges every trigger a bit more
 // zoomed-in. Cells in view ≈ points·(1−cos halfDeg)/2; holding that constant ⇒ points·(1−
 // cos aboveDeg) constant ⇒ every patch is ~the same cell count (~equal gen time).
-const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
-const MAX_PATCH_POINTS = 8_000_000; // finest level (max-zoom fidelity)
-const MIN_PATCH_POINTS = 250_000; // coarsest patch — a gentle step above the global mesh
-const POINT_RATIO = 1.7; // density ratio between levels; smaller = more, finer-spaced bands
-const FINEST_ABOVE_DEG = 6; // view radius (°) the finest level enters at → sets the target cell size
-const BAND_SHIFT = 1.3; // every band triggers this fraction more zoomed-in (<1 = later/closer)
-const CAP_MARGIN = 1.5; // patch cap radius ÷ view radius (pan preload)
-const MAX_EXTRA_OCTAVES = 5; // extra fractal octaves at the finest level
-// While the view is actively moving, patches up to this density are generated live (so
-// detail ramps up fluidly); heavier levels wait for the debounced settle to avoid stutter.
-const EAGER_MAX_POINTS = 2_500_000;
+// All tunable in settings.ts (LOD). Destructured so the ladder math below reads cleanly.
+const {
+  PATCH_RECENTER,
+  MAX_PATCH_POINTS,
+  MIN_PATCH_POINTS,
+  POINT_RATIO,
+  FINEST_ABOVE_DEG,
+  BAND_SHIFT,
+  CAP_MARGIN,
+  MAX_EXTRA_OCTAVES,
+  EAGER_MAX_POINTS,
+  PNG_MIN_EXPORT_POINTS,
+} = LOD;
 
 type PatchLevel = {
   aboveDeg: number;
@@ -111,7 +114,6 @@ function buildPatchLevels(): PatchLevel[] {
   // Cell-size target, anchored by the finest level entering at FINEST_ABOVE_DEG.
   const targetCells =
     (MAX_PATCH_POINTS * (1 - Math.cos((FINEST_ABOVE_DEG * Math.PI) / 180))) / 2;
-  const last = points.length - 1;
   return points.map((p, i) => {
     const cosAbove = Math.max(-1, Math.min(1, 1 - (2 * targetCells) / p));
     // BAND_SHIFT pulls every level's trigger a bit more zoomed-in.
@@ -119,8 +121,10 @@ function buildPatchLevels(): PatchLevel[] {
     return {
       points: p,
       aboveDeg: parseFloat(aboveDeg),
-      capDeg: parseFloat(((parseFloat(aboveDeg) * CAP_MARGIN).toFixed(2))),
-      octaves: Math.round(1 + (MAX_EXTRA_OCTAVES - 1) * (i / last)),
+      capDeg: parseFloat((parseFloat(aboveDeg) * CAP_MARGIN).toFixed(2)),
+      // Octaves spread evenly from the global mesh (rung 0, 0 extra octaves) up to the finest
+      // patch (MAX_EXTRA_OCTAVES). Patch i is rung i+1 of points.length rungs above the global.
+      octaves: Math.round((MAX_EXTRA_OCTAVES * (i + 1)) / points.length),
     };
   });
 }
@@ -128,10 +132,6 @@ const PATCH_LEVELS: PatchLevel[] = buildPatchLevels();
 console.log("\nPATCH_LEVELS");
 console.table(PATCH_LEVELS);
 
-// PNG export density floor: a zoomed-in export re-renders its patch at no fewer
-// than this many global points, so the image stays crisp no matter which zoom
-// band is live. Whole-globe (zoomed-out) exports keep their live density.
-const PNG_MIN_EXPORT_POINTS = 4_000_000;
 
 // Map titles are capped at this length: generated names retry/truncate to fit, and the
 // input blocks typing past it.
@@ -192,6 +192,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // rAF handle for the north-align animation (see orientNorth); any user view change
   // cancels it so a drag/zoom mid-animation takes over cleanly.
   let northAnim: number | null = null;
+  // Whole-globe vs detail-patch, last seen — so the tools auto-toggle only when it flips.
+  let lastLocal: boolean | null = null;
 
   // UI Elements
   const {
@@ -211,15 +213,37 @@ document.addEventListener("DOMContentLoaded", () => {
   } = ui.getAllElements();
   mapTitle.maxLength = MAX_TITLE_LEN; // block typing past the limit (1b)
 
-  // Keep the load-title check pinned just past the input's right edge as it grows with the
-  // title (the input is field-sized to its content), instead of at a fixed column offset.
-  const placeCheckBtn = () => {
-    loadTitleBtn.style.right = "auto";
-    loadTitleBtn.style.left = `${mapTitle.offsetLeft + mapTitle.offsetWidth + 8}px`;
+  // Shrink the title font (down to a floor) so the title + check never overflow the menu bar.
+  const MAX_TITLE_FONT_EM = 2.4;
+  const MIN_TITLE_FONT_PX = 12;
+  const fitTitleFont = () => {
+    const rootPx =
+      parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const maxPx = MAX_TITLE_FONT_EM * rootPx;
+    mapTitle.style.fontSize = `${maxPx}px`;
+    const avail = mapTitle.clientWidth; // flex-allocated width (no horizontal padding)
+    const needed = mapTitle.scrollWidth; // text width at the max font
+    if (needed > avail && avail > 0) {
+      // Monospace width scales with font size, so one proportional step fits it.
+      const px = Math.max(MIN_TITLE_FONT_PX, ((maxPx * avail) / needed) * 0.97);
+      mapTitle.style.fontSize = `${px}px`;
+    }
   };
-  mapTitle.addEventListener("input", placeCheckBtn);
-  window.addEventListener("resize", placeCheckBtn);
-  document.fonts?.ready.then(placeCheckBtn); // re-place once the title font has loaded
+  mapTitle.addEventListener("input", fitTitleFont);
+  window.addEventListener("resize", fitTitleFont);
+  document.fonts?.ready.then(fitTitleFont); // re-fit once the title font has loaded
+
+  // Tools sidebar floats above the map; collapsible any time via the toggle, and auto
+  // opened/closed when a MAP zoom gesture crosses globe↔detail (see setView). The toggle glyph
+  // points the way it'll move: "<" collapses, ">" opens.
+  const toolsToggle = document.getElementById("toolsToggle");
+  const setToolsCollapsed = (collapsed: boolean) => {
+    document.body.classList.toggle("tools-collapsed", collapsed);
+    if (toolsToggle) toolsToggle.textContent = collapsed ? ">" : "<";
+  };
+  toolsToggle?.addEventListener("click", () =>
+    setToolsCollapsed(!document.body.classList.contains("tools-collapsed"))
+  );
 
   // The north button's 3D compass needle (Zdog), spun each frame to point at north.
   const northCanvas = northBtn.querySelector<HTMLCanvasElement>("#northCompass");
@@ -243,8 +267,31 @@ document.addEventListener("DOMContentLoaded", () => {
         appState.updateSetting("zoom", view.zoom);
         ui.updateSliderValue("zoom", view.zoom);
       }
+      // A map zoom gesture (wheel/pinch) crossing globe↔detail auto-toggles the tools — only on
+      // the transition, so manual toggles stick. Slider zoom never calls setView, so dragging
+      // the zoom slider won't collapse the menu.
+      const local = currentView().local;
+      if (local !== lastLocal) setToolsCollapsed(local);
       drawMap();
     },
+  });
+
+  // The map canvas fills the whole page; keep its bitmap matched to the viewport so the globe
+  // is neither letterboxed nor stretched. (The WebGL renderer reads canvas.width/height each
+  // draw.) The initial call only sizes it — the first render comes through the normal init flow.
+  const resizeCanvas = (): boolean => {
+    const w = Math.round(window.innerWidth);
+    const h = Math.round(window.innerHeight);
+    if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
+      canvas.width = w;
+      canvas.height = h;
+      return true;
+    }
+    return false;
+  };
+  resizeCanvas();
+  window.addEventListener("resize", () => {
+    if (resizeCanvas()) drawMap();
   });
 
   // --- Map Rendering ---
@@ -439,6 +486,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function ensureMap(eager = false) {
     const view = currentView();
+    // Track globe/detail state for the menu auto-toggle in setView (map gestures only).
+    lastLocal = view.local;
     const gKey = globalKey();
     const pKey = view.local ? patchKey(view) : null;
 
@@ -508,7 +557,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- UI Helpers ---
   const drawTitle = (name: string) => {
     mapTitle.value = name;
-    placeCheckBtn(); // input width changed → re-place the check
+    fitTitleFont(); // new title → re-fit the font to the menu width
   };
 
   function redraw(newName?: string) {

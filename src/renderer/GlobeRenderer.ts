@@ -1,15 +1,16 @@
 import type { GlobeMap, Vec3 } from "../common/map";
 import { hexToHsl, hslToHex } from "../common/colorUtils";
 import type { Quat } from "../common/rotation";
-import { type MapSettings } from "../common/settings";
+import { LOD, type MapSettings } from "../common/settings";
 import { clamp } from "../common/util";
 import { computeCellColors } from "./BiomeColor";
 
 /** ================================================
  *  Named constants (no magic numbers)
  *  ================================================ */
-const FIT_FACTOR = 0.46; // globe radius as a fraction of min(canvas w, h) at zoom=0 (whole globe)
-const GLOBE_MAX_ZOOM = 24; // radius multiplier at zoom=1 (deepest zoom; spread over the LOD levels)
+// Zoom mapping dials live in settings.ts (LOD); aliased here for the radius math below.
+const FIT_FACTOR = LOD.FIT_FACTOR; // globe radius as a fraction of min(canvas w, h) at zoom=0 (whole globe)
+const GLOBE_MAX_ZOOM = LOD.MAX_ZOOM; // radius multiplier at zoom=1 (deepest zoom; spread over the LOD levels)
 const AMBIENT = 0.4; // limb-darkening floor; lower = more dramatic terminator
 const SHADE_BUCKETS = 32; // quantize shade for the lightness cache
 const HAIRLINE_PX = 1; // stroke each cell in its own color to close seams

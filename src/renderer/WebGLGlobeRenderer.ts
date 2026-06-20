@@ -1,7 +1,7 @@
 import type { GlobeMap, Vec3 } from "../common/map";
 import { hexToRgb } from "../common/colorUtils";
 import type { Quat } from "../common/rotation";
-import type { MapSettings } from "../common/settings";
+import { LOD, type MapSettings } from "../common/settings";
 import { computeCellColors } from "./BiomeColor";
 import { GlobeRenderer, globeRadiusPx } from "./GlobeRenderer";
 
@@ -42,6 +42,7 @@ uniform vec4 uQuat;      // world -> view rotation (x,y,z,w)
 uniform vec2 uViewport;  // canvas size in device px
 uniform float uRadius;   // apparent globe radius in px
 uniform float uDepthBias;
+uniform float uOffsetX;  // globe horizontal shift in NDC (room beside the menu)
 out vec3 vColor;
 out float vShade;        // view-space z → limb darkening
 
@@ -55,7 +56,7 @@ void main() {
   vec3 r = qrot(uQuat, aPos);
   // Orthographic projection, matching GlobeRenderer's px math exactly:
   //   ndc = 2 * radius * r / viewport   (camera looks down +z).
-  float ndcX = 2.0 * uRadius * r.x / uViewport.x;
+  float ndcX = 2.0 * uRadius * r.x / uViewport.x + uOffsetX;
   float ndcY = 2.0 * uRadius * r.y / uViewport.y;
   // Front hemisphere (r.z = 1) maps nearest; squashed to stay inside the clip volume.
   float ndcZ = -r.z * ${Z_SQUASH.toFixed(3)} - uDepthBias;
@@ -90,6 +91,7 @@ type GLState = {
   uViewport: WebGLUniformLocation;
   uRadius: WebGLUniformLocation;
   uDepthBias: WebGLUniformLocation;
+  uOffsetX: WebGLUniformLocation;
   uAmbient: WebGLUniformLocation;
   // Per-map GPU buffers, LRU-evicted (insertion order) so GPU memory stays bounded.
   geom: Map<GlobeMap, GeomEntry>;
@@ -151,6 +153,8 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.uniform2f(st.uViewport, canvas.width, canvas.height);
     gl.uniform1f(st.uRadius, radius);
     gl.uniform1f(st.uDepthBias, clear ? 0 : PATCH_DEPTH_BIAS);
+    // NDC spans 2 across the canvas, so a width-fraction offset is 2× in NDC.
+    gl.uniform1f(st.uOffsetX, 2 * LOD.GLOBE_OFFSET_X);
     gl.uniform1f(st.uAmbient, AMBIENT);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, entry.posBuf);
@@ -195,6 +199,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       uViewport: uni("uViewport"),
       uRadius: uni("uRadius"),
       uDepthBias: uni("uDepthBias"),
+      uOffsetX: uni("uOffsetX"),
       uAmbient: uni("uAmbient"),
       geom: new Map(),
     };
