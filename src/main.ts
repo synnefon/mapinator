@@ -77,19 +77,20 @@ const mapCache = new Map<string, GlobeMap>();
 // `octaves` of finer detail. `points` is that global density → ~points·capArea cells.
 //
 // The ladder is DERIVED from the knobs below, not hand-placed, so fidelity stays
-// uniform: `points` steps geometrically (×POINT_RATIO) up to the cap, and each level's
-// activation angle is solved so every level ENTERS the screen at the same cell size.
-// Cells in view ≈ points·(1−cos halfDeg)/2, so holding that constant ⇒ points·(1−cos
-// aboveDeg) is constant across the ladder. Side effect: every patch is ~the same cell
-// count, so they all generate in roughly equal time.
+// uniform: `points` steps geometrically (×POINT_RATIO) from MIN to MAX — a SMALLER ratio
+// packs more, finer-spaced bands across the same zoom range — and each level's activation
+// angle is solved so every level ENTERS the screen at the same cell size (anchored by the
+// finest level at FINEST_ABOVE_DEG). BAND_SHIFT then nudges every trigger a bit more
+// zoomed-in. Cells in view ≈ points·(1−cos halfDeg)/2; holding that constant ⇒ points·(1−
+// cos aboveDeg) constant ⇒ every patch is ~the same cell count (~equal gen time).
 const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
-const MAX_PATCH_POINTS = 8_000_000; // max-zoom fidelity cap
+const MAX_PATCH_POINTS = 8_000_000; // finest level (max-zoom fidelity)
 const MIN_PATCH_POINTS = 250_000; // coarsest patch — a gentle step above the global mesh
-const POINT_RATIO = 2; // density ratio between adjacent levels (≈1.4× finer cells)
+const POINT_RATIO = 1.2; // density ratio between levels; smaller = more, finer-spaced bands
 const FINEST_ABOVE_DEG = 6; // view radius (°) the finest level enters at → sets the target cell size
+const BAND_SHIFT = 0.92; // every band triggers this fraction more zoomed-in (<1 = later/closer)
 const CAP_MARGIN = 1.5; // patch cap radius ÷ view radius (pan preload)
 const MAX_EXTRA_OCTAVES = 4; // extra fractal octaves at the finest level
-const FIRST_LEVEL_EARLY = 1.25; // coarsest patch activates this much sooner (larger view radius)
 
 type PatchLevel = {
   aboveDeg: number;
@@ -104,16 +105,14 @@ function buildPatchLevels(): PatchLevel[] {
   for (let p = MAX_PATCH_POINTS; p >= MIN_PATCH_POINTS; p /= POINT_RATIO) {
     points.unshift(p);
   }
-  // Target cells-in-view, anchored by the finest level, held constant down the ladder.
+  // Cell-size target, anchored by the finest level entering at FINEST_ABOVE_DEG.
   const targetCells =
     (MAX_PATCH_POINTS * (1 - Math.cos((FINEST_ABOVE_DEG * Math.PI) / 180))) / 2;
   const last = points.length - 1;
   return points.map((p, i) => {
     const cosAbove = Math.max(-1, Math.min(1, 1 - (2 * targetCells) / p));
-    let aboveDeg = (Math.acos(cosAbove) * 180) / Math.PI;
-    // Let the first patch kick in a bit sooner (its on-screen cells run slightly
-    // coarser as a result); the rest of the ladder is unchanged.
-    if (i === 0) aboveDeg *= FIRST_LEVEL_EARLY;
+    // BAND_SHIFT pulls every level's trigger a bit more zoomed-in.
+    const aboveDeg = ((Math.acos(cosAbove) * 180) / Math.PI) * BAND_SHIFT;
     return {
       points: p,
       aboveDeg,
@@ -142,7 +141,10 @@ document.addEventListener("DOMContentLoaded", () => {
     .forEach((img) => {
       const src = img.getAttribute("src");
       if (src) {
-        img.style.maskImage = img.style.webkitMaskImage = `url(${src})`;
+        // Quote the URL: in production Vite inlines the SVG as a url-encoded data URI
+        // containing raw single quotes, which breaks an UNquoted CSS url() (the icon then
+        // vanishes). Base64 PNG data URIs and file paths are fine quoted too.
+        img.style.maskImage = img.style.webkitMaskImage = `url("${src}")`;
         img.src =
           "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
       }
@@ -190,6 +192,8 @@ document.addEventListener("DOMContentLoaded", () => {
     downloadSaveBtn,
     cancelPopupBtn,
   } = ui.getAllElements();
+  // The north button's (masked) arrow, spun each frame to point at north — a compass.
+  const northIcon = northBtn.querySelector<HTMLImageElement>("img");
 
   // Orbit controls: drag = rotate, wheel/pinch = zoom. Mutates orientation + the
   // zoom setting and redraws; geometry is untouched, so this only re-projects.
@@ -272,6 +276,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const CACHE_CAP = 12;
 
   function render() {
+    // Spin the north button's arrow to point at where north (world +Y) lands on screen,
+    // so it's a live compass that turns to always face north as you rotate the globe.
+    if (northIcon) {
+      const nv = qRotate(orientation, { x: 0, y: 1, z: 0 });
+      northIcon.style.transform = `rotate(${Math.atan2(nv.x, nv.y)}rad)`;
+    }
     if (!globalMap) return;
     // When a patch is overlaid, skip the base cells it hides (its cap), so a
     // zoomed-in view doesn't redraw a full globe under the patch.
@@ -542,7 +552,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // (current lon, 0°) with north up, which is a pure spin about the world N/S axis, so it
   // never rotates E/W.
   northBtn.addEventListener("click", () => {
-    playEffect(northBtn, "bounce");
     let target: Quat;
     if (currentView().local) {
       const n = qRotate(orientation, { x: 0, y: 1, z: 0 }); // north in view space
