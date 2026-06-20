@@ -133,6 +133,10 @@ console.table(PATCH_LEVELS);
 // band is live. Whole-globe (zoomed-out) exports keep their live density.
 const PNG_MIN_EXPORT_POINTS = 4_000_000;
 
+// Map titles are capped at this length: generated names retry/truncate to fit, and the
+// input blocks typing past it.
+const MAX_TITLE_LEN = 18;
+
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
   document.head.appendChild(
@@ -159,7 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const appState = new AppState();
   const ui = new UIManager();
   const nameGenerator = new NameGenerator(uuid());
-  const generateMapName = () =>
+  const genOneName = () =>
     nameGenerator.generate({
       lang: appState.selectedLanguages.length
         ? appState.selectedLanguages[
@@ -167,6 +171,14 @@ document.addEventListener("DOMContentLoaded", () => {
           ]
         : undefined,
     });
+  // Keep generated names within the title limit: retry a few times, truncate as a fallback.
+  const generateMapName = () => {
+    for (let i = 0; i < 20; i++) {
+      const name = genOneName();
+      if (name.length <= MAX_TITLE_LEN) return name;
+    }
+    return genOneName().slice(0, MAX_TITLE_LEN);
+  };
 
   // Initialize mapName if not already set
   if (!appState.mapName) {
@@ -197,6 +209,18 @@ document.addEventListener("DOMContentLoaded", () => {
     downloadSaveBtn,
     cancelPopupBtn,
   } = ui.getAllElements();
+  mapTitle.maxLength = MAX_TITLE_LEN; // block typing past the limit (1b)
+
+  // Keep the load-title check pinned just past the input's right edge as it grows with the
+  // title (the input is field-sized to its content), instead of at a fixed column offset.
+  const placeCheckBtn = () => {
+    loadTitleBtn.style.right = "auto";
+    loadTitleBtn.style.left = `${mapTitle.offsetLeft + mapTitle.offsetWidth + 8}px`;
+  };
+  mapTitle.addEventListener("input", placeCheckBtn);
+  window.addEventListener("resize", placeCheckBtn);
+  document.fonts?.ready.then(placeCheckBtn); // re-place once the title font has loaded
+
   // The north button's 3D compass needle (Zdog), spun each frame to point at north.
   const northCanvas = northBtn.querySelector<HTMLCanvasElement>("#northCompass");
   const needle = northCanvas ? createCompassNeedle(northCanvas) : null;
@@ -484,6 +508,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- UI Helpers ---
   const drawTitle = (name: string) => {
     mapTitle.value = name;
+    placeCheckBtn(); // input width changed → re-place the check
   };
 
   function redraw(newName?: string) {

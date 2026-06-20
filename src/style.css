@@ -401,8 +401,10 @@ select[multiple] optgroup {
 }
 
 #mapTitle {
-  border: 2px solid transparent; /* always reserve the border box → constant height */
+  border: none;
+  border-bottom: 2px solid transparent; /* underline hidden until focus/hover; 2px reserved so no jump */
   background-color: var(--bg);
+  border-radius: 0px;
   color: var(--text);
   outline: none;
   font-family: 'Roboto Mono', monospace;
@@ -412,18 +414,23 @@ select[multiple] optgroup {
   text-transform: uppercase; /* map keys are case-insensitive — show them upper case */
   cursor: text;
   user-select: text;
-  padding: 0.1em 0.3em; /* check floats over the right (absolute), so no reserved pad */
-  width: 100%; /* full column width */
+  padding: 0.1em 0; /* no side padding: the title text lines up with the other elements */
+  /* Grow to fit a long title, with the full column width as the floor: field-sizing sizes the
+     input to its content (modern browsers), min-width keeps the original width. position +
+     z-index let a long title spill over the map instead of being clipped behind it. */
+  field-sizing: content;
+  width: auto;
+  min-width: 100%;
+  max-width: 60vw;
+  position: relative;
+  z-index: 7;
   box-sizing: border-box;
   transition: font-size 0.15s ease;
 }
 
-#mapTitle:focus {
-  border-color: var(--text); /* colour only — no box-size change, so no height jump */
-}
-
+#mapTitle:focus,
 #mapTitle:hover {
-  border-color: var(--highlight);
+  border-bottom-color: var(--text); /* underline highlights on focus/hover */
 }
 
 #loadTitleBtn {
@@ -457,12 +464,13 @@ select[multiple] optgroup {
   line-height: 0;
 }
 
-canvas {
-  box-sizing: border-box; /* keep the border inside the frame's width */
+/* Scoped to #map (not all <canvas>) so the compass canvas doesn't inherit these. No border:
+   the globe's edge is self-evident. */
+#map {
+  box-sizing: border-box;
   height: auto;
   width: 100%;
   display: block;
-  border: 6px solid var(--text);
   cursor: grab;
 }
 
@@ -484,8 +492,8 @@ canvas {
    main.ts). The 96px drawing buffer is scaled down to the display size here for crisp edges. */
 #northCompass {
   display: block;
-  width: min(3vh, 3vw);
-  height: min(3vh, 3vw);
+  width: min(2vh, 2vw);
+  height: min(2vh, 2vw);
   border: 0px;
 }
 
