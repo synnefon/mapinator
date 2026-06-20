@@ -1,5 +1,4 @@
 import type { NoiseFunction3D } from "simplex-noise";
-import { printSection } from "../common/printUtils";
 import { type RNG } from "../common/random";
 import {
   COAST,
@@ -58,15 +57,15 @@ export class ElevationCalculator {
     this.erosionWavelength = sampleDial(FEATURE_DETAIL.WAVELENGTH, rng);
     this.oceanAmplitude = sampleDial(OCEAN.AMPLITUDE, rng);
 
-    printSection(
-      "ELEVATION SETTINGS",
-      { key: "coastAmplitude", value: this.coastAmplitude },
-      { key: "mountainAmplitude", value: this.mountainAmplitude },
-      { key: "continentWavelength", value: this.continentWavelength },
-      { key: "continentAmplitude", value: this.continentAmplitude },
-      { key: "erosionWavelength", value: this.erosionWavelength },
-      { key: "oceanAmplitude", value: this.oceanAmplitude }
-    );
+    console.log("\nElevation Calculator Settings:");
+    console.table({
+      coastAmplitude: this.coastAmplitude,
+      mountainAmplitude: this.mountainAmplitude,
+      continentWavelength: this.continentWavelength,
+      continentAmplitude: this.continentAmplitude,
+      erosionWavelength: this.erosionWavelength,
+      oceanAmplitude: this.oceanAmplitude,
+    });
   }
 
   /**

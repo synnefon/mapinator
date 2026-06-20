@@ -1,5 +1,11 @@
 import type { Vec3 } from "../common/map";
-import { qMul, qNormalize, quatBetween, type Quat } from "../common/rotation";
+import {
+  qFromAxisAngle,
+  qMul,
+  qNormalize,
+  quatBetween,
+  type Quat,
+} from "../common/rotation";
 import { clamp } from "../common/util";
 import { globeRadiusPx } from "./GlobeRenderer";
 
@@ -14,6 +20,13 @@ interface GlobeControllerConfig {
 
 const DEFAULT_ZOOM_SENS = 0.0006; // zoom units per wheel delta (now geometric: ~uniform ratio/notch)
 const PINCH_ZOOM_SENS = 1.2; // zoom units per unit of pinch ratio change
+
+// Drag-release inertia (Google-Earth-like): a short, gentle glide you can catch.
+const MOMENTUM_MAX_SPEED = 3.5; // rad/s cap, so a hard flick doesn't whip around
+const MOMENTUM_TAU = 0.3; // s; exponential decay constant (~speed·TAU radians of glide, ~stops in 1s)
+const MOMENTUM_MIN_START = 0.25; // rad/s; below this a release just stops (no coast)
+const MOMENTUM_MIN_STOP = 0.04; // rad/s; the glide ends here
+const MOMENTUM_MAX_IDLE_MS = 60; // release must closely follow a move to coast (else it's a hold)
 
 /**
  * Arcball orbit controls. Drag rotates so the world point under the cursor stays
@@ -38,6 +51,12 @@ export class GlobeController {
   private pinchDistance: number | null = null;
   private pinchX = 0;
   private pinchY = 0;
+
+  // Release inertia: smoothed angular velocity (rad/s) about velAxis, sampled during drag.
+  private momentumRAF: number | null = null;
+  private velAxis: Vec3 = { x: 0, y: 1, z: 0 };
+  private velSpeed = 0;
+  private lastMoveTime = 0; // performance.now() of the last drag move
 
   constructor(config: GlobeControllerConfig) {
     this.canvas = config.canvas;
@@ -74,15 +93,6 @@ export class GlobeController {
     return { x: nx, y: ny, z: Math.sqrt(1 - r2) };
   }
 
-  /** Spin so the world point at view-dir `from` moves to view-dir `to`. */
-  private rotateView(from: Vec3, to: Vec3): void {
-    const v = this.getView();
-    this.setView({
-      ...v,
-      orientation: qNormalize(qMul(quatBetween(from, to), v.orientation)),
-    });
-  }
-
   /** Zoom to `newZoom` keeping the world point under (canvasX, canvasY) fixed. */
   private zoomAt(canvasX: number, canvasY: number, newZoom: number): void {
     const v = this.getView();
@@ -98,12 +108,68 @@ export class GlobeController {
   /** Drag from the last cursor to the current one → arcball rotation. */
   private dragTo(canvasX: number, canvasY: number): void {
     const radius = globeRadiusPx(this.canvas, this.getView().zoom);
-    this.rotateView(
-      this.viewDirAt(this.lastX, this.lastY, radius),
-      this.viewDirAt(canvasX, canvasY, radius)
-    );
+    const from = this.viewDirAt(this.lastX, this.lastY, radius);
+    const to = this.viewDirAt(canvasX, canvasY, radius);
+    const dq = quatBetween(from, to);
+    const v = this.getView();
+    this.setView({ ...v, orientation: qNormalize(qMul(dq, v.orientation)) });
+    this.trackVelocity(dq);
     this.lastX = canvasX;
     this.lastY = canvasY;
+  }
+
+  /** Update the smoothed angular velocity from the latest drag step (for release inertia). */
+  private trackVelocity(dq: Quat): void {
+    const now = performance.now();
+    const dt = (now - this.lastMoveTime) / 1000;
+    this.lastMoveTime = now;
+    if (dt <= 0 || dt > 0.1) {
+      this.velSpeed = 0; // first move of a drag, or a stall — no reliable velocity
+      return;
+    }
+    const w = clamp(dq.w, -1, 1);
+    const s = Math.sqrt(1 - w * w);
+    if (s < 1e-6) return; // no rotation this step — keep the previous axis/speed
+    this.velAxis = { x: dq.x / s, y: dq.y / s, z: dq.z / s };
+    const angle = 2 * Math.acos(w);
+    // EMA toward the instantaneous speed: favours recent motion, ignores single-frame spikes.
+    this.velSpeed = this.velSpeed * 0.4 + (angle / dt) * 0.6;
+  }
+
+  /** Coast after release: keep spinning about the last drag axis, decaying to rest. */
+  private startMomentum(): void {
+    this.stopMomentum();
+    if (
+      this.velSpeed < MOMENTUM_MIN_START ||
+      performance.now() - this.lastMoveTime > MOMENTUM_MAX_IDLE_MS
+    ) {
+      return;
+    }
+    let speed = Math.min(this.velSpeed, MOMENTUM_MAX_SPEED);
+    const axis = this.velAxis;
+    let last = performance.now();
+    const step = (now: number): void => {
+      const dt = (now - last) / 1000;
+      last = now;
+      speed *= Math.exp(-dt / MOMENTUM_TAU);
+      if (speed < MOMENTUM_MIN_STOP) {
+        this.momentumRAF = null;
+        return;
+      }
+      const dq = qFromAxisAngle(axis.x, axis.y, axis.z, speed * dt);
+      const v = this.getView();
+      this.setView({ ...v, orientation: qNormalize(qMul(dq, v.orientation)) });
+      this.momentumRAF = requestAnimationFrame(step);
+    };
+    this.momentumRAF = requestAnimationFrame(step);
+  }
+
+  /** Cancel any in-progress inertia — call to "catch" a coasting globe. */
+  stopMomentum(): void {
+    if (this.momentumRAF !== null) {
+      cancelAnimationFrame(this.momentumRAF);
+      this.momentumRAF = null;
+    }
   }
 
   private touchDistance(a: Touch, b: Touch): number {
@@ -115,7 +181,10 @@ export class GlobeController {
 
     c.addEventListener("mousedown", (e: MouseEvent) => {
       this.cacheRect();
+      this.stopMomentum(); // catch a coasting globe
       this.dragging = true;
+      this.velSpeed = 0;
+      this.lastMoveTime = performance.now();
       [this.lastX, this.lastY] = this.toCanvas(e.clientX, e.clientY);
       c.style.cursor = "grabbing";
     });
@@ -128,6 +197,7 @@ export class GlobeController {
       if (!this.dragging) return;
       this.dragging = false;
       c.style.cursor = "grab";
+      this.startMomentum();
     });
 
     c.addEventListener(
@@ -146,7 +216,10 @@ export class GlobeController {
       (e: TouchEvent) => {
         this.cacheRect();
         if (e.touches.length === 1) {
+          this.stopMomentum();
           this.dragging = true;
+          this.velSpeed = 0;
+          this.lastMoveTime = performance.now();
           [this.lastX, this.lastY] = this.toCanvas(
             e.touches[0].clientX,
             e.touches[0].clientY
@@ -186,7 +259,11 @@ export class GlobeController {
       { passive: false }
     );
     const endTouch = (e: TouchEvent) => {
-      if (e.touches.length === 0) this.dragging = false;
+      if (e.touches.length === 0) {
+        const wasDragging = this.dragging;
+        this.dragging = false;
+        if (wasDragging) this.startMomentum();
+      }
       if (e.touches.length < 2) this.pinchDistance = null;
     };
     c.addEventListener("touchend", endTouch);

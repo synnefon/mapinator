@@ -1,7 +1,6 @@
 import { geoVoronoi } from "d3-geo-voronoi";
 import { createNoise3D, type NoiseFunction3D } from "simplex-noise";
 import type { GlobeMap, MeshCell, Vec3 } from "../common/map";
-import { printSection } from "../common/printUtils";
 import { makeRNG, type RNG } from "../common/random";
 import {
   COAST,
@@ -92,14 +91,6 @@ export class MapGenerator {
     const flavor = this.sampleFlavor();
     const mesh = this.getMesh(pointCount);
     const map = this.packMesh(mesh, flavor, 0, pointCount);
-
-    printSection(
-      "GLOBE SETTINGS",
-      { key: "pointCount", value: pointCount },
-      { key: "cells", value: map.cellCount },
-      { key: "rainfall", value: flavor.rainfall }
-    );
-
     return map;
   }
 

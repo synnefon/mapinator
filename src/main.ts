@@ -2,7 +2,6 @@ import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
 import { MAPINATION_FILE_EXTENSION } from "./common/constants";
 import type { GlobeMap, Vec3 } from "./common/map";
-import { printSection } from "./common/printUtils";
 import {
   isValidSaveFile,
   MAP_DEFAULTS,
@@ -18,6 +17,7 @@ import { NameGenerator } from "./mapgen/NameGenerator";
 import { GlobeController } from "./renderer/GlobeController";
 import { globeRadiusPx } from "./renderer/GlobeRenderer";
 import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
+import { createCompassNeedle } from "./renderer/compassNeedle";
 import {
   QUAT_IDENTITY,
   quatViewCenter,
@@ -86,11 +86,14 @@ const mapCache = new Map<string, GlobeMap>();
 const PATCH_RECENTER = 0.12; // regen when the view center moves ~12% of the cap
 const MAX_PATCH_POINTS = 8_000_000; // finest level (max-zoom fidelity)
 const MIN_PATCH_POINTS = 250_000; // coarsest patch — a gentle step above the global mesh
-const POINT_RATIO = 1.2; // density ratio between levels; smaller = more, finer-spaced bands
+const POINT_RATIO = 1.7; // density ratio between levels; smaller = more, finer-spaced bands
 const FINEST_ABOVE_DEG = 6; // view radius (°) the finest level enters at → sets the target cell size
-const BAND_SHIFT = 0.92; // every band triggers this fraction more zoomed-in (<1 = later/closer)
+const BAND_SHIFT = 1.3; // every band triggers this fraction more zoomed-in (<1 = later/closer)
 const CAP_MARGIN = 1.5; // patch cap radius ÷ view radius (pan preload)
-const MAX_EXTRA_OCTAVES = 4; // extra fractal octaves at the finest level
+const MAX_EXTRA_OCTAVES = 5; // extra fractal octaves at the finest level
+// While the view is actively moving, patches up to this density are generated live (so
+// detail ramps up fluidly); heavier levels wait for the debounced settle to avoid stutter.
+const EAGER_MAX_POINTS = 2_500_000;
 
 type PatchLevel = {
   aboveDeg: number;
@@ -112,16 +115,18 @@ function buildPatchLevels(): PatchLevel[] {
   return points.map((p, i) => {
     const cosAbove = Math.max(-1, Math.min(1, 1 - (2 * targetCells) / p));
     // BAND_SHIFT pulls every level's trigger a bit more zoomed-in.
-    const aboveDeg = ((Math.acos(cosAbove) * 180) / Math.PI) * BAND_SHIFT;
+    const aboveDeg = (((Math.acos(cosAbove) * 180) / Math.PI) * BAND_SHIFT).toFixed(2);
     return {
       points: p,
-      aboveDeg,
-      capDeg: aboveDeg * CAP_MARGIN,
+      aboveDeg: parseFloat(aboveDeg),
+      capDeg: parseFloat(((parseFloat(aboveDeg) * CAP_MARGIN).toFixed(2))),
       octaves: Math.round(1 + (MAX_EXTRA_OCTAVES - 1) * (i / last)),
     };
   });
 }
 const PATCH_LEVELS: PatchLevel[] = buildPatchLevels();
+console.log("\nPATCH_LEVELS");
+console.table(PATCH_LEVELS);
 
 // PNG export density floor: a zoomed-in export re-renders its patch at no fewer
 // than this many global points, so the image stays crisp no matter which zoom
@@ -192,12 +197,16 @@ document.addEventListener("DOMContentLoaded", () => {
     downloadSaveBtn,
     cancelPopupBtn,
   } = ui.getAllElements();
-  // The north button's (masked) arrow, spun each frame to point at north — a compass.
-  const northCompass = northBtn.querySelector<HTMLElement>("#northCompass");
+  // The north button's 3D compass needle (Zdog), spun each frame to point at north.
+  const northCanvas = northBtn.querySelector<HTMLCanvasElement>("#northCompass");
+  const needle = northCanvas ? createCompassNeedle(northCanvas) : null;
+  // Brighten to the hover colour while the button is hovered (matches the other buttons).
+  northBtn.addEventListener("mouseenter", () => needle?.recolor("--highlightText"));
+  northBtn.addEventListener("mouseleave", () => needle?.recolor("--text"));
 
   // Orbit controls: drag = rotate, wheel/pinch = zoom. Mutates orientation + the
   // zoom setting and redraws; geometry is untouched, so this only re-projects.
-  new GlobeController({
+  const controller = new GlobeController({
     canvas,
     getView: () => ({ orientation, zoom: appState.settings.zoom }),
     setView: (view) => {
@@ -276,18 +285,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const CACHE_CAP = 12;
 
   function render() {
-    // Point the north button's arrow along north's 3D direction in view space (x right,
-    // y up, z toward camera): one rotation taking the icon's "up" → that vector, so it's a
-    // live 3D compass. Orthographic (no CSS perspective, matching the globe) → the arrow
-    // foreshortens as north tilts in/out of the screen, edge-on when you face a pole.
-    if (northCompass) {
-      const nv = qRotate(orientation, { x: 0, y: 1, z: 0 });
-      northCompass.style.transform =
-        Math.hypot(nv.x, nv.z) < 1e-4
-          ? `rotate(${Math.atan2(nv.x, nv.y)}rad)` // north ~straight up/down on screen
-          : `rotate3d(${-nv.z}, 0, ${nv.x}, ${Math.acos(
-              Math.max(-1, Math.min(1, nv.y))
-            )}rad)`;
+    // Spin the 3D compass needle to point along north's direction in view space (x right,
+    // y up, z toward camera) — a live compass that foreshortens as north tilts in/out and,
+    // being a solid, never collapses to nothing when you face a pole.
+    if (needle) {
+      needle.update(qRotate(orientation, { x: 0, y: 1, z: 0 }));
     }
     if (!globalMap) return;
     // When a patch is overlaid, skip the base cells it hides (its cap), so a
@@ -411,7 +413,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function ensureMap() {
+  function ensureMap(eager = false) {
     const view = currentView();
     const gKey = globalKey();
     const pKey = view.local ? patchKey(view) : null;
@@ -423,8 +425,15 @@ document.addEventListener("DOMContentLoaded", () => {
     scheduleRender();
 
     const needGlobal = !mapCache.has(gKey) && !inFlight.has(gKey);
+    // While moving (eager), defer the heaviest levels to the debounced settle so detail
+    // ramps up smoothly without a long mid-gesture generation hitch.
+    const deferHeavy = eager && view.local && view.points > EAGER_MAX_POINTS;
     const needPatch =
-      pKey !== null && !mapCache.has(pKey) && !inFlight.has(pKey);
+      pKey !== null &&
+      view.local &&
+      !mapCache.has(pKey) &&
+      !inFlight.has(pKey) &&
+      !deferHeavy;
     if (!needGlobal && !needPatch) return;
 
     const epoch = seedEpoch;
@@ -462,12 +471,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  const debouncedEnsureMap = debounce(ensureMap, 140);
+  const debouncedEnsureMap = debounce(() => ensureMap(false), 140);
 
-  // View / setting change: re-render the current globe now (cheap), then resolve
-  // the correct detail/geometry once the gesture settles.
+  // View / setting change: re-render now (cheap), ramp detail up live as the view moves
+  // (eager, capped by EAGER_MAX_POINTS), then fill in the heaviest level once it settles.
   function drawMap() {
     scheduleRender();
+    ensureMap(true);
     debouncedEnsureMap();
   }
 
@@ -480,13 +490,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (newName) {
       appState.mapName = newName;
     }
-    printSection(
-      "MAP SETTINGS",
-      ...Object.entries(appState.settings).map(([key, value]) => ({
-        key,
-        value,
-      }))
-    );
     drawTitle(appState.mapName);
     ensureMap();
   }
@@ -502,6 +505,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Reset the view to the default whole-globe, north-up orientation (the regen reset).
   function resetView() {
+    controller.stopMomentum();
     orientation = QUAT_IDENTITY;
     appState.settings.zoom = 0;
     ui.updateSliderValue("zoom", 0);
@@ -541,11 +545,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (radio.checked) {
         appState.updateSetting("theme", radio.value as MapSettings["theme"]);
         applyThemeUIColors(radio.value as MapSettings["theme"]);
+        needle?.recolor();
         drawMap();
       }
     });
   });
   applyThemeUIColors(appState.settings.theme);
+  needle?.recolor();
 
   // --- Button handlers ---
   regenBtn.addEventListener("click", () => {
@@ -559,6 +565,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // (current lon, 0°) with north up, which is a pure spin about the world N/S axis, so it
   // never rotates E/W.
   northBtn.addEventListener("click", () => {
+    controller.stopMomentum();
     let target: Quat;
     if (currentView().local) {
       const n = qRotate(orientation, { x: 0, y: 1, z: 0 }); // north in view space
@@ -627,11 +634,15 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     const ctx = exportCanvas.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = "#dedede";
+    // Match the header band + title to the currently selected theme (its live CSS vars).
+    const themeStyles = getComputedStyle(document.documentElement);
+    const themeBg = themeStyles.getPropertyValue("--bg").trim() || "#dedede";
+    const themeText = themeStyles.getPropertyValue("--text").trim() || "#000";
+    ctx.fillStyle = themeBg;
     ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
     ctx.drawImage(source, 0, 60);
     ctx.font = "bold 36px 'Roboto Mono', monospace";
-    ctx.fillStyle = "#000";
+    ctx.fillStyle = themeText;
     ctx.textAlign = "center";
     ctx.fillText(mapTitleText, exportCanvas.width / 2, 40);
     const dataUrl = exportCanvas.toDataURL("image/png");
@@ -693,6 +704,7 @@ document.addEventListener("DOMContentLoaded", () => {
       (radio) => (radio.checked = radio.value === saveFile.mapSettings.theme)
     );
     applyThemeUIColors(saveFile.mapSettings.theme);
+    needle?.recolor();
     loadMap(saveFile.seed);
   };
   const handleUpload = () => {

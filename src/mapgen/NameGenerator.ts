@@ -1,5 +1,4 @@
 import { languageConfigs, Languages, type Language } from "../common/language";
-import { printSection } from "../common/printUtils";
 import {
   makeRNG,
   randomChoice,
@@ -25,12 +24,11 @@ export class NameGenerator {
     const rawName = this.calcName(lang);
     const cleanedName = rawName.trim().replace(/\s+/g, " ");
     const capitalizedName = this.titleCase(cleanedName);
-    console.log("\n========================================\n\n");
-    printSection(
-      "NAME GENERATOR",
-      { key: "name", value: capitalizedName },
-      { key: "lang", value: lang }
-    );
+    console.log("\nName Generator Results:");
+    console.table({
+      name: capitalizedName,
+      lang,
+    });
     this.rng = makeRNG(`${Date.now()}`);
     return capitalizedName;
   }
