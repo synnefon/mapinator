@@ -76,16 +76,25 @@ body {
   align-items: start;
 }
 
-/* Left Sidebar */
+/* Left Sidebar — even gap between the 4 sections (title / theme / settings / buttons). */
 .left-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.6rem;
   padding-left: 2em;
   padding-right: 1em;
   margin-top: 1em;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Section 3 wrapper: keeps its label + sliders + reset tight, so the 1.6rem sidebar
+   gap falls only between sections (not inside this one). */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
 }
 
 /* Toolbar */
@@ -419,7 +428,7 @@ select[multiple] optgroup {
 
 #loadTitleBtn {
   position: absolute; /* float at the right edge of the full-width title */
-  right: 0.2em;
+  right: -2.5em;
   top: 50%;
   transform: translateY(-50%);
   padding: 0px;
@@ -469,6 +478,24 @@ canvas {
   align-items: center;
   justify-content: center;
   padding: 0.45rem; /* equal padding so the (rotating) compass icon sits centred */
+}
+
+/* North compass = two crossed blades in a 3D space (rotated together in main.ts). One
+   is always near face-on, so the needle has thickness and never vanishes edge-on. */
+#northCompass {
+  position: relative;
+  width: min(3vh, 3vw);
+  height: min(3vh, 3vw);
+  transform-style: preserve-3d;
+}
+#northCompass img.button-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#northCompass img.button-img:last-child {
+  transform: rotateY(90deg); /* second blade perpendicular to the first */
 }
 
 button {

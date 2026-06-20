@@ -54,9 +54,10 @@
     </div>
 
     <!-- 3. sliders + reset -->
-    <label>map settings</label>
-    <div class="toolbar">
-      <div class="toolbar-section">
+    <div class="settings-section">
+      <label>map settings</label>
+      <div class="toolbar">
+        <div class="toolbar-section">
         <label for="zoom">zoom: <span id="zoomValue"></span></label>
         <input id="zoom" type="range" min="0" max="1" step="0.01" />
 
@@ -67,8 +68,9 @@
         <input id="seaLevel" type="range" min="0" max="1" step="0.01" />
       </div>
     </div>
-    <div class="reset-sliders-btn-container">
-      <button id="resetSlidersBtn">reset</button>
+      <div class="reset-sliders-btn-container">
+        <button id="resetSlidersBtn">reset</button>
+      </div>
     </div>
 
     <!-- 4. upload / download + regen (right-aligned) -->
@@ -92,7 +94,11 @@
       <!-- Map overlay: re-orient north. A DOM element over the canvas, so it never
            appears in the PNG export (which composites only the canvas bitmap). -->
       <button id="northBtn" class="map-overlay-btn img-button-container" title="point north">
-        <img class="button-img" src="./assets/north.svg"></img>
+        <!-- Two crossed blades (a thin 3D needle) so the compass doesn't vanish edge-on. -->
+        <span id="northCompass">
+          <img class="button-img" src="./assets/north.svg"></img>
+          <img class="button-img" src="./assets/north.svg"></img>
+        </span>
       </button>
     </div>
   </div>

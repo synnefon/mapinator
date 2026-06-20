@@ -193,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
     cancelPopupBtn,
   } = ui.getAllElements();
   // The north button's (masked) arrow, spun each frame to point at north — a compass.
-  const northIcon = northBtn.querySelector<HTMLImageElement>("img");
+  const northCompass = northBtn.querySelector<HTMLElement>("#northCompass");
 
   // Orbit controls: drag = rotate, wheel/pinch = zoom. Mutates orientation + the
   // zoom setting and redraws; geometry is untouched, so this only re-projects.
@@ -276,11 +276,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const CACHE_CAP = 12;
 
   function render() {
-    // Spin the north button's arrow to point at where north (world +Y) lands on screen,
-    // so it's a live compass that turns to always face north as you rotate the globe.
-    if (northIcon) {
+    // Point the north button's arrow along north's 3D direction in view space (x right,
+    // y up, z toward camera): one rotation taking the icon's "up" → that vector, so it's a
+    // live 3D compass. Orthographic (no CSS perspective, matching the globe) → the arrow
+    // foreshortens as north tilts in/out of the screen, edge-on when you face a pole.
+    if (northCompass) {
       const nv = qRotate(orientation, { x: 0, y: 1, z: 0 });
-      northIcon.style.transform = `rotate(${Math.atan2(nv.x, nv.y)}rad)`;
+      northCompass.style.transform =
+        Math.hypot(nv.x, nv.z) < 1e-4
+          ? `rotate(${Math.atan2(nv.x, nv.y)}rad)` // north ~straight up/down on screen
+          : `rotate3d(${-nv.z}, 0, ${nv.x}, ${Math.acos(
+              Math.max(-1, Math.min(1, nv.y))
+            )}rad)`;
     }
     if (!globalMap) return;
     // When a patch is overlaid, skip the base cells it hides (its cap), so a
