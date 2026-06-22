@@ -1,27 +1,27 @@
 import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
-import type { GlobeMap, Vec3 } from "./common/map";
-import { LOD, MAP_DEFAULTS, type MapSettings } from "./common/settings";
-import { generateThemeButtonCSS } from "./common/themeColors";
-import { debounce } from "./common/util";
-import { globePointCount } from "./mapgen/MapGenerator";
-import { NameGenerator } from "./mapgen/NameGenerator";
-import { GlobeController } from "./renderer/GlobeController";
-import { globeRadiusPx } from "./renderer/GlobeRenderer";
-import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
-import { createCompassNeedle } from "./renderer/compassNeedle";
+import type { GlobeMap } from "./common/map";
 import {
-  QUAT_IDENTITY,
-  quatViewCenter,
-  qRotate,
   qFromAxisAngle,
   qMul,
   qNormalize,
+  qRotate,
   qSlerp,
+  QUAT_IDENTITY,
+  quatViewCenter,
   type Quat,
 } from "./common/rotation";
-import { UIManager } from "./UIManager";
+import { LOD, MAP_DEFAULTS, type MapSettings } from "./common/settings";
+import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
+import type { Vec3 } from "./common/vec3";
+import { globePointCount } from "./mapgen/MapGenerator";
+import { NameGenerator } from "./mapgen/NameGenerator";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
+import { createCompassNeedle } from "./renderer/compassNeedle";
+import { GlobeController } from "./renderer/GlobeController";
+import { globeRadiusPx } from "./renderer/GlobeRenderer";
+import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
+import { sliderDefs, UIManager } from "./UIManager";
 
 // --- Setup & State ---
 const mapCache = new Map<string, GlobeMap>();
@@ -42,7 +42,6 @@ const {
   DETAIL_BIAS,
   PATCH_PRELOAD_MARGIN,
   FINEST_EXTRA_OCTAVES,
-  MAX_LIVE_POINTS,
   MIN_EXPORT_POINTS,
 } = LOD;
 // The global mesh is the curve's zoom-0 anchor (rung 0, 0 extra octaves).
@@ -79,8 +78,6 @@ function buildPatchLevels(): PatchLevel[] {
   });
 }
 const PATCH_LEVELS: PatchLevel[] = buildPatchLevels();
-console.log("\nPATCH_LEVELS");
-console.table(PATCH_LEVELS);
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -112,8 +109,8 @@ document.addEventListener("DOMContentLoaded", () => {
     nameGenerator.generate({
       lang: appState.selectedLanguages.length
         ? appState.selectedLanguages[
-            Math.floor(Math.random() * appState.selectedLanguages.length)
-          ]
+        Math.floor(Math.random() * appState.selectedLanguages.length)
+        ]
         : undefined,
     });
   // Keep generated names within the title limit: retry a few times, truncate as a fallback.
@@ -141,8 +138,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastLocal: boolean | null = null;
   // Filled in by setupMenuBar (below): main calls these for auto-collapse (setView) and to
   // show the current map name in the title input (redraw).
-  let setToolsCollapsed: (collapsed: boolean) => void = () => {};
-  let setTitle: (name: string) => void = () => {};
+  let setToolsCollapsed: (collapsed: boolean) => void = () => { };
+  let setTitle: (name: string) => void = () => { };
 
   // UI Elements (main keeps the canvas + the north overlay; the rest live in the menu).
   const { map: canvas, northBtn } = ui.getAllElements();
@@ -153,6 +150,18 @@ document.addEventListener("DOMContentLoaded", () => {
   // Brighten to the hover colour while the button is hovered (matches the other buttons).
   northBtn.addEventListener("mouseenter", () => needle?.recolor("--highlightText"));
   northBtn.addEventListener("mouseleave", () => needle?.recolor("--text"));
+
+  // Settings changes fan out from the store: slider labels and theme colours/needle react
+  // here, so callers just setSetting and don't hand-sync the UI at every call site.
+  const sliderKeys = new Set(sliderDefs.map((d) => d.key));
+  appState.subscribe((key) => {
+    if (key === "theme") {
+      applyThemeUIColors(appState.settings.theme);
+      needle?.recolor();
+    } else if (sliderKeys.has(key)) {
+      ui.updateSliderValue(key, appState.settings[key]);
+    }
+  });
 
   // Orbit controls: drag = rotate, wheel/pinch = zoom. Mutates orientation + the
   // zoom setting and redraws; geometry is untouched, so this only re-projects.
@@ -166,8 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       orientation = view.orientation;
       if (view.zoom !== appState.settings.zoom) {
-        appState.updateSetting("zoom", view.zoom);
-        ui.updateSliderValue("zoom", view.zoom);
+        appState.setSetting("zoom", view.zoom); // subscriber syncs the slider
       }
       // A map zoom gesture (wheel/pinch) crossing globe↔detail auto-toggles the tools — only on
       // the transition, so manual toggles stick. Slider zoom never calls setView, so dragging
@@ -205,11 +213,28 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   let reqId = 0;
   const pending = new Map<number, (map: GlobeMap) => void>();
-  // In-flight generation keys, so a repeated view doesn't post duplicate requests.
-  const inFlight = new Set<string>();
   // Bumped on every seed change; results tagged with a stale epoch are dropped so an
   // in-flight build from the previous seed can't repopulate the cache.
   let seedEpoch = 0;
+
+  // The whole-globe base mesh, always drawn underneath.
+  let globalMap: GlobeMap | null = null;
+  let globalInFlight = false;
+  // Progressive octave LOD. As you zoom IN we queue every level you pass (coarse→fine) and
+  // generate them ONE worker job at a time, upgrading `patchMap` (the overlay) to each finer
+  // result as it lands. Finished patches are cached by (level, centre-bucket), so zooming out,
+  // panning, or revisiting reuses them instead of recomputing — and `patchMap` is STICKY (it
+  // only swaps to a finer/coarser CACHED patch, never blanks to the bare globe mid-build, so
+  // the view never "restarts" blurry).
+  let patchMap: GlobeMap | null = null;
+  let patchMapLevel = -1; // the level of the patch currently shown (for switch hysteresis)
+  const patchCache = new Map<string, GlobeMap>(); // "level|bx|by|bz" → patch (LRU by insertion)
+  const PATCH_CACHE_CAP = 16; // finest patches are large; LRU keeps the working set + a little slack
+  // The overlay must cover the view; a level is (re)queued once nothing covers this much MORE
+  // than the view, so a replacement is built before the current patch's margin runs out (>1).
+  const PATCH_COMFORT = 1.2;
+  let octaveQueue: { key: string; level: number; center: Vec3 }[] = []; // missing levels, coarse→fine
+  let octaveActive: string | null = null; // patch key currently in the worker
 
   worker.onmessage = (e: MessageEvent<{ id: number; map: GlobeMap }>) => {
     const resolve = pending.get(e.data.id);
@@ -224,12 +249,12 @@ document.addEventListener("DOMContentLoaded", () => {
   type GenRequest =
     | { kind: "global"; settings: MapSettings }
     | {
-        kind: "local";
-        center: Vec3;
-        halfAngle: number;
-        points: number;
-        extraOctaves: number;
-      };
+      kind: "local";
+      center: Vec3;
+      halfAngle: number;
+      points: number;
+      extraOctaves: number;
+    };
 
   const requestMap = (req: GenRequest): Promise<GlobeMap> =>
     new Promise((resolve) => {
@@ -239,23 +264,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
   const reseedWorker = (seed: string) => {
-    seedEpoch++;
-    inFlight.clear();
+    seedEpoch++; // discards any in-flight results from the previous seed
     worker.postMessage({ id: ++reqId, kind: "reSeed", seed });
   };
 
   // Seed the worker before the first generate (postMessage ordering keeps it first).
   reseedWorker(appState.mapName);
-
-  // The coarse whole-globe map is always drawn underneath (so panning never leaves
-  // a gap); zoomed in, a dense local patch is layered on top. Rotation/zoom
-  // re-project instantly; a debounced regen swaps in the right patch on settle.
-  let globalMap: GlobeMap | null = null;
-  let patchMap: GlobeMap | null = null;
-  // Total cached maps. With 6 patch levels, zooming straight in builds up to 6 patches
-  // at one center; this holds the global base + that stack (plus a little pan slack)
-  // so revisited zooms stay warm. The global base is never evicted (see cacheMap).
-  const CACHE_CAP = 12;
 
   function render() {
     // Spin the 3D compass needle to point along north's direction in view space (x right,
@@ -346,114 +360,217 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (level < 0) return { local: false };
     const lv = PATCH_LEVELS[level];
-    // Cap covers the view at this level's activation zoom (its widest, most zoomed-out point)
-    // plus margin. Tied to lv.aboveZoom (fixed per level) → stable within a band for cache reuse.
-    const radiusPx = globeRadiusPx(canvas, lv.aboveZoom);
-    const halfAngle =
-      Math.asin(
-        Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
-      ) * PATCH_PRELOAD_MARGIN;
     return {
       local: true,
       level,
       center: quatViewCenter(orientation),
-      halfAngle,
+      halfAngle: levelCap(level),
       points: lv.points,
       extraOctaves: lv.octaves,
     };
   }
 
   const globalKey = () => `g|${globePointCount(appState.settings.resolution)}`;
-  const patchKey = (v: LocalView) => {
-    const step = v.halfAngle * RECENTER_FRACTION;
+
+  // Cap (angular radius, radians) covering the view at a level's activation zoom, + preload
+  // margin. Per level: coarser octaves get wider caps that still cover the current view.
+  function levelCap(level: number): number {
+    const radiusPx = globeRadiusPx(canvas, PATCH_LEVELS[level].aboveZoom);
+    return (
+      Math.asin(
+        Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
+      ) * PATCH_PRELOAD_MARGIN
+    );
+  }
+
+  // Cache key for a level's patch at a centre, bucketed by the level's own cap so that small
+  // pans (and the centre drift from zoom-to-cursor) reuse the same patch. Coarse levels get
+  // bigger buckets (more pan-stable); fine levels finer ones.
+  function bucketKey(level: number, center: Vec3): string {
+    const step = levelCap(level) * RECENTER_FRACTION;
     const q = (n: number) => Math.round(n / step);
-    return `l|${v.level}|${q(v.center.x)}|${q(v.center.y)}|${q(v.center.z)}`;
-  };
+    return `${level}|${q(center.x)}|${q(center.y)}|${q(center.z)}`;
+  }
 
-  function cacheMap(key: string, map: GlobeMap): void {
-    mapCache.set(key, map);
-    // Evict oldest PATCHES only — regenerating the global base is slow.
-    while (mapCache.size > CACHE_CAP) {
-      let evicted = false;
-      for (const k of mapCache.keys()) {
-        if (k.startsWith("l|")) {
-          mapCache.delete(k);
-          evicted = true;
-          break;
-        }
+  function cachePatch(key: string, map: GlobeMap): void {
+    patchCache.set(key, map);
+    while (patchCache.size > PATCH_CACHE_CAP) {
+      const oldest = patchCache.keys().next().value; // insertion order → least-recently-used
+      if (oldest === undefined) break;
+      patchCache.delete(oldest);
+    }
+  }
+
+  const levelOf = (key: string): number => Number(key.slice(0, key.indexOf("|")));
+
+  // On-screen angular radius (radians) of the current view — the region the user actually sees
+  // (no preload margin). A patch must cover at least this much around the centre to be usable.
+  function viewExtentRadius(): number {
+    const radiusPx = globeRadiusPx(canvas, appState.settings.zoom);
+    return Math.asin(
+      Math.min(1, (0.5 * Math.hypot(canvas.width, canvas.height)) / radiusPx)
+    );
+  }
+
+  // Does a patch's cap fully contain the view disk (radius `vr`) around `center`?
+  function capCovers(
+    cap: { center: Vec3; cosKeep: number },
+    center: Vec3,
+    vr: number
+  ): boolean {
+    const d = cap.center.x * center.x + cap.center.y * center.y + cap.center.z * center.z;
+    const dist = Math.acos(Math.max(-1, Math.min(1, d))); // angle centre→cap centre
+    const capRadius = Math.acos(Math.max(-1, Math.min(1, cap.cosKeep)));
+    return dist + vr <= capRadius;
+  }
+
+  // The finest LOD level the current zoom wants (or null for the whole-globe view).
+  function octaveTarget(): { level: number; center: Vec3 } | null {
+    const v = currentView();
+    return v.local ? { level: v.level, center: v.center } : null;
+  }
+
+  // Sticky overlay: show the finest CACHED patch (≤ target, ANY bucket) whose cap still covers
+  // the current view. Selecting by coverage — not by exact bucket — is what lets the patch you
+  // already built keep showing while you pan inside its margin (no blurry downgrade). If nothing
+  // covers yet, keep the previous patch rather than blanking to the bare globe.
+  function refreshPatchMap(): void {
+    const t = octaveTarget();
+    if (!t) {
+      patchMap = null;
+      patchMapLevel = -1;
+      return;
+    }
+    const vr = viewExtentRadius();
+    let best: GlobeMap | null = null;
+    let bestKey = "";
+    let bestLevel = -1;
+    for (const [key, patch] of patchCache) {
+      const level = levelOf(key);
+      if (level > t.level || level <= bestLevel || !patch.cap) continue;
+      if (capCovers(patch.cap, t.center, vr)) {
+        best = patch;
+        bestKey = key;
+        bestLevel = level;
       }
-      if (!evicted) break;
+    }
+    // Hysteresis: if the patch we're already showing still covers and nothing STRICTLY finer is
+    // available, keep it. Without this we'd swap between equally-good, overlapping same-level
+    // patches every frame (their caps differ → the patch/base edge flickers while panning).
+    const currentCovers = !!patchMap?.cap && capCovers(patchMap.cap, t.center, vr);
+    if (currentCovers && bestLevel <= patchMapLevel) return;
+    if (best) {
+      patchMap = best;
+      patchMapLevel = bestLevel;
+      patchCache.delete(bestKey); // LRU touch: keep the shown patch from being evicted
+      patchCache.set(bestKey, best);
     }
   }
 
-  function ensureMap(eager = false) {
-    const view = currentView();
-    // Track globe/detail state for the menu auto-toggle in setView (map gestures only).
-    lastLocal = view.local;
-    const gKey = globalKey();
-    const pKey = view.local ? patchKey(view) : null;
+  // Keep the octave queue in sync with the view: a level needs (re)generating only when NO
+  // cached patch at that level still covers the view — so panning within a patch's margin
+  // regenerates nothing. Uncovered levels are queued coarse→fine at the current bucket.
+  function syncOctaves(): void {
+    const t = octaveTarget();
+    if (!t) {
+      patchMap = null; // whole globe: no overlay
+      patchMapLevel = -1;
+      octaveQueue = [];
+      return;
+    }
+    // Queue against a slightly LARGER disk than the view (PATCH_COMFORT), so a replacement
+    // starts generating before the current patch's margin is exhausted — no coarse blip on a
+    // steady pan. The display test (refreshPatchMap) uses the true view, so the current patch
+    // keeps showing meanwhile.
+    const queueRadius = viewExtentRadius() * PATCH_COMFORT;
+    // Levels already covered (with comfort) by some cached patch (any bucket) need no work.
+    const covered = new Set<number>();
+    for (const [key, patch] of patchCache) {
+      if (patch.cap && capCovers(patch.cap, t.center, queueRadius)) covered.add(levelOf(key));
+    }
+    octaveQueue = [];
+    for (let l = 0; l <= t.level; l++) {
+      const key = bucketKey(l, t.center);
+      if (!covered.has(l) && key !== octaveActive) {
+        octaveQueue.push({ key, level: l, center: t.center });
+      }
+    }
+    refreshPatchMap();
+    pumpOctaves();
+  }
 
-    // Render whatever's already cached now (covers the gesture); keep the previous
-    // patch if the new one isn't ready yet, so we stay crisp while moving.
-    globalMap = mapCache.get(gKey) ?? globalMap;
-    patchMap = pKey ? mapCache.get(pKey) ?? patchMap : null;
-    scheduleRender();
-
-    const needGlobal = !mapCache.has(gKey) && !inFlight.has(gKey);
-    // While moving (eager), defer the heaviest levels to the debounced settle so detail
-    // ramps up smoothly without a long mid-gesture generation hitch.
-    const deferHeavy = eager && view.local && view.points > MAX_LIVE_POINTS;
-    const needPatch =
-      pKey !== null &&
-      view.local &&
-      !mapCache.has(pKey) &&
-      !inFlight.has(pKey) &&
-      !deferHeavy;
-    if (!needGlobal && !needPatch) return;
-
+  // Generate the next queued octave — ONE worker job at a time — caching + rendering each as it
+  // lands, then pumping the next.
+  function pumpOctaves(): void {
+    if (octaveActive !== null) return; // one at a time
+    const job = octaveQueue.shift();
+    if (!job) return;
+    if (patchCache.has(job.key)) {
+      pumpOctaves(); // cached in the meantime
+      return;
+    }
+    octaveActive = job.key;
     const epoch = seedEpoch;
-
-    if (needGlobal) {
-      inFlight.add(gKey);
-      requestMap({ kind: "global", settings: { ...appState.settings } }).then(
-        (map) => {
-          inFlight.delete(gKey);
-          if (epoch !== seedEpoch) return; // seed changed mid-flight — drop
-          cacheMap(gKey, map);
-          if (globalKey() === gKey) globalMap = map;
-          scheduleRender();
-        }
-      );
-    }
-
-    if (needPatch && pKey && view.local) {
-      inFlight.add(pKey);
-      requestMap({
-        kind: "local",
-        center: view.center,
-        halfAngle: view.halfAngle,
-        points: view.points,
-        extraOctaves: view.extraOctaves,
-      }).then((map) => {
-        inFlight.delete(pKey);
-        if (epoch !== seedEpoch) return; // stale
-        cacheMap(pKey, map);
-        // Only display if the current view still wants this exact patch.
-        const cur = currentView();
-        if (cur.local && patchKey(cur) === pKey) patchMap = map;
+    const lv = PATCH_LEVELS[job.level];
+    requestMap({
+      kind: "local",
+      center: job.center,
+      halfAngle: levelCap(job.level),
+      points: lv.points,
+      extraOctaves: lv.octaves,
+    }).then((map) => {
+      octaveActive = null;
+      if (epoch === seedEpoch) {
+        cachePatch(job.key, map);
+        refreshPatchMap(); // a new patch landed → upgrade the overlay if it's the finest covering
         scheduleRender();
-      });
-    }
+      }
+      pumpOctaves(); // next octave (coarse → fine)
+    });
   }
 
-  const debouncedEnsureMap = debounce(() => ensureMap(false), 140);
+  // The whole-globe base mesh (one resolution, cached). Requested once; rebuilt on reseed.
+  function ensureGlobal(): void {
+    const gKey = globalKey();
+    const cached = mapCache.get(gKey);
+    if (cached) {
+      globalMap = cached;
+      return;
+    }
+    if (globalInFlight) return;
+    globalInFlight = true;
+    const epoch = seedEpoch;
+    requestMap({ kind: "global", settings: { ...appState.settings } }).then((map) => {
+      globalInFlight = false;
+      if (epoch !== seedEpoch) return; // seed changed mid-flight
+      mapCache.set(gKey, map);
+      if (globalKey() === gKey) globalMap = map;
+      scheduleRender();
+    });
+  }
 
-  // View / setting change: re-render now (cheap), ramp detail up live as the view moves
-  // (eager, capped by MAX_LIVE_POINTS), then fill in the heaviest level once it settles.
-  function drawMap() {
+  function ensureMap(): void {
+    lastLocal = currentView().local; // for the menu auto-collapse (read in setView)
+    ensureGlobal();
+    syncOctaves();
     scheduleRender();
-    ensureMap(true);
-    debouncedEnsureMap();
+  }
+
+  function resetAllMaps(): void {
+    mapCache.clear();
+    globalMap = null;
+    globalInFlight = false;
+    patchCache.clear();
+    patchMap = null;
+    patchMapLevel = -1;
+    octaveQueue = [];
+    // octaveActive's in-flight result is discarded by the seedEpoch bump in reseedWorker.
+  }
+
+  // View / setting change: re-render now (cheap) and keep the progressive octave stack synced.
+  function drawMap(): void {
+    scheduleRender();
+    ensureMap();
   }
 
   // --- UI Helpers ---
@@ -470,7 +587,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function loadMap(name: string) {
     appState.mapName = name; // setter upper-cases it (case-insensitive keys)
     reseedWorker(appState.mapName);
-    mapCache.clear();
+    resetAllMaps();
     redraw();
   }
 
@@ -478,8 +595,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function resetView() {
     controller.stopMomentum();
     orientation = QUAT_IDENTITY;
-    appState.settings.zoom = 0;
-    ui.updateSliderValue("zoom", 0);
+    appState.setSetting("zoom", 0); // subscriber syncs the slider
   }
 
   // Generate / switch to a NEW map (regen button or a typed name): always reset the view
@@ -586,7 +702,7 @@ document.addEventListener("DOMContentLoaded", () => {
     generateMapName,
     drawMap,
     ensureMap,
-    clearMapCache: () => mapCache.clear(),
+    clearMapCache: () => resetAllMaps(),
     loadMap,
     loadNewMap,
     downloadPNG,

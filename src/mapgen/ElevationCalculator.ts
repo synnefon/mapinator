@@ -1,4 +1,5 @@
 import type { NoiseFunction3D } from "simplex-noise";
+import type { Vec3 } from "../common/vec3";
 import { type RNG } from "../common/random";
 import {
   COAST,
@@ -11,13 +12,16 @@ import {
   OCEAN,
   sampleDial,
 } from "../common/settings";
-import { clamp, lerp } from "../common/util";
+import { clamp, lerp, smoothstep } from "../common/util";
 import { fbm3 } from "./fbm";
 
-/** smoothstep for shaping curves */
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = clamp((x - a) / (b - a));
-  return t * t * (3 - 2 * t);
+/** Relief wavelengths + octave depth for elevationAt, bundled so the call site
+ * isn't a long list of interchangeable numbers. */
+export type ReliefConfig = {
+  coastWavelength: number;
+  mountainWavelength: number;
+  oceanWavelength: number;
+  extraOctaves: number;
 };
 
 // Decorrelation offsets so the warp/erosion lookups don't mirror the base field.
@@ -56,16 +60,6 @@ export class ElevationCalculator {
     this.continentAmplitude = sampleDial(CONTINENT.AMPLITUDE, rng);
     this.erosionWavelength = sampleDial(FEATURE_DETAIL.WAVELENGTH, rng);
     this.oceanAmplitude = sampleDial(OCEAN.AMPLITUDE, rng);
-
-    console.log("\nElevation Calculator Settings:");
-    console.table({
-      coastAmplitude: this.coastAmplitude,
-      mountainAmplitude: this.mountainAmplitude,
-      continentWavelength: this.continentWavelength,
-      continentAmplitude: this.continentAmplitude,
-      erosionWavelength: this.erosionWavelength,
-      oceanAmplitude: this.oceanAmplitude,
-    });
   }
 
   /**
@@ -75,16 +69,14 @@ export class ElevationCalculator {
    * moisture / water-proximity.
    */
   public elevationAt(
-    x: number,
-    y: number,
-    z: number,
-    coastWavelength: number,
-    mountainWavelength: number,
-    oceanWavelength: number,
-    extraOctaves: number,
+    site: Vec3,
+    reliefCfg: ReliefConfig,
     erosion: number,
     C: number
   ): number {
+    const { x, y, z } = site;
+    const { coastWavelength, mountainWavelength, oceanWavelength, extraOctaves } =
+      reliefCfg;
     // Shelf ramp: 0 out in open ocean → 1 once fully inland. Sets the base height
     // and blends ocean relief into land relief across the continental shelf.
     const shelf = smoothstep(CONTINENT.SHELF[0], CONTINENT.SHELF[1], C);

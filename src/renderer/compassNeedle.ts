@@ -1,6 +1,7 @@
 import * as Zdog from "zdog";
-import type { Vec3 } from "../common/map";
+import type { Vec3 } from "../common/vec3";
 import { clamp } from "../common/util";
+import { add, cross, dot, normalize, scale, sub } from "../common/vec3";
 
 // A real 3D compass needle: the north-arrow chevron (from assets/north.svg) extruded into a
 // thin solid slab, drawn with Zdog. Built once; `update(nv)` aims the tip along north's
@@ -115,30 +116,4 @@ function resolveColor(input: string): RGB {
   document.body.removeChild(el);
   const m = rgb.match(/[\d.]+/g);
   return m ? [Number(m[0]), Number(m[1]), Number(m[2])] : [0, 0, 0];
-}
-
-// Function declarations (not const arrows) so they're hoisted above the module-level
-// `LIGHT = normalize(...)` that runs at import time.
-function sub(a: Vec3, b: Vec3): Vec3 {
-  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
-}
-function add(a: Vec3, b: Vec3): Vec3 {
-  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
-}
-function scale(a: Vec3, k: number): Vec3 {
-  return { x: a.x * k, y: a.y * k, z: a.z * k };
-}
-function dot(a: Vec3, b: Vec3): number {
-  return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-function cross(a: Vec3, b: Vec3): Vec3 {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-function normalize(v: Vec3): Vec3 {
-  const len = Math.hypot(v.x, v.y, v.z) || 1;
-  return scale(v, 1 / len);
 }

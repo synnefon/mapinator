@@ -1,4 +1,4 @@
-import type { Vec3 } from "../common/map";
+import type { Vec3 } from "../common/vec3";
 import { clamp } from "../common/util";
 
 // Golden angle drives the Fibonacci spiral; the constants convert between the

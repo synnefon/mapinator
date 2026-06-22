@@ -1,4 +1,4 @@
-import type { Vec3 } from "../common/map";
+import type { Vec3 } from "../common/vec3";
 import type { MapSettings } from "../common/settings";
 import { MapGenerator } from "./MapGenerator";
 

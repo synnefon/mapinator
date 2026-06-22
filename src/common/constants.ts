@@ -1,1 +1,0 @@
-export const MAPINATION_FILE_EXTENSION = ".mapn";

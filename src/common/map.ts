@@ -1,9 +1,6 @@
+import type { Vec3 } from "./vec3";
+
 // === Globe model ===
-export interface Vec3 {
-    x: number;
-    y: number;
-    z: number;
-}
 
 // One Voronoi cell before packing: its site and the polygon ring around it (Vec3s
 // on the unit sphere). Produced by the global/local meshers, consumed by packMesh.

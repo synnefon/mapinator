@@ -1,4 +1,4 @@
-import type { Vec3 } from "./map";
+import type { Vec3 } from "./vec3";
 
 // Orientation as a unit quaternion (maps world → view space). Lets us do true
 // direct manipulation: rotate so the point under the cursor stays under the cursor

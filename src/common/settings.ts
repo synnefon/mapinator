@@ -23,31 +23,6 @@ export const NUMERIC_SETTING_KEYS = MAP_SETTINGS_KEYS.filter(
   (k): k is NumericSettingKey => k !== "theme"
 );
 
-export const isValidSaveFile = (fileContent: any): boolean => {
-  if (!fileContent.seed) {
-    alert("save file must contain a seed");
-    return false;
-  }
-  if (!fileContent.mapSettings) {
-    alert("save file must contain map settings object");
-    return false;
-  }
-  if (
-    typeof fileContent.mapSettings !== "object" ||
-    fileContent.mapSettings === null
-  ) {
-    alert("map settings object must be an object");
-    return false;
-  }
-  for (const k of MAP_SETTINGS_KEYS) {
-    if (!(k in fileContent.mapSettings)) {
-      alert(`save file must contain ${k} in map settings object`);
-      return false;
-    }
-  }
-  return true;
-};
-
 /** =====================================================================
  *  GENERATION
  *  Each wave has a WAVELENGTH (feature size) and AMPLITUDE (strength), plus
@@ -74,8 +49,7 @@ export const LOD = {
   // --- when detail kicks in (higher-def earlier) ---
   // Density ramps geometrically from the global mesh (zoom 0) to FINEST_PATCH_POINTS (zoom 1);
   // DETAIL_BIAS bends that curve. >1 = detail appears earlier, 1 = even, <1 = later.
-  DETAIL_BIAS: 1.5,
-  MAX_LIVE_POINTS: 2_500_000, // during motion, generate patches up to here live; heavier waits for the settle
+  DETAIL_BIAS: 1,
 
   // --- ladder shape ---
   COARSEST_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh

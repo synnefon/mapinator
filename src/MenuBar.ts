@@ -1,10 +1,12 @@
 import type { AppState } from "./AppState";
-import { MAPINATION_FILE_EXTENSION } from "./common/constants";
 import {
-  isValidSaveFile,
-  MAP_DEFAULTS,
-  type MapSettings,
-} from "./common/settings";
+  downloadFile,
+  openSaveFile,
+  SAVE_EXTENSION,
+  serializeSave,
+  type SaveFile,
+} from "./common/mapFile";
+import { MAP_DEFAULTS, type MapSettings } from "./common/settings";
 import { applyThemeUIColors } from "./common/themeColors";
 import type { CompassNeedle } from "./renderer/compassNeedle";
 import { sliderDefs, type UIManager } from "./UIManager";
@@ -56,20 +58,6 @@ const fadeOut = (btn: HTMLButtonElement) => {
       btn.addEventListener("transitionend", off);
     }, 222);
   });
-};
-
-const downloadFile = (c: string | Blob, fname: string, m: string) => {
-  const blob = c instanceof Blob ? c : new Blob([c], { type: m });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fname;
-  document.body.appendChild(link);
-  link.click();
-  setTimeout(() => {
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  }, 100);
 };
 
 /** Wire up the left-sidebar menu: title, tools toggle, sliders, theme, and IO buttons. */
@@ -145,13 +133,12 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
   // --- Sliders ---
   sliderDefs.forEach((def) => {
     const slider = ui.getSlider(def.key);
-    ui.updateSliderValue(def.key, Number(appState.settings[def.key]));
+    ui.updateSliderValue(def.key, Number(appState.settings[def.key])); // initial paint
     slider.input.addEventListener("input", () => {
       let v = Number(slider.input.value);
       if (!Number.isFinite(v)) v = Number(MAP_DEFAULTS[def.key]);
       v = Math.max(def.min, Math.min(def.max, v));
-      appState.updateSetting(def.key, v as (typeof appState.settings)[typeof def.key]);
-      ui.updateSliderValue(def.key, v);
+      appState.setSetting(def.key, v); // subscriber syncs the label
       drawMap();
     });
   });
@@ -161,14 +148,12 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     radio.checked = radio.value === appState.settings.theme;
     radio.addEventListener("change", () => {
       if (radio.checked) {
-        appState.updateSetting("theme", radio.value as MapSettings["theme"]);
-        applyThemeUIColors(radio.value as MapSettings["theme"]);
-        needle?.recolor();
+        appState.setSetting("theme", radio.value as MapSettings["theme"]); // subscriber recolors
         drawMap();
       }
     });
   });
-  applyThemeUIColors(appState.settings.theme);
+  applyThemeUIColors(appState.settings.theme); // initial paint
   needle?.recolor();
 
   // --- Button handlers ---
@@ -179,10 +164,7 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
 
   resetSlidersBtn.addEventListener("click", () => {
     fadeOut(resetSlidersBtn);
-    sliderDefs.forEach((d) => appState.updateSetting(d.key, MAP_DEFAULTS[d.key]));
-    sliderDefs.forEach((def) =>
-      ui.updateSliderValue(def.key, Number(appState.settings[def.key]))
-    );
+    sliderDefs.forEach((d) => appState.setSetting(d.key, MAP_DEFAULTS[d.key])); // subscriber syncs labels
     clearMapCache();
     ensureMap();
   });
@@ -206,56 +188,27 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
 
   // --- Download / Upload ---
   const handleDownloadSave = () => {
-    const mapTitleText = mapTitle.value || "Untitled Map";
-    const json = JSON.stringify(
-      {
-        seed: appState.mapName,
-        mapSettings: { ...appState.settings },
-      },
-      null,
-      2
-    );
+    const title = mapTitle.value || "Untitled Map";
     downloadFile(
-      json,
-      `${mapTitleText.replace(/\s+/g, "_")}${MAPINATION_FILE_EXTENSION}`,
+      serializeSave(appState.mapName, appState.settings),
+      `${title.replace(/\s+/g, "_")}${SAVE_EXTENSION}`,
       "application/json"
     );
   };
 
-  const onLoadSave = (evt: ProgressEvent<FileReader>) => {
-    let saveFile: { seed: string; mapSettings: MapSettings };
-    try {
-      saveFile = JSON.parse(evt.target?.result as string);
-    } catch {
-      alert("Failed to load map file.");
-      return;
-    }
-    if (saveFile.mapSettings) {
-      saveFile.mapSettings = { ...MAP_DEFAULTS, ...saveFile.mapSettings };
-    }
-    if (!isValidSaveFile(saveFile)) return;
-    appState.settings = saveFile.mapSettings;
+  // Apply a loaded save: settings go through the store (subscriber recolors + syncs sliders),
+  // then sync the theme radios (not driven by the store) and switch to the saved seed.
+  const applySave = (save: SaveFile) => {
+    appState.replaceSettings(save.mapSettings);
     ui.themeRadios.forEach(
-      (radio) => (radio.checked = radio.value === saveFile.mapSettings.theme)
+      (radio) => (radio.checked = radio.value === save.mapSettings.theme)
     );
-    applyThemeUIColors(saveFile.mapSettings.theme);
-    needle?.recolor();
-    loadMap(saveFile.seed);
+    loadMap(save.seed);
   };
 
-  const handleUpload = () => {
-    const input = Object.assign(document.createElement("input"), {
-      type: "file",
-      accept: MAPINATION_FILE_EXTENSION,
-    });
-    input.onchange = (e: Event) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = onLoadSave;
-      reader.readAsText(file);
-    };
-    input.click();
+  const handleUpload = async () => {
+    const save = await openSaveFile();
+    if (save) applySave(save);
   };
 
   // --- Popup management ---

@@ -23,17 +23,13 @@ export class NameGenerator {
 
   /** Generate a single country name */
   public generate(opts: CountryGenOptions = {}): string {
+    // Honor an explicit seed (reproducible name); otherwise keep drawing from the
+    // constructor-seeded stream, which advances per call so successive names differ.
+    if (opts.seed !== undefined) this.rng = makeRNG(`${opts.seed}`);
     const lang = opts.lang ?? this.pickLanguage();
     const rawName = this.calcName(lang);
     const cleanedName = rawName.trim().replace(/\s+/g, " ");
-    const capitalizedName = this.titleCase(cleanedName);
-    console.log("\nName Generator Results:");
-    console.table({
-      name: capitalizedName,
-      lang,
-    });
-    this.rng = makeRNG(`${Date.now()}`);
-    return capitalizedName;
+    return this.titleCase(cleanedName);
   }
 
   private calcName(lang: Language): string {
@@ -290,9 +286,9 @@ export class NameGenerator {
     };
 
     const pickMedial = (): string => {
-      const arr = (cfg as any).medials as string[] | undefined;
-      const chance = (cfg as any).medialMorphChance as number | undefined;
-      if (!arr || !arr.length || !chance) return "";
+      const arr = cfg.medials;
+      const chance = cfg.medialMorphChance;
+      if (!arr.length || !chance) return "";
       return this.rng() < chance ? randomChoice(arr, this.rng) || "" : "";
     };
 

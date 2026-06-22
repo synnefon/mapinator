@@ -17,10 +17,10 @@ import {
   sampleDial,
   type MapSettings,
 } from "../common/settings";
-import { applyContrast, clamp, lerp } from "../common/util";
+import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
+import { capDelaunayMesh } from "./CapMesh";
 import { ElevationCalculator } from "./ElevationCalculator";
 import { fbm3 } from "./fbm";
-import { capDelaunayMesh } from "./CapMesh";
 import {
   fibonacciCapSites,
   fibonacciSphere,
@@ -30,11 +30,6 @@ import {
 
 // Phase offset so the ice-edge ruffle noise doesn't line up with the elevation field.
 const ICE_RUFFLE_OFFSET = 53.1;
-
-const smoothstep = (a: number, b: number, x: number) => {
-  const t = clamp((x - a) / (b - a));
-  return t * t * (3 - 2 * t);
-};
 
 // Per-seed dials shared by the global mesh and every local patch, so a zoomed-in
 // patch lines up exactly with the same continents/biomes (just finer).
@@ -124,7 +119,7 @@ export class MapGenerator {
         Math.max(
           0,
           halfAngle * MESH.LOCAL_KEEP_FRACTION -
-            (MESH.OCCLUSION_MARGIN_DEG * Math.PI) / 180
+          (MESH.OCCLUSION_MARGIN_DEG * Math.PI) / 180
         )
       ),
     };
@@ -198,39 +193,10 @@ export class MapGenerator {
         if (d2 > maxChord2) maxChord2 = d2;
         vo++;
       }
-      // Sampled once here and shared: it scales the terrain relief AND modulates
-      // the moisture swing, so computing it per-cell avoids a duplicate noise lookup.
-      const erosion = this.elevationCalc.erosionAmplitudeAt(site.x, site.y, site.z);
-      // Continentalness: computed ONCE here (one domain-warp), shared by elevation and the
-      // moisture maritime layer. `broad` is the low-octave low-pass used to size the maritime
-      // reach to the water body (big ocean = wide, oasis = thin).
-      const { full: continentalness, broad: broadContinentalness } =
-        this.elevationCalc.continentalness(
-          site.x,
-          site.y,
-          site.z,
-          MOISTURE.WATER_SIZE_OCTAVES
-        );
-      elevation[i] = this.elevationCalc.elevationAt(
-        site.x,
-        site.y,
-        site.z,
-        flavor.coastWavelength,
-        flavor.mountainWavelength,
-        flavor.oceanWavelength,
-        extraOctaves,
-        erosion,
-        continentalness
-      );
-      moisture[i] = this.moistureAt(
-        site,
-        flavor.moistureWavelength,
-        extraOctaves,
-        erosion,
-        continentalness,
-        broadContinentalness
-      );
-      ice[i] = this.iceAt(site, elevation[i], flavor.iceCapNorth, flavor.iceCapSouth);
+      const cell = this.computeCellProperties(site, flavor, extraOctaves);
+      elevation[i] = cell.elevation;
+      moisture[i] = cell.moisture;
+      ice[i] = cell.ice;
     }
     ringOffsets[n] = vo;
 
@@ -247,6 +213,50 @@ export class MapGenerator {
       maxRingRadius: Math.sqrt(maxChord2),
       cap,
     };
+  }
+
+  /**
+   * The full per-cell field pipeline in one place: sample the shared erosion +
+   * continentalness once (expensive noise lookups, reused across fields), then
+   * derive elevation, moisture, and ice from them.
+   */
+  private computeCellProperties(
+    site: Vec3,
+    flavor: Flavor,
+    extraOctaves: number
+  ): { elevation: number; moisture: number; ice: number } {
+    // erosion scales terrain relief AND modulates the moisture swing; continentalness
+    // drives both the land/ocean elevation and the moisture maritime layer (`broad` =
+    // the low-octave low-pass that sizes the maritime reach to the water body).
+    const erosion = this.elevationCalc.erosionAmplitudeAt(site.x, site.y, site.z);
+    const { full: continentalness, broad: broadContinentalness } =
+      this.elevationCalc.continentalness(
+        site.x,
+        site.y,
+        site.z,
+        MOISTURE.WATER_SIZE_OCTAVES
+      );
+    const elevation = this.elevationCalc.elevationAt(
+      site,
+      {
+        coastWavelength: flavor.coastWavelength,
+        mountainWavelength: flavor.mountainWavelength,
+        oceanWavelength: flavor.oceanWavelength,
+        extraOctaves,
+      },
+      erosion,
+      continentalness
+    );
+    const moisture = this.moistureAt(
+      site,
+      flavor.moistureWavelength,
+      extraOctaves,
+      erosion,
+      continentalness,
+      broadContinentalness
+    );
+    const ice = this.iceAt(site, elevation, flavor.iceCapNorth, flavor.iceCapSouth);
+    return { elevation, moisture, ice };
   }
 
   /** Build (or reuse) the global spherical Voronoi mesh for a point count. */
@@ -342,7 +352,7 @@ export class MapGenerator {
       ICE.RUFFLE *
       (this.noise3D(site.x * f + o, site.y * f + o, site.z * f + o) +
         0.5 *
-          this.noise3D(site.x * f * 3 + o, site.y * f * 3 + o, site.z * f * 3 + o));
+        this.noise3D(site.x * f * 3 + o, site.y * f * 3 + o, site.z * f * 3 + o));
     const lineN = capNorth - ICE.LAND_BONUS;
     const lineS = capSouth - ICE.LAND_BONUS;
     const north = smoothstep(lineN - ICE.EDGE, lineN, site.y + ruffle);

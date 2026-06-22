@@ -12,6 +12,12 @@ export const lerp = (
   srcMax: number = 1
 ) => dstMin + ((dstMax - dstMin) * (t - srcMin)) / (srcMax - srcMin);
 
+// smoothstep for shaping curves: 0 below a, 1 above b, smooth cubic ease between.
+export const smoothstep = (a: number, b: number, x: number) => {
+  const t = clamp((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+
 // debounce function calls - waits for `delay` ms of inactivity before executing
 export const debounce = <T extends (...args: Parameters<T>) => void>(
   fn: T,
