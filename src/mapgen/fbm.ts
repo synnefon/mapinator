@@ -1,4 +1,5 @@
 import type { NoiseFunction3D } from "simplex-noise";
+import { smoothstep } from "../common/util";
 
 // An octave whose amplitude is below this contributes less than ~0.6% of a unit
 // field — well under the renderer's 5-bit colour quantization (~3.2% per channel),
@@ -37,13 +38,21 @@ export function fbm3(
   let sz = z * inv;
   let amp = amplitude;
   let sum = 0;
-  for (let i = 0; i < octaves; i++) {
+  // Whole octaves at full weight; the fractional remainder is faded in below.
+  const whole = Math.floor(octaves);
+  for (let i = 0; i < whole; i++) {
     if (amp < MIN_OCTAVE_AMPLITUDE) break; // remaining octaves are imperceptible
     sum += amp * noise3D(sx, sy, sz);
     amp *= gain;
     sx *= lacunarity;
     sy *= lacunarity;
     sz *= lacunarity;
+  }
+  // Fractional top octave: fade in by amplitude (smoothstep) so the detail added as a
+  // caller raises `octaves` with zoom emerges continuously, not as a whole wave popping in.
+  const frac = octaves - whole;
+  if (frac > 0 && amp >= MIN_OCTAVE_AMPLITUDE) {
+    sum += amp * smoothstep(0, 1, frac) * noise3D(sx, sy, sz);
   }
   return sum;
 }

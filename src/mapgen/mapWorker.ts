@@ -1,11 +1,12 @@
-import type { Vec3 } from "../common/vec3";
-import type { MapSettings } from "../common/settings";
+import type { Vec3 } from "../common/3DMath";
+import { applyTuning, type MapSettings, type TuningOverrides } from "../common/settings";
 import { MapGenerator } from "./MapGenerator";
 
 // Requests from the main thread. `reSeed` must precede the first generate (and is
 // re-sent on every seed change); postMessage ordering guarantees it lands first.
 type WorkerRequest =
   | { id: number; kind: "reSeed"; seed: string }
+  | { id: number; kind: "tune"; overrides: TuningOverrides }
   | { id: number; kind: "global"; settings: MapSettings }
   | {
       id: number;
@@ -21,15 +22,25 @@ type WorkerRequest =
 const ctx = self as unknown as Worker;
 
 let gen: MapGenerator | null = null;
+let seed: string | null = null; // remembered so a `tune` can re-seed with new dial ranges
 
 ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
   if (req.kind === "reSeed") {
+    seed = req.seed;
     if (gen) {
       gen.reSeed(req.seed);
     } else {
       gen = new MapGenerator(req.seed);
     }
+    return;
+  }
+  if (req.kind === "tune") {
+    applyTuning(req.overrides);
+    // The ElevationCalculator samples some dials (COAST.AMPLITUDE, CONTINENT.WAVELENGTH, …)
+    // once at construction, so re-seed with the SAME seed to re-sample them from the new
+    // ranges. The seed-independent mesh cache is retained.
+    if (gen && seed !== null) gen.reSeed(seed);
     return;
   }
   if (!gen) return; // a generate arrived before any reSeed — shouldn't happen

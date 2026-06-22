@@ -1,19 +1,9 @@
 import { v4 as uuid } from "uuid";
 import { AppState } from "./AppState";
+import { Quat, Vec3 } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
-import {
-  qFromAxisAngle,
-  qMul,
-  qNormalize,
-  qRotate,
-  qSlerp,
-  QUAT_IDENTITY,
-  quatViewCenter,
-  type Quat,
-} from "./common/rotation";
-import { LOD, MAP_DEFAULTS, type MapSettings } from "./common/settings";
+import { applyTuning, LOD, MAP_DEFAULTS, type MapSettings } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
-import type { Vec3 } from "./common/vec3";
 import { globePointCount } from "./mapgen/MapGenerator";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
@@ -73,7 +63,8 @@ function buildPatchLevels(): PatchLevel[] {
       aboveZoom: parseFloat(aboveZoom.toFixed(4)),
       // Octaves spread evenly from the global mesh (rung 0, 0 extra octaves) up to the finest
       // patch (FINEST_EXTRA_OCTAVES). Patch i is rung i+1 of points.length rungs above the global.
-      octaves: Math.round((FINEST_EXTRA_OCTAVES * (i + 1)) / points.length),
+      // Fractional (not rounded): fbm3 fades the top octave in as zoom raises it — no pop.
+      octaves: (FINEST_EXTRA_OCTAVES * (i + 1)) / points.length,
     };
   });
 }
@@ -130,7 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const globeRenderer = createGlobeRenderer();
   // Live view orientation (world→view quaternion), driven by the orbit controls;
   // reset on regen. Replaced wholesale by setView (not mutated in place).
-  let orientation: Quat = QUAT_IDENTITY;
+  let orientation: Quat = Quat.identity;
   // rAF handle for the north-align animation (see orientNorth); any user view change
   // cancels it so a drag/zoom mid-animation takes over cleanly.
   let northAnim: number | null = null;
@@ -175,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       orientation = view.orientation;
       if (view.zoom !== appState.settings.zoom) {
-        appState.setSetting("zoom", view.zoom); // subscriber syncs the slider
+        appState.setSetting("zoom", view.zoom); // zoom is wheel/pinch-driven (no slider)
       }
       // A map zoom gesture (wheel/pinch) crossing globe↔detail auto-toggles the tools — only on
       // the transition, so manual toggles stick. Slider zoom never calls setView, so dragging
@@ -276,7 +267,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // y up, z toward camera) — a live compass that foreshortens as north tilts in/out and,
     // being a solid, never collapses to nothing when you face a pole.
     if (needle) {
-      needle.update(qRotate(orientation, { x: 0, y: 1, z: 0 }));
+      needle.update(Quat.rotate(orientation, { x: 0, y: 1, z: 0 }));
     }
     if (!globalMap) return;
     // When a patch is overlaid, skip the base cells it hides (its cap), so a
@@ -333,7 +324,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const step = (now: number) => {
       const t = Math.min(1, (now - t0) / duration);
       const eased = t * t * (3 - 2 * t); // smoothstep ease in/out
-      orientation = qSlerp(start, target, eased);
+      orientation = Quat.slerp(start, target, eased);
       render();
       northAnim = t < 1 ? requestAnimationFrame(step) : null;
     };
@@ -363,7 +354,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return {
       local: true,
       level,
-      center: quatViewCenter(orientation),
+      center: Quat.viewCenter(orientation),
       halfAngle: levelCap(level),
       points: lv.points,
       extraOctaves: lv.octaves,
@@ -544,7 +535,13 @@ document.addEventListener("DOMContentLoaded", () => {
       globalInFlight = false;
       if (epoch !== seedEpoch) return; // seed changed mid-flight
       mapCache.set(gKey, map);
-      if (globalKey() === gKey) globalMap = map;
+      // Resolution can change while a build is in flight (the slider skips builds while one
+      // runs); if it did, build the now-current density so we converge to the final value.
+      if (globalKey() !== gKey) {
+        ensureGlobal();
+        return;
+      }
+      globalMap = map;
       scheduleRender();
     });
   }
@@ -565,6 +562,19 @@ document.addEventListener("DOMContentLoaded", () => {
     patchMapLevel = -1;
     octaveQueue = [];
     // octaveActive's in-flight result is discarded by the seedEpoch bump in reseedWorker.
+  }
+
+  // Apply the current advanced-tuning overrides everywhere, then rebuild. Render dials
+  // (sea level, elevation contrast, …) take effect on this thread; generation dials go to
+  // the worker, which re-seeds to re-sample them. Bumping the epoch discards in-flight maps
+  // built with the old tuning, and resetAllMaps + ensureMap regenerate at the current view.
+  function applyAdvancedTuning(): void {
+    const overrides = { ...appState.tuningOverrides };
+    applyTuning(overrides);
+    seedEpoch++;
+    worker.postMessage({ id: ++reqId, kind: "tune", overrides });
+    resetAllMaps();
+    ensureMap();
   }
 
   // View / setting change: re-render now (cheap) and keep the progressive octave stack synced.
@@ -594,8 +604,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // Reset the view to the default whole-globe, north-up orientation (the regen reset).
   function resetView() {
     controller.stopMomentum();
-    orientation = QUAT_IDENTITY;
-    appState.setSetting("zoom", 0); // subscriber syncs the slider
+    orientation = Quat.identity;
+    appState.setSetting("zoom", 0); // back to whole-globe zoom
   }
 
   // Generate / switch to a NEW map (regen button or a typed name): always reset the view
@@ -620,14 +630,14 @@ document.addEventListener("DOMContentLoaded", () => {
     controller.stopMomentum();
     let target: Quat;
     if (currentView().local) {
-      const n = qRotate(orientation, { x: 0, y: 1, z: 0 }); // north in view space
-      target = qNormalize(
-        qMul(qFromAxisAngle(0, 0, 1, Math.atan2(n.x, n.y)), orientation)
+      const n = Quat.rotate(orientation, { x: 0, y: 1, z: 0 }); // north in view space
+      target = Quat.normalize(
+        Quat.mul(Quat.fromAxisAngle(0, 0, 1, Math.atan2(n.x, n.y)), orientation)
       );
     } else {
-      const c = quatViewCenter(orientation); // world point currently facing the camera
+      const c = Quat.viewCenter(orientation); // world point currently facing the camera
       const lon = Math.atan2(c.z, c.x); // keep this longitude; level latitude to 0
-      target = qFromAxisAngle(0, 1, 0, lon - Math.PI / 2);
+      target = Quat.fromAxisAngle(0, 1, 0, lon - Math.PI / 2);
     }
     animateOrientationTo(target);
   });
@@ -706,6 +716,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loadMap,
     loadNewMap,
     downloadPNG,
+    applyAdvancedTuning,
   });
   setToolsCollapsed = menu.setToolsCollapsed;
   setTitle = menu.setTitle;

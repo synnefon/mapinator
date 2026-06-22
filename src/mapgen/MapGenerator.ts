@@ -1,6 +1,6 @@
-import { geoVoronoi } from "d3-geo-voronoi";
 import { createNoise3D, type NoiseFunction3D } from "simplex-noise";
-import type { GlobeMap, MeshCell, Vec3 } from "../common/map";
+import type { GlobeMap, MeshCell } from "../common/map";
+import { Vec3 } from "../common/3DMath";
 import { makeRNG, type RNG } from "../common/random";
 import {
   COAST,
@@ -18,15 +18,14 @@ import {
   type MapSettings,
 } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
-import { capDelaunayMesh } from "./CapMesh";
 import { ElevationCalculator } from "./ElevationCalculator";
 import { fbm3 } from "./fbm";
 import {
-  fibonacciCapSites,
-  fibonacciSphere,
-  lonLatToVec3,
-  vec3ToLonLat,
-} from "./Sphere";
+  goldbergCapLevel,
+  goldbergCapMesh,
+  goldbergLevelForPoints,
+  goldbergMesh,
+} from "./Goldberg";
 
 // Phase offset so the ice-edge ruffle noise doesn't line up with the elevation field.
 const ICE_RUFFLE_OFFSET = 53.1;
@@ -103,24 +102,18 @@ export class MapGenerator {
     extraOctaves: number
   ): GlobeMap {
     const flavor = this.sampleFlavor();
-    // Sites = the global points inside the cap (deterministic by position), found by
-    // scanning only the cap's index band rather than all `globalPoints`.
-    const sites = fibonacciCapSites(center, halfAngle, globalPoints);
-
-    // Mesh the cap with stereographic + planar Delaunay (exact geodesic Voronoi, far
-    // faster than spherical geoVoronoi); rim/unbounded cells are dropped inside.
-    const keepCos = Math.cos(halfAngle * MESH.LOCAL_KEEP_FRACTION);
-    const mesh = capDelaunayMesh(sites, center, keepCos);
+    // Hex cap at a finer subdivision than the global mesh; its hexes nest inside the global
+    // ones (same icosahedron), so it refines detail IN PLACE rather than re-tessellating —
+    // stable as you zoom. `globalPoints` (the rung density) picks the level. Cells outside
+    // the inset cap, and incomplete-ring boundary cells, are dropped inside.
+    const keepHalfAngle = halfAngle * MESH.LOCAL_KEEP_FRACTION;
+    const mesh = goldbergCapMesh(center, keepHalfAngle, goldbergCapLevel(globalPoints));
 
     // Cap (inset) the renderer uses to skip global base cells hidden by this patch.
     const cap = {
       center,
       cosKeep: Math.cos(
-        Math.max(
-          0,
-          halfAngle * MESH.LOCAL_KEEP_FRACTION -
-          (MESH.OCCLUSION_MARGIN_DEG * Math.PI) / 180
-        )
+        Math.max(0, keepHalfAngle - (MESH.OCCLUSION_MARGIN_DEG * Math.PI) / 180)
       ),
     };
 
@@ -259,25 +252,16 @@ export class MapGenerator {
     return { elevation, moisture, ice };
   }
 
-  /** Build (or reuse) the global spherical Voronoi mesh for a point count. */
+  /** Build (or reuse) the global hex (Goldberg) mesh for a point count. The point count
+   *  picks a subdivision level; the grid is deterministic + nested, so it's stable across
+   *  zoom (a finer level refines the coarse hexes in place rather than re-tessellating). */
   private getMesh(pointCount: number): MeshCell[] {
-    const cached = this.meshCache.get(pointCount);
+    const level = goldbergLevelForPoints(pointCount);
+    const cached = this.meshCache.get(level);
     if (cached) return cached;
 
-    const sites = fibonacciSphere(pointCount);
-    const voronoi = geoVoronoi(sites.map(vec3ToLonLat));
-    const mesh: MeshCell[] = [];
-    for (const feature of voronoi.polygons().features) {
-      const geometry = feature.geometry;
-      if (!geometry || !geometry.coordinates) continue; // skip degenerate / Sphere
-      const [siteLon, siteLat] = feature.properties.sitecoordinates;
-      mesh.push({
-        site: lonLatToVec3(siteLon, siteLat),
-        ring: geometry.coordinates[0].map(([lon, lat]) => lonLatToVec3(lon, lat)),
-      });
-    }
-
-    this.meshCache.set(pointCount, mesh);
+    const mesh = goldbergMesh(level);
+    this.meshCache.set(level, mesh);
     while (this.meshCache.size > MESH.CACHE_CAP) {
       const oldest = this.meshCache.keys().next().value;
       if (oldest === undefined) break;

@@ -39,41 +39,34 @@
       </button>
     </div>
 
-    <!-- 2. sliders + reset -->
+    <!-- 2. controls + collapsible sections. Reset + zoom stay visible; theme and the
+         generation-dial groups (appended by AdvancedSettings.ts) are collapsible sections,
+         collapsed by default. No outer box / label — the sidebar is the container. -->
     <div class="settings-section">
-      <label>map settings</label>
-      <div class="toolbar">
-        <div class="toolbar-section">
-        <label for="zoom">zoom: <span id="zoomValue"></span></label>
-        <input id="zoom" type="range" min="0" max="1" step="0.01" />
-
-        <!-- <label for="resolution">resolution: <span id="resolutionValue"></span></label> -->
-        <!-- <input id="resolution" type="range" min="0" max="1" step="0.05" /> -->
-
-        <label for="seaLevel">sea level: <span id="seaLevelValue"></span></label>
-        <input id="seaLevel" type="range" min="0" max="1" step="0.01" />
-      </div>
-    </div>
-      <div class="reset-sliders-btn-container">
+      <div class="controls-row">
         <button id="resetSlidersBtn">reset</button>
       </div>
-    </div>
+      <div class="toolbar">
+        <div class="toolbar-section">
+          <label for="resolution">resolution: <span id="resolutionValue"></span></label>
+          <input id="resolution" type="range" min="0" max="1" step="0.05" />
+        </div>
+      </div>
 
-    <!-- 3. theme -->
-    <div id="themeSelectContainer">
-      <label>theme</label>
-      <div id="themeRadioList">
-        <label><input type="radio" class="theme-radio" name="theme" value="lush" checked> lush</label>
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="default"> DEFAULT</label> -->
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="arid"> ARID</label> -->
-        <label><input type="radio" class="theme-radio" name="theme" value="grayscale"> grayscale</label>
-        <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> rainbow</label>
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="volcano"> VOLCANO</label> -->
-        <!-- <label><input type="radio" class="theme-radio" name="theme" value="oasis"> OASIS</label> -->
+      <!-- collapsible sections: theme first, then the dial groups appended here by JS -->
+      <div id="advancedPanel" class="advanced-panel">
+        <details class="adv-group" open>
+          <summary><span class="adv-title">theme</span></summary>
+          <div id="themeRadioList" class="adv-fields">
+            <label><input type="radio" class="theme-radio" name="theme" value="lush" checked> lush</label>
+            <label><input type="radio" class="theme-radio" name="theme" value="grayscale"> grayscale</label>
+            <label><input type="radio" class="theme-radio" name="theme" value="rainbow"> rainbow</label>
+          </div>
+        </details>
       </div>
     </div>
 
-    <!-- 4. upload / download + regen (right-aligned) -->
+    <!-- 3. upload / download + regen (right-aligned) -->
     <div id="ioButtons">
       <button id="downloadBtn" class="img-button-container">
         <img class="button-img" src="./assets/download.png"></img>

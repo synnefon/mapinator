@@ -8,9 +8,15 @@ import {
   type Theme,
 } from "../common/biomes";
 import type { GlobeMap } from "../common/map";
-import { applyContrast, clamp, lerp } from "../common/util";
-import { hexToHsl, hslToHex, mixHex, quantizeColor } from "../common/colorUtils";
-import { ELEVATION_CONTRAST, SEA_LEVEL } from "../common/settings";
+import { applyContrast, clamp } from "../common/util";
+import {
+  hexToHsl,
+  hexToRgb,
+  hslToHex,
+  mixHex,
+  quantizeColor,
+} from "../common/colorUtils";
+import { ELEVATION_CONTRAST, WATERLINE } from "../common/settings";
 
 /** ================================================
  *  Named constants (no magic numbers)
@@ -31,13 +37,11 @@ function expCurve(x: number, k: number): number {
 function shapeForRules(
   elevation: number,
   moisture: number,
-  rainfall: number,
-  seaLevel: number
+  rainfall: number
 ): { elevation: number; moisture: number } {
-  // seaLevel (0..1) picks a waterline in raw-elevation space: below it renormalizes
-  // to ocean depth [-1,0], above it to land height [0,1] — so land keeps its full
-  // band range at any sea level (no collapse to a single peak at the top).
-  const waterline = lerp(SEA_LEVEL.MIN, SEA_LEVEL.MAX, seaLevel);
+  // Fixed waterline in raw-elevation space: below it renormalizes to ocean depth
+  // [-1,0], above it to land height [0,1] — so land keeps its full band range.
+  const waterline = WATERLINE;
   let e =
     elevation < waterline
       ? elevation / Math.max(waterline, EPSILON) - 1
@@ -57,22 +61,16 @@ export function colorAt(
   theme: Theme,
   elevation: number,
   moisture: number,
-  rainfall: number,
-  seaLevel: number
+  rainfall: number
 ): string {
-  if (rainfall < 0 || rainfall > 1 || seaLevel < 0 || seaLevel > 1) {
-    throw Error("rainfall & seaLevel must be 0-1");
+  if (rainfall < 0 || rainfall > 1) {
+    throw Error("rainfall must be 0-1");
   }
 
   const shaped = expCurve(1 - rainfall, EXP_CURVE_K);
   rainfall = Math.max(RAINFALL_MIN, shaped * RAINFALL_SCALE);
 
-  const { elevation: e, moisture: m } = shapeForRules(
-    elevation,
-    moisture,
-    rainfall,
-    seaLevel
-  );
+  const { elevation: e, moisture: m } = shapeForRules(elevation, moisture, rainfall);
 
   const baseHex = baseColorFor(theme, e, m);
   const eBand = getElevationBandNameRaw(e);
@@ -94,14 +92,32 @@ export function colorAt(
 // the WebGL renderer build their fills from this, so they stay pixel-identical.
 export type CellColors = { palette: string[]; colorIdx: Int32Array };
 
-export function computeCellColors(
-  map: GlobeMap,
-  theme: Theme,
-  seaLevel: number
+export function computeCellColors(map: GlobeMap, theme: Theme): CellColors {
+  const { elevation, moisture, ice, cellCount, rainfall } = map;
+  return computeColorsFromFields(
+    elevation,
+    moisture,
+    ice,
+    rainfall,
+    cellCount,
+    theme
+  );
+}
+
+/**
+ * Core of computeCellColors, decoupled from GlobeMap so the cubemap baker can reuse
+ * the exact same biome/ice/quantize logic over flat field arrays (texels, not cells).
+ */
+export function computeColorsFromFields(
+  elevation: Float32Array,
+  moisture: Float32Array,
+  ice: Float32Array,
+  rainfall: number,
+  count: number,
+  theme: Theme
 ): CellColors {
   const iceColor = iceColorFor(theme); // matches this theme's snowiest peak
-  const { elevation, moisture, ice, cellCount, rainfall } = map;
-  const colorIdx = new Int32Array(cellCount);
+  const colorIdx = new Int32Array(count);
   const palette: string[] = [];
   const indexOf = new Map<string, number>();
   const intern = (hex: string): number => {
@@ -114,13 +130,12 @@ export function computeCellColors(
     return idx;
   };
 
-  for (let i = 0; i < cellCount; i++) {
+  for (let i = 0; i < count; i++) {
     const biome = colorAt(
       theme,
       applyContrast(elevation[i], ELEVATION_CONTRAST),
       moisture[i],
-      rainfall,
-      seaLevel
+      rainfall
     );
     // Blend snow into the terrain by iciness (quantized to keep the palette small), so
     // the ice edge fades like every other biome instead of being a flat sticker.
@@ -129,6 +144,39 @@ export function computeCellColors(
     colorIdx[i] = intern(hex);
   }
   return { palette, colorIdx };
+}
+
+/**
+ * Colourise flat field arrays (one entry per cubemap texel) straight to packed RGBA8,
+ * via the shared palette logic above — so a baked planet is pixel-identical in colour
+ * to the meshed one. Returns bytes ready for texImage2D (alpha = 255).
+ */
+export function colorizeFieldToRGBA(
+  elevation: Float32Array,
+  moisture: Float32Array,
+  ice: Float32Array,
+  rainfall: number,
+  theme: Theme
+): Uint8Array {
+  const count = elevation.length;
+  const { palette, colorIdx } = computeColorsFromFields(
+    elevation,
+    moisture,
+    ice,
+    rainfall,
+    count,
+    theme
+  );
+  const rgb = palette.map((hex) => hexToRgb(hex) ?? { r: 0, g: 0, b: 0 });
+  const out = new Uint8Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    const c = rgb[colorIdx[i]];
+    out[4 * i] = c.r;
+    out[4 * i + 1] = c.g;
+    out[4 * i + 2] = c.b;
+    out[4 * i + 3] = 255;
+  }
+  return out;
 }
 
 /** ================================================

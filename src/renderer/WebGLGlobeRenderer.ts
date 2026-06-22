@@ -1,6 +1,6 @@
-import type { GlobeMap, Vec3 } from "../common/map";
+import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
-import type { Quat } from "../common/rotation";
+import type { GlobeMap } from "../common/map";
 import { LOD, type MapSettings } from "../common/settings";
 import { computeCellColors } from "./BiomeColor";
 import { GlobeRenderer, globeRadiusPx } from "./GlobeRenderer";
@@ -30,23 +30,27 @@ const Z_SQUASH = 0.9;
 // z so it wins the depth test against the coincident, coarser base cells beneath it
 // — the GPU equivalent of the Canvas2D occlusion cull, without per-cell bookkeeping.
 const PATCH_DEPTH_BIAS = 0.002;
-// Cap on cached per-map GPU buffer sets; comfortably above main.ts's map cache so the
-// live base + patches stay resident. Oldest sets are deleted (freed) past this.
-const GEOM_CACHE_CAP = 12;
+// GPU buffer-cache budget. Measured (16:9): the whole LOD ladder resident — global base +
+// one patch per level — is ~105 MB of indexed buffers, and WIDE-cap coarse patches dominate
+// (L0 ≈ 29 MB vs the finest ≈ 6 MB), so a flat count cap would swing wildly in bytes. 160 MB
+// holds the ladder + slack so zoom in/out reuses buffers instead of re-uploading; the oldest
+// sets are deleted (freed) once the total exceeds this.
+const GEOM_CACHE_BUDGET_BYTES = 160 * 1024 * 1024;
 
 const VERT_SRC = `#version 300 es
 precision highp float;
-layout(location = 0) in vec3 aPos;    // unit-sphere position
-layout(location = 1) in vec3 aColor;  // per-cell base colour (0..1)
+layout(location = 0) in vec3 aPos;      // unit-sphere position
+layout(location = 1) in uint aColorIdx; // per-vertex palette index (one colour per cell)
 uniform vec4 uQuat;      // world -> view rotation (x,y,z,w)
 uniform vec2 uViewport;  // canvas size in device px
 uniform float uRadius;   // apparent globe radius in px
 uniform float uDepthBias;
 uniform float uOffsetX;  // globe horizontal shift in NDC (room beside the menu)
+uniform sampler2D uPalette; // 1×N RGBA8 palette; cell colour fetched by index
 out vec3 vColor;
 out float vShade;        // view-space z → limb darkening
 
-// Same optimized quaternion rotation as common/rotation.ts:qRotate.
+// Same optimized quaternion rotation as common/3DMath.ts:Quat.rotate.
 vec3 qrot(vec4 q, vec3 v) {
   vec3 t = 2.0 * cross(q.xyz, v);
   return v + q.w * t + cross(q.xyz, t);
@@ -61,7 +65,8 @@ void main() {
   // Front hemisphere (r.z = 1) maps nearest; squashed to stay inside the clip volume.
   float ndcZ = -r.z * ${Z_SQUASH.toFixed(3)} - uDepthBias;
   gl_Position = vec4(ndcX, ndcY, ndcZ, 1.0);
-  vColor = aColor;
+  // One palette texel per deduped cell colour → no per-vertex RGB to upload.
+  vColor = texelFetch(uPalette, ivec2(int(aColorIdx), 0), 0).rgb;
   vShade = r.z;
 }`;
 
@@ -78,10 +83,15 @@ void main() {
 }`;
 
 type GeomEntry = {
+  // Positions ARE the map's ring vertices, uploaded as-is (no fan expansion); idxBuf fans
+  // each cell ring. Colour is a per-vertex palette INDEX (u16) resolved against palTex.
   posBuf: WebGLBuffer;
-  vertexCount: number;
+  idxBuf: WebGLBuffer;
+  indexCount: number;
   colorKey: string | null;
   colorBuf: WebGLBuffer | null;
+  palTex: WebGLTexture | null;
+  bytes: number; // GPU bytes (pos + idx + colour + palette) for the byte-budget LRU
 };
 
 type GLState = {
@@ -93,8 +103,10 @@ type GLState = {
   uDepthBias: WebGLUniformLocation;
   uOffsetX: WebGLUniformLocation;
   uAmbient: WebGLUniformLocation;
-  // Per-map GPU buffers, LRU-evicted (insertion order) so GPU memory stays bounded.
+  uPalette: WebGLUniformLocation;
+  // Per-map GPU buffers, LRU-evicted by total bytes so GPU memory stays bounded.
   geom: Map<GlobeMap, GeomEntry>;
+  geomBytes: number;
 };
 
 /**
@@ -146,7 +158,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
 
     const radius = globeRadiusPx(canvas, settings.zoom);
     const entry = this.getGeom(st, map, settings);
-    if (entry.vertexCount === 0 || !entry.colorBuf) return;
+    if (entry.indexCount === 0 || !entry.colorBuf || !entry.palTex) return;
 
     gl.useProgram(st.program);
     gl.uniform4f(st.uQuat, orientation.x, orientation.y, orientation.z, orientation.w);
@@ -157,14 +169,20 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.uniform1f(st.uOffsetX, 2 * LOD.GLOBE_OFFSET_FRACTION);
     gl.uniform1f(st.uAmbient, AMBIENT);
 
+    // Positions are the ring vertices; idxBuf fans each cell. Colour is a u16 palette
+    // index resolved against the 1×N palette texture bound on unit 0.
     gl.bindBuffer(gl.ARRAY_BUFFER, entry.posBuf);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, entry.colorBuf);
     gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_SHORT, 0, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, entry.palTex);
+    gl.uniform1i(st.uPalette, 0);
 
-    gl.drawArrays(gl.TRIANGLES, 0, entry.vertexCount);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.idxBuf);
+    gl.drawElements(gl.TRIANGLES, entry.indexCount, gl.UNSIGNED_INT, 0);
   }
 
   /** Compile the program + cache GL state for a canvas (once per canvas). */
@@ -201,7 +219,9 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       uDepthBias: uni("uDepthBias"),
       uOffsetX: uni("uOffsetX"),
       uAmbient: uni("uAmbient"),
+      uPalette: uni("uPalette"),
       geom: new Map(),
+      geomBytes: 0,
     };
     this.states.set(canvas, state);
     return state;
@@ -209,7 +229,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
 
   /**
    * Geometry + colour buffers for a map. Positions are built once (the mesh never
-   * changes); colours rebuild only when the theme / sea level changes. LRU-bounded.
+   * changes); colours rebuild only when the theme changes. LRU-bounded.
    */
   private getGeom(st: GLState, map: GlobeMap, settings: MapSettings): GeomEntry {
     const { gl } = st;
@@ -218,124 +238,125 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       st.geom.delete(map); // move to most-recently-used
       st.geom.set(map, entry);
     } else {
-      const { positions, vertexCount } = buildPositions(map);
+      // Positions = the map's ring vertices verbatim (no fan expansion → ~half the bytes,
+      // no main-thread rebuild); idxBuf fans each ring into triangles.
+      const { indices, indexCount } = buildIndices(map);
       entry = {
-        posBuf: makeBuffer(gl, positions),
-        vertexCount,
+        posBuf: makeBuffer(gl, gl.ARRAY_BUFFER, map.ringVerts),
+        idxBuf: makeBuffer(gl, gl.ELEMENT_ARRAY_BUFFER, indices),
+        indexCount,
         colorKey: null,
         colorBuf: null,
+        palTex: null,
+        bytes: map.ringVerts.byteLength + indices.byteLength,
       };
       st.geom.set(map, entry);
-      while (st.geom.size > GEOM_CACHE_CAP) {
+      st.geomBytes += entry.bytes;
+      // Evict the least-recently-used sets until under the byte budget (keep ≥ 1).
+      while (st.geomBytes > GEOM_CACHE_BUDGET_BYTES && st.geom.size > 1) {
         const oldest = st.geom.keys().next().value;
-        if (oldest === undefined) break;
+        if (oldest === undefined || oldest === map) break;
         const e = st.geom.get(oldest)!;
         gl.deleteBuffer(e.posBuf);
+        gl.deleteBuffer(e.idxBuf);
         if (e.colorBuf) gl.deleteBuffer(e.colorBuf);
+        if (e.palTex) gl.deleteTexture(e.palTex);
+        st.geomBytes -= e.bytes;
         st.geom.delete(oldest);
       }
     }
 
-    const colorKey = `${settings.theme}|${settings.seaLevel}`;
+    const colorKey = settings.theme;
     if (entry.colorKey !== colorKey) {
-      const { palette, colorIdx } = computeCellColors(
-        map,
-        settings.theme,
-        settings.seaLevel
-      );
-      const colors = buildColors(map, palette, colorIdx, entry.vertexCount);
+      const { palette, colorIdx } = computeCellColors(map, settings.theme);
+      const colorIndices = buildColorIndices(map, colorIdx);
       if (entry.colorBuf) gl.deleteBuffer(entry.colorBuf);
-      entry.colorBuf = makeBuffer(gl, colors);
+      if (entry.palTex) gl.deleteTexture(entry.palTex);
+      st.geomBytes -= entry.bytes;
+      entry.colorBuf = makeBuffer(gl, gl.ARRAY_BUFFER, colorIndices);
+      entry.palTex = makePaletteTexture(gl, palette);
       entry.colorKey = colorKey;
+      entry.bytes =
+        map.ringVerts.byteLength +
+        entry.indexCount * 4 +
+        colorIndices.byteLength +
+        palette.length * 4;
+      st.geomBytes += entry.bytes;
     }
     return entry;
   }
 }
 
-/** Fan-triangulate every cell ring into a flat xyz vertex buffer (3 floats/vertex). */
-function buildPositions(map: GlobeMap): {
-  positions: Float32Array;
-  vertexCount: number;
-} {
-  const { ringOffsets, ringVerts, cellCount } = map;
+/** Fan indices for every cell ring, into the map's ring-vertex array (vertex `j` of cell `i`
+ *  lives at ringVerts[3*(ringOffsets[i] + local)]). Topology only — no terrain data, so this
+ *  could move to the worker later. Convex cell → simple fan from v0. */
+function buildIndices(map: GlobeMap): { indices: Uint32Array; indexCount: number } {
+  const { ringOffsets, cellCount } = map;
   let triCount = 0;
   for (let i = 0; i < cellCount; i++) {
     const m = ringOffsets[i + 1] - ringOffsets[i];
     if (m >= 3) triCount += m - 2;
   }
-  const vertexCount = triCount * 3;
-  const positions = new Float32Array(vertexCount * 3);
-
+  const indexCount = triCount * 3;
+  const indices = new Uint32Array(indexCount);
   let o = 0;
   for (let i = 0; i < cellCount; i++) {
     const s = ringOffsets[i];
     const m = ringOffsets[i + 1] - s;
     if (m < 3) continue;
-    const b0 = 3 * s;
-    const x0 = ringVerts[b0];
-    const y0 = ringVerts[b0 + 1];
-    const z0 = ringVerts[b0 + 2];
-    // Convex Voronoi cell → simple fan from v0 (winding doesn't matter; depth-tested).
     for (let k = 1; k <= m - 2; k++) {
-      const bk = 3 * (s + k);
-      const bk1 = 3 * (s + k + 1);
-      positions[o++] = x0;
-      positions[o++] = y0;
-      positions[o++] = z0;
-      positions[o++] = ringVerts[bk];
-      positions[o++] = ringVerts[bk + 1];
-      positions[o++] = ringVerts[bk + 2];
-      positions[o++] = ringVerts[bk1];
-      positions[o++] = ringVerts[bk1 + 1];
-      positions[o++] = ringVerts[bk1 + 2];
+      indices[o++] = s;
+      indices[o++] = s + k;
+      indices[o++] = s + k + 1;
     }
   }
-  return { positions, vertexCount };
+  return { indices, indexCount };
 }
 
-/** Per-vertex RGB (0..1) matching buildPositions's vertex order; one colour per cell. */
-function buildColors(
-  map: GlobeMap,
-  palette: string[],
-  colorIdx: Int32Array,
-  vertexCount: number
-): Float32Array {
-  // Resolve each distinct palette colour to RGB once.
-  const pr = new Float32Array(palette.length);
-  const pg = new Float32Array(palette.length);
-  const pb = new Float32Array(palette.length);
-  for (let p = 0; p < palette.length; p++) {
-    const rgb = hexToRgb(palette[p]) ?? { r: 0, g: 0, b: 0 };
-    pr[p] = rgb.r / 255;
-    pg[p] = rgb.g / 255;
-    pb[p] = rgb.b / 255;
-  }
-
+/** One u16 palette index per ring vertex (every vertex of a cell shares the cell's colour),
+ *  in the ring-vertex order of map.ringVerts. Resolved to RGB by the palette texture. */
+function buildColorIndices(map: GlobeMap, colorIdx: Int32Array): Uint16Array {
   const { ringOffsets, cellCount } = map;
-  const colors = new Float32Array(vertexCount * 3);
-  let o = 0;
+  const out = new Uint16Array(map.ringVerts.length / 3);
   for (let i = 0; i < cellCount; i++) {
-    const m = ringOffsets[i + 1] - ringOffsets[i];
-    if (m < 3) continue;
-    const p = colorIdx[i];
-    const r = pr[p];
-    const g = pg[p];
-    const b = pb[p];
-    const verts = (m - 2) * 3;
-    for (let v = 0; v < verts; v++) {
-      colors[o++] = r;
-      colors[o++] = g;
-      colors[o++] = b;
-    }
+    const ci = colorIdx[i];
+    for (let v = ringOffsets[i]; v < ringOffsets[i + 1]; v++) out[v] = ci;
   }
-  return colors;
+  return out;
 }
 
-function makeBuffer(gl: WebGL2RenderingContext, data: Float32Array): WebGLBuffer {
+/** 1×N RGBA8 texture of the deduped cell palette; texelFetched by index in the shader. The
+ *  palette is small (≤ ~600 colours measured, well under MAX_TEXTURE_SIZE). */
+function makePaletteTexture(gl: WebGL2RenderingContext, palette: string[]): WebGLTexture {
+  const n = Math.max(1, palette.length);
+  const data = new Uint8Array(n * 4);
+  for (let i = 0; i < palette.length; i++) {
+    const rgb = hexToRgb(palette[i]) ?? { r: 0, g: 0, b: 0 };
+    data[4 * i] = rgb.r;
+    data[4 * i + 1] = rgb.g;
+    data[4 * i + 2] = rgb.b;
+    data[4 * i + 3] = 255;
+  }
+  const tex = gl.createTexture();
+  if (!tex) throw new Error("failed to create palette texture");
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, n, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+
+function makeBuffer(
+  gl: WebGL2RenderingContext,
+  target: number,
+  data: AllowSharedBufferSource
+): WebGLBuffer {
   const buf = gl.createBuffer();
   if (!buf) throw new Error("failed to create GL buffer");
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  gl.bindBuffer(target, buf);
+  gl.bufferData(target, data, gl.STATIC_DRAW);
   return buf;
 }
 

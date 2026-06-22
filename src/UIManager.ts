@@ -52,10 +52,9 @@ export type UIElements = {
   lockFrequencies: HTMLInputElement;
 };
 
+// Basic numeric-setting sliders. (Zoom is driven by the orbit controls; sea level was removed.)
 export const sliderDefs: readonly SliderDef[] = [
-  // { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.05 },
-  { key: "seaLevel", idBase: "seaLevel", min: 0, max: 1, step: 0.05 },
-  { key: "zoom", idBase: "zoom", min: 0, max: 1, step: 0.01 },
+  { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.1 },
 ];
 
 export class UIManager {

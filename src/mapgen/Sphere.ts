@@ -1,5 +1,5 @@
-import type { Vec3 } from "../common/vec3";
 import { clamp } from "../common/util";
+import type { Vec3 } from "../common/3DMath";
 
 // Golden angle drives the Fibonacci spiral; the constants convert between the
 // sphere's 3D unit vectors and the [lon, lat] degrees that d3-geo / geoVoronoi want.

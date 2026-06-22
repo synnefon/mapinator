@@ -89,10 +89,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.6rem;
-  padding-left: 1.5em; /* equal L/R so the content block is centred in the bar */
-  padding-right: 1.5em;
+  padding-left: 0.9em; /* equal L/R so the content block is centred in the bar (trim = wider sections) */
+  padding-right: 0.9em;
   padding-top: 1em;
+  padding-bottom: 1em; /* breathing room under the footer io buttons */
   box-sizing: border-box;
+  overflow-y: auto; /* let the whole menu scroll if the advanced panel makes it tall */
+  /* Always reserve the scrollbar gutter (both sides, to keep the content centred) so the
+     content doesn't shrink/reflow when the scrollbar appears. */
+  scrollbar-gutter: stable both-edges;
   transition: transform 0.4s ease, opacity 0.3s ease;
 }
 
@@ -140,16 +145,21 @@ body.tools-collapsed #toolsToggle {
   width: 100%;
 }
 
-/* Toolbar */
+/* Toolbar — a borderless container for the always-visible sliders (zoom). The sidebar
+   itself is the frame now; there's no boxed "map settings" panel. */
 .toolbar {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 0.85vh;
-  border: 4px solid var(--menuText);
-  padding: 0.5em 0.5em 1.3em; /* extra space below the last slider before the box edge */
   box-sizing: border-box;
-  overflow-y: auto;
+}
+
+/* Reset row: the (compact) reset button sits at the top-right of the controls. */
+.controls-row {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
 }
 
 /* Centre the labels + sliders horizontally (they're 90%-wide blocks). */
@@ -165,22 +175,23 @@ body.tools-collapsed #toolsToggle {
   display: flex;
   gap: 0.6rem;
   align-items: center;
+  /* Footer: pushed to the bottom of the sidebar when there's spare room. It stays in
+     normal flow (not sticky), so when the sections fill the bar it scrolls away with
+     the content rather than staying pinned/visible. */
+  margin-top: auto;
 }
 
 #ioButtons #regenBtn {
   margin-left: auto; /* push regen to the right edge */
 }
 
-.reset-sliders-btn-container {
-  display: flex;
-  align-items: left;
-  width: 100%;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
+/* Map-settings header: section label on the left, reset button at the top-right. */
+/* Compact top-right reset. The padding/font here (ID specificity) beat the generic
+   button:hover rule, so the button keeps its size on hover. */
 #resetSlidersBtn {
-  width: 100%;
+  flex: 0 0 auto;
+  padding: 0.2em 0.7em;
+  font-size: 0.8rem;
   color: var(--menuText);
 }
 #resetSlidersBtn:hover {
@@ -347,26 +358,13 @@ input[type="checkbox"]:indeterminate::after {
   background-color: var(--highlight);
 }
 
-#themeSelectContainer {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
 .left-sidebar label {
   font-weight: bold;
   font-family: sans-serif;
   margin-left: 0.5em;
 }
 
-#themeRadioList {
-  overflow-y: auto;
-  border: 4px solid var(--menuText);
-  padding: 0.5em;
-  background-color: var(--menuBg);
-}
-
+/* Theme radios live in a collapsible section (.adv-fields handles layout/padding). */
 #themeRadioList label {
   display: block;
   font-size: 0.8em;
@@ -787,5 +785,174 @@ hr {
 
 * {
   border-radius: 8px;
+}
+
+/* ── Settings sections ───────────────────────────────────────────────────────
+   A stack of collapsible per-group subheadings (one <details> per group: theme first,
+   then each settings.ts dial group), built in JS. No outer box — they sit directly in
+   the sidebar, which scrolls if they overflow. */
+.advanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  line-height: 1.4; /* tame the global 2.5 so rows stay compact */
+}
+
+/* Collapsible group subheading */
+.adv-group {
+  border: 2px solid var(--menuText);
+}
+.adv-group > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* title left, section reset top-right */
+  gap: 0.5em;
+  cursor: pointer;
+  user-select: none;
+  list-style: none; /* hide the native disclosure triangle; we draw our own ▸/▾ */
+  font-family: sans-serif;
+  font-weight: bold;
+  font-size: 0.8rem;
+  padding: 0.25em 0.5em;
+}
+.adv-group > summary::-webkit-details-marker {
+  display: none;
+}
+.adv-title::before {
+  content: "▸ ";
+}
+.adv-group[open] > summary .adv-title::before {
+  content: "▾ ";
+}
+.adv-group > summary:hover .adv-title {
+  color: var(--highlight);
+}
+
+/* Per-section reset button (top-right of each subheading) — only shown when the
+   section is expanded. */
+.adv-reset {
+  display: none;
+  flex: 0 0 auto;
+  font-family: sans-serif;
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 0.15em 0.45em;
+  border: 2px solid var(--menuText);
+  color: var(--menuText);
+  background-color: var(--menuBg);
+}
+.adv-group[open] > summary .adv-reset {
+  display: inline-block;
+}
+.adv-reset:hover {
+  background-color: var(--highlight);
+  color: var(--highlightText);
+  /* repeat size so the generic button:hover rule can't grow it */
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 0.15em 0.45em;
+}
+
+.adv-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.3em 0.5em 0.6em;
+}
+
+/* Heading above a range dial's min/max pair */
+.adv-field-label {
+  font-size: 0.78rem;
+  font-weight: bold;
+  margin-top: 0.4em;
+  opacity: 0.85;
+}
+
+.adv-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.advanced-panel label {
+  font-family: 'Roboto Mono', monospace;
+  font-weight: normal;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  margin-left: 0; /* cancel the .left-sidebar label indent */
+}
+
+.adv-val {
+  opacity: 0.8;
+}
+
+.advanced-panel input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  border: none;
+  display: block;
+}
+
+/* Range dial: two thumbs + a draggable fill, all sharing ONE bar. Layering, bottom→top:
+   the ::before base track, then the .adv-fill span, then the two range inputs (their own
+   tracks transparent, elements click-through) so the thumbs paint on top and stay grabbable.
+   The fill catches drags in the middle (move both thumbs); thumbs catch drags at the ends. */
+.adv-range {
+  position: relative;
+  width: 100%;
+  height: 18px;
+}
+/* Shared base track drawn once on the container (the inputs' own tracks are transparent). */
+.adv-range::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 8px;
+  border: 2px solid var(--track);
+  border-radius: 8px;
+  background: var(--menuBg);
+}
+/* The selected [min, max] span; also the handle for dragging both thumbs together. */
+.adv-fill {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 8px;
+  background: var(--highlight);
+  border-radius: 8px;
+  cursor: grab;
+  touch-action: none; /* let pointer drags work on touch without scrolling */
+  /* left / width set inline by JS from the two values */
+}
+.adv-fill:active {
+  cursor: grabbing;
+}
+.adv-range input[type="range"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  pointer-events: none; /* element is click-through… */
+}
+.adv-range input[type="range"]::-webkit-slider-runnable-track {
+  background: transparent;
+  border-color: transparent;
+}
+.adv-range input[type="range"]::-moz-range-track {
+  background: transparent;
+  border-color: transparent;
+}
+.adv-range input[type="range"]::-webkit-slider-thumb {
+  pointer-events: auto; /* …only the thumbs are grabbable */
+}
+.adv-range input[type="range"]::-moz-range-thumb {
+  pointer-events: auto;
 }
 

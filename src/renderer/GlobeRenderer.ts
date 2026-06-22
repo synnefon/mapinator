@@ -1,6 +1,7 @@
-import type { GlobeMap, Vec3 } from "../common/map";
+import type { GlobeMap } from "../common/map";
+import { Vec3 } from "../common/3DMath";
 import { hexToHsl, hslToHex } from "../common/colorUtils";
-import type { Quat } from "../common/rotation";
+import type { Quat } from "../common/3DMath";
 import { LOD, type MapSettings } from "../common/settings";
 import { clamp } from "../common/util";
 import { computeCellColors } from "./BiomeColor";
@@ -80,7 +81,7 @@ export class GlobeRenderer {
     const { sites, ringVerts, ringOffsets, cellCount } = map;
 
     // Orientation rotates world → view; camera looks down +Z, so a point is on the
-    // near (visible) hemisphere when its rotated z > 0. qRotate is inlined here to
+    // near (visible) hemisphere when its rotated z > 0. Quat.rotate is inlined here to
     // avoid allocating a Vec3 per site + per ring vertex every frame.
     const qx = orientation.x;
     const qy = orientation.y;
@@ -177,15 +178,11 @@ export class GlobeRenderer {
    * Cached until the theme/sea level or the map changes.
    */
   private getColors(map: GlobeMap, settings: MapSettings): ColorCache {
-    const key = `${settings.theme}|${settings.seaLevel}`;
+    const key = settings.theme;
     const cached = this.colorCache.get(map);
     if (cached && cached.key === key) return cached;
 
-    const { palette, colorIdx } = computeCellColors(
-      map,
-      settings.theme,
-      settings.seaLevel
-    );
+    const { palette, colorIdx } = computeCellColors(map, settings.theme);
     const entry: ColorCache = { key, palette, colorIdx };
     this.colorCache.set(map, entry);
     return entry;

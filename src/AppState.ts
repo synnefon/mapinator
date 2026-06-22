@@ -3,6 +3,7 @@ import {
   MAP_DEFAULTS,
   NUMERIC_SETTING_KEYS,
   type MapSettings,
+  type TuningOverrides,
 } from "./common/settings";
 
 export type SettingKey = keyof MapSettings;
@@ -17,6 +18,9 @@ export class AppState {
   private _selectedLanguages: Language[] = [...Languages];
   private _mapName: string;
   private listeners = new Set<SettingsListener>();
+  // Advanced-settings overrides for the generation/appearance dials (dotted path → value).
+  // Missing paths fall back to each dial's default; see applyTuning in settings.ts.
+  private _tuning: TuningOverrides = {};
 
   constructor() {
     const urlParams = new URL(window.location.href).searchParams;
@@ -43,6 +47,10 @@ export class AppState {
   get mapName() {
     return this._mapName;
   }
+  /** Current advanced-tuning overrides (read-only view). */
+  get tuningOverrides(): Readonly<TuningOverrides> {
+    return this._tuning;
+  }
 
   set selectedLanguages(value: Language[]) {
     this._selectedLanguages = value;
@@ -65,6 +73,21 @@ export class AppState {
     );
     this._settings = { ...next };
     for (const key of changed) for (const fn of this.listeners) fn(key);
+  }
+
+  /** Set one advanced-tuning override (dotted path → value). */
+  setTuning(path: string, value: number): void {
+    this._tuning[path] = value;
+  }
+
+  /** Drop one advanced-tuning override, reverting that dial to its default. */
+  clearTuning(path: string): void {
+    delete this._tuning[path];
+  }
+
+  /** Clear all advanced-tuning overrides (back to dial defaults). */
+  resetTuning(): void {
+    this._tuning = {};
   }
 
   /** Subscribe to setting changes; returns an unsubscribe fn. */

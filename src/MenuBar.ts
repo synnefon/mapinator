@@ -1,3 +1,4 @@
+import { setupAdvancedPanel } from "./AdvancedSettings";
 import type { AppState } from "./AppState";
 import {
   downloadFile,
@@ -27,6 +28,7 @@ type MenuBarDeps = {
   loadMap: (name: string) => void;
   loadNewMap: (name: string) => void;
   downloadPNG: (title: string) => void;
+  applyAdvancedTuning: () => void;
 };
 
 // What main calls back into: auto-collapse on a map zoom gesture (setView), and show a title
@@ -68,11 +70,10 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     needle,
     generateMapName,
     drawMap,
-    ensureMap,
-    clearMapCache,
     loadMap,
     loadNewMap,
     downloadPNG,
+    applyAdvancedTuning,
   } = deps;
 
   const {
@@ -143,6 +144,11 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     });
   });
 
+  // --- Advanced settings ---
+  // Collapsible panel of sliders for every generation/appearance dial (settings.ts).
+  // Slider input writes the override into app state; applyAdvancedTuning regenerates.
+  const advanced = setupAdvancedPanel({ appState, onChange: applyAdvancedTuning });
+
   // --- Theme ---
   ui.themeRadios.forEach((radio) => {
     radio.checked = radio.value === appState.settings.theme;
@@ -165,8 +171,9 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
   resetSlidersBtn.addEventListener("click", () => {
     fadeOut(resetSlidersBtn);
     sliderDefs.forEach((d) => appState.setSetting(d.key, MAP_DEFAULTS[d.key])); // subscriber syncs labels
-    clearMapCache();
-    ensureMap();
+    appState.resetTuning(); // clear advanced overrides too
+    advanced.refresh(); // sync the advanced sliders back to their defaults
+    applyAdvancedTuning(); // re-apply (now-default) dials everywhere + regenerate
   });
 
   loadTitleBtn.addEventListener("click", () => {

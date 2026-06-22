@@ -1,5 +1,5 @@
 import type { NoiseFunction3D } from "simplex-noise";
-import type { Vec3 } from "../common/vec3";
+import type { Vec3 } from "../common/3DMath";
 import { type RNG } from "../common/random";
 import {
   COAST,

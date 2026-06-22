@@ -1,6 +1,6 @@
 import Delaunator from "delaunator";
-import type { MeshCell, Vec3 } from "../common/map";
-import { dot } from "../common/vec3";
+import type { MeshCell } from "../common/map";
+import { Vec3 } from "../common/3DMath";
 
 /**
  * Spherical Voronoi mesh of `sites` inside a cap around `center`, via stereographic
@@ -94,7 +94,7 @@ export function capDelaunayMesh(
   const mesh: MeshCell[] = [];
   for (let i = 0; i < n; i++) {
     const site = sites[i];
-    if (dot(site, center) < keepCos) {
+    if (Vec3.dot(site, center) < keepCos) {
       continue; // rim padding → off-screen, drop
     }
     const e0 = inedges[i];

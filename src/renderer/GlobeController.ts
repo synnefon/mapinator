@@ -1,11 +1,4 @@
-import type { Vec3 } from "../common/vec3";
-import {
-  qFromAxisAngle,
-  qMul,
-  qNormalize,
-  quatBetween,
-  type Quat,
-} from "../common/rotation";
+import { Quat, type Vec3 } from "../common/3DMath";
 import { LOD } from "../common/settings";
 import { clamp } from "../common/util";
 import { globeRadiusPx } from "./GlobeRenderer";
@@ -104,7 +97,7 @@ export class GlobeController {
     const zoom = clamp(newZoom, 0, 1);
     const to = this.viewDirAt(canvasX, canvasY, globeRadiusPx(this.canvas, zoom));
     this.setView({
-      orientation: qNormalize(qMul(quatBetween(from, to), v.orientation)),
+      orientation: Quat.normalize(Quat.mul(Quat.between(from, to), v.orientation)),
       zoom,
     });
   }
@@ -114,9 +107,9 @@ export class GlobeController {
     const radius = globeRadiusPx(this.canvas, this.getView().zoom);
     const from = this.viewDirAt(this.lastX, this.lastY, radius);
     const to = this.viewDirAt(canvasX, canvasY, radius);
-    const dq = quatBetween(from, to);
+    const dq = Quat.between(from, to);
     const v = this.getView();
-    this.setView({ ...v, orientation: qNormalize(qMul(dq, v.orientation)) });
+    this.setView({ ...v, orientation: Quat.normalize(Quat.mul(dq, v.orientation)) });
     this.trackVelocity(dq);
     this.lastX = canvasX;
     this.lastY = canvasY;
@@ -160,9 +153,9 @@ export class GlobeController {
         this.momentumRAF = null;
         return;
       }
-      const dq = qFromAxisAngle(axis.x, axis.y, axis.z, speed * dt);
+      const dq = Quat.fromAxisAngle(axis.x, axis.y, axis.z, speed * dt);
       const v = this.getView();
-      this.setView({ ...v, orientation: qNormalize(qMul(dq, v.orientation)) });
+      this.setView({ ...v, orientation: Quat.normalize(Quat.mul(dq, v.orientation)) });
       this.momentumRAF = requestAnimationFrame(step);
     };
     this.momentumRAF = requestAnimationFrame(step);

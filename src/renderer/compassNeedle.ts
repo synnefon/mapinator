@@ -1,7 +1,6 @@
 import * as Zdog from "zdog";
-import type { Vec3 } from "../common/vec3";
+import { Vec3 } from "../common/3DMath";
 import { clamp } from "../common/util";
-import { add, cross, dot, normalize, scale, sub } from "../common/vec3";
 
 // A real 3D compass needle: the north-arrow chevron (from assets/north.svg) extruded into a
 // thin solid slab, drawn with Zdog. Built once; `update(nv)` aims the tip along north's
@@ -22,7 +21,7 @@ const DEPTH_RATIO = 0.3; // slab thickness ÷ arrowhead height — the depth tha
 
 // Fixed light direction (upper-front-left; Zdog y points down, so up = -y) for static flat
 // shading. Zdog has no lighting model, so each face is pre-shaded by its normal.
-const LIGHT = normalize({ x: -0.4, y: -0.7, z: 0.6 });
+const LIGHT = Vec3.normalize({ x: -0.4, y: -0.7, z: 0.6 });
 
 type Face = { shape: Zdog.Shape; light: number }; // light = shade factor in [-1, 1]
 
@@ -92,10 +91,10 @@ type RGB = [number, number, number];
 /** Static flat-shade factor for a face: its outward normal dotted with the light. */
 function faceLight(path: Vec3[], light: Vec3): number {
   const [a, b, c] = path;
-  let n = normalize(cross(sub(b, a), sub(c, a)));
-  const centroid = scale(add(add(a, b), c), 1 / 3); // points outward from the centre
-  if (dot(n, centroid) < 0) n = scale(n, -1);
-  return clamp(dot(n, light), -1, 1);
+  let n = Vec3.normalize(Vec3.cross(Vec3.sub(b, a), Vec3.sub(c, a)));
+  const centroid = Vec3.scale(Vec3.add(Vec3.add(a, b), c), 1 / 3); // points outward from the centre
+  if (Vec3.dot(n, centroid) < 0) n = Vec3.scale(n, -1);
+  return clamp(Vec3.dot(n, light), -1, 1);
 }
 
 /** Lighten (toward white) or darken (toward black) a base colour by a [-1,1] factor. */
