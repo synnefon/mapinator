@@ -62,7 +62,6 @@ export const LOD = {
   GLOBE_FIT_FRACTION: 0.46, // globe radius ÷ min(canvas w, h) at zoom 0 (whole-globe fit)
   GLOBE_OFFSET_FRACTION: 0.125, // globe nudged right by this fraction of canvas width (room beside the menu)
   MIN_EXPORT_POINTS: 4_000_000, // zoomed-in PNG export density floor
-  CUBE_FACE_SIZE: 256, // baked terrain cubemap face resolution; higher = sharper / less blocky, slower one-time bake per seed
 } as const;
 
 // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.

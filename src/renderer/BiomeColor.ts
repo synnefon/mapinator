@@ -9,13 +9,7 @@ import {
 } from "../common/biomes";
 import type { GlobeMap } from "../common/map";
 import { applyContrast, clamp } from "../common/util";
-import {
-  hexToHsl,
-  hexToRgb,
-  hslToHex,
-  mixHex,
-  quantizeColor,
-} from "../common/colorUtils";
+import { hexToHsl, hslToHex, mixHex, quantizeColor } from "../common/colorUtils";
 import { ELEVATION_CONTRAST, WATERLINE } from "../common/settings";
 
 /** ================================================
@@ -144,39 +138,6 @@ export function computeColorsFromFields(
     colorIdx[i] = intern(hex);
   }
   return { palette, colorIdx };
-}
-
-/**
- * Colourise flat field arrays (one entry per cubemap texel) straight to packed RGBA8,
- * via the shared palette logic above — so a baked planet is pixel-identical in colour
- * to the meshed one. Returns bytes ready for texImage2D (alpha = 255).
- */
-export function colorizeFieldToRGBA(
-  elevation: Float32Array,
-  moisture: Float32Array,
-  ice: Float32Array,
-  rainfall: number,
-  theme: Theme
-): Uint8Array {
-  const count = elevation.length;
-  const { palette, colorIdx } = computeColorsFromFields(
-    elevation,
-    moisture,
-    ice,
-    rainfall,
-    count,
-    theme
-  );
-  const rgb = palette.map((hex) => hexToRgb(hex) ?? { r: 0, g: 0, b: 0 });
-  const out = new Uint8Array(count * 4);
-  for (let i = 0; i < count; i++) {
-    const c = rgb[colorIdx[i]];
-    out[4 * i] = c.r;
-    out[4 * i + 1] = c.g;
-    out[4 * i + 2] = c.b;
-    out[4 * i + 3] = 255;
-  }
-  return out;
 }
 
 /** ================================================

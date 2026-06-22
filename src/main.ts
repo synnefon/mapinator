@@ -535,13 +535,7 @@ document.addEventListener("DOMContentLoaded", () => {
       globalInFlight = false;
       if (epoch !== seedEpoch) return; // seed changed mid-flight
       mapCache.set(gKey, map);
-      // Resolution can change while a build is in flight (the slider skips builds while one
-      // runs); if it did, build the now-current density so we converge to the final value.
-      if (globalKey() !== gKey) {
-        ensureGlobal();
-        return;
-      }
-      globalMap = map;
+      if (globalKey() === gKey) globalMap = map;
       scheduleRender();
     });
   }

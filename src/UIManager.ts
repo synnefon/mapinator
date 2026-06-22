@@ -52,10 +52,10 @@ export type UIElements = {
   lockFrequencies: HTMLInputElement;
 };
 
-// Basic numeric-setting sliders. (Zoom is driven by the orbit controls; sea level was removed.)
-export const sliderDefs: readonly SliderDef[] = [
-  { key: "resolution", idBase: "resolution", min: 0, max: 1, step: 0.1 },
-];
+// Basic numeric-setting sliders. Currently none — zoom is driven by the orbit controls
+// (wheel/pinch), sea level was removed, and resolution has no slider; kept as the wiring
+// point if one's re-added.
+export const sliderDefs: readonly SliderDef[] = [];
 
 export class UIManager {
   private elements: UIElements;
