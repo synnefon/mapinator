@@ -136,19 +136,20 @@ export const MOUNTAIN = {
 
 // MOISTURE — drives wet/dry biome coloring.
 export const MOISTURE = {
-  WAVELENGTH: [0.5, 0.7], // larger = bigger climate zones
-  AMPLITUDE: 0.4, // higher = stronger wet/dry swings
-  CONTRAST: 0.5, // higher = sharper wet/dry boundaries
+  WAVELENGTH: [0.7, 0.9], // larger = bigger climate zones
+  AMPLITUDE: 0.6, // higher = stronger wet/dry swings
+  CONTRAST: 0.45, // higher = sharper wet/dry boundaries
   NOISE_OFFSET: 31.7, // decorrelates the moisture noise from the elevation field
   // Maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland.
   // 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline.
-  WATER_PROXIMITY_EFFECT: 1,
-  // Continentalness at which maritime humidity starts falling off inland (full at/below it,
-  // 0 by the deep interior). Lower = effect hugs the coast; higher = reaches deeper inland.
-  INLAND_FALLOFF: .1,
-  // Desertification rate beyond the coastal band: how steeply humidity drops toward the
+  WATER_PROXIMITY_EFFECT: 0.5,
+  // Desertification rate: how steeply maritime humidity drops from the coast toward the
   // interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland.
-  DESERT_STEEPNESS: 99,
+  DESERT_STEEPNESS: 2,
+  // Water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used
+  // to gauge "big water." Fewer = only large bodies (oceans) project humidity far inland (size
+  // matters more); toward CONTINENT.OCTAVES (5.5) = size barely matters.
+  WATER_SIZE_OCTAVES: 0.3,
 } as const;
 
 // ICE — polar snow caps on LAND (open water doesn't ice, for now). Land is snow poleward

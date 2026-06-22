@@ -201,13 +201,16 @@ export class MapGenerator {
       // Sampled once here and shared: it scales the terrain relief AND modulates
       // the moisture swing, so computing it per-cell avoids a duplicate noise lookup.
       const erosion = this.elevationCalc.erosionAmplitudeAt(site.x, site.y, site.z);
-      // Continentalness: computed ONCE here, then shared by elevation and the moisture
-      // water-proximity layer — so the carrier fBm isn't evaluated twice per cell.
-      const continentalness = this.elevationCalc.continentalnessAt(
-        site.x,
-        site.y,
-        site.z
-      );
+      // Continentalness: computed ONCE here (one domain-warp), shared by elevation and the
+      // moisture maritime layer. `broad` is the low-octave low-pass used to size the maritime
+      // reach to the water body (big ocean = wide, oasis = thin).
+      const { full: continentalness, broad: broadContinentalness } =
+        this.elevationCalc.continentalness(
+          site.x,
+          site.y,
+          site.z,
+          MOISTURE.WATER_SIZE_OCTAVES
+        );
       elevation[i] = this.elevationCalc.elevationAt(
         site.x,
         site.y,
@@ -224,7 +227,8 @@ export class MapGenerator {
         flavor.moistureWavelength,
         extraOctaves,
         erosion,
-        continentalness
+        continentalness,
+        broadContinentalness
       );
       ice[i] = this.iceAt(site, elevation[i], flavor.iceCapNorth, flavor.iceCapSouth);
     }
@@ -278,7 +282,8 @@ export class MapGenerator {
     moistureWavelength: number,
     extraOctaves: number,
     erosion: number,
-    continentalness: number
+    continentalness: number,
+    broadContinentalness: number
   ): number {
     const raw = fbm3(
       this.noise3D,
@@ -296,14 +301,12 @@ export class MapGenerator {
     const detail = erosion / FEATURE_DETAIL_MID;
     let m = clamp(INVARIANTS.NEUTRAL_CENTER_POINT + raw * detail);
     // Maritime humidity: pull moisture toward wet near water, up to WATER_PROXIMITY_EFFECT
-    // (0 = off). Full across the coastal band (continentalness ≤ INLAND_FALLOFF), then dries
-    // toward the interior — DESERT_STEEPNESS sets the rate (>1 = deserts ramp in fast just past
-    // the coast; 1 = linear; <1 = humidity lingers inland).
-    const inland = clamp(
-      (continentalness - MOISTURE.INLAND_FALLOFF) /
-        Math.max(1e-6, 1 - MOISTURE.INLAND_FALLOFF)
-    );
-    const waterProximity = Math.pow(1 - inland, MOISTURE.DESERT_STEEPNESS);
+    // (0 = off), falling from the coast toward the interior at DESERT_STEEPNESS (>1 = deserts
+    // ramp in fast near the coast). Reach scales with water-body SIZE via min(full, broad):
+    // a big ocean keeps `broad` low far inland (wide effect); an oasis only dents the sharp
+    // local field (broad ignores it → min falls back to `full` → thin coastal strip).
+    const oceanic = Math.min(continentalness, broadContinentalness);
+    const waterProximity = Math.pow(1 - oceanic, MOISTURE.DESERT_STEEPNESS);
     m = lerp(m, 1, MOISTURE.WATER_PROXIMITY_EFFECT * waterProximity);
     return applyContrast(m, MOISTURE.CONTRAST);
   }

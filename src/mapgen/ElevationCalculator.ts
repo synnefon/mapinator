@@ -179,11 +179,18 @@ export class ElevationCalculator {
   }
 
   /**
-   * Low-frequency, domain-warped, multi-octave carrier field → [0,1]. Owns the
-   * land/water structure (continents + islands + coastlines); the relief waves only add finer
-   * detail on top. Computed once per cell and shared (elevation + moisture water-proximity).
+   * Continentalness carrier sampled twice from ONE domain-warp: `full` (CONTINENT.OCTAVES — the
+   * land/water + relief structure that drives terrain) and `broad` (only `broadOctaves` low-
+   * frequency octaves → just the big land/water masses, ignoring small lakes/islands). The
+   * maritime moisture layer takes min(full, broad), so a big ocean projects humidity far inland
+   * while an oasis only does so locally. Computed once per cell, shared by elevation + moisture.
    */
-  public continentalnessAt(x: number, y: number, z: number): number {
+  public continentalness(
+    x: number,
+    y: number,
+    z: number,
+    broadOctaves: number
+  ): { full: number; broad: number } {
     const warp = this.warpAmount(x, y, z); // varies across the map (very-low-freq wave)
     const wx =
       x + warp * this.continentNoise(x + WARP_OFFSET_X, y + WARP_OFFSET_Y, z + WARP_OFFSET_Z);
@@ -191,18 +198,21 @@ export class ElevationCalculator {
       y + warp * this.continentNoise(x - WARP_OFFSET_Y, y - WARP_OFFSET_Z, z - WARP_OFFSET_X);
     const wz =
       z + warp * this.continentNoise(x + WARP_OFFSET_Z, y - WARP_OFFSET_X, z + WARP_OFFSET_Y);
-    const sum = fbm3(
-      this.noise3D,
-      wx,
-      wy,
-      wz,
-      this.continentWavelength,
-      this.continentAmplitude,
-      CONTINENT.OCTAVES,
-      FRACTAL.GAIN,
-      FRACTAL.LACUNARITY
-    );
-    return clamp(INVARIANTS.NEUTRAL_CENTER_POINT + sum);
+    const base = INVARIANTS.NEUTRAL_CENTER_POINT;
+    const full =
+      base +
+      fbm3(
+        this.noise3D, wx, wy, wz, this.continentWavelength,
+        this.continentAmplitude, CONTINENT.OCTAVES, FRACTAL.GAIN, FRACTAL.LACUNARITY
+      );
+    // Same warp + wavelength, fewer octaves → a low-pass of `full` (the big structures only).
+    const broad =
+      base +
+      fbm3(
+        this.noise3D, wx, wy, wz, this.continentWavelength,
+        this.continentAmplitude, broadOctaves, FRACTAL.GAIN, FRACTAL.LACUNARITY
+      );
+    return { full: clamp(full), broad: clamp(broad) };
   }
 
   /**

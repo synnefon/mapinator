@@ -183,6 +183,10 @@ body.tools-collapsed #toolsToggle {
   width: 100%;
   color: var(--menuText);
 }
+#resetSlidersBtn:hover {
+  background-color: var(--highlight);
+  color: var(--highlightText);
+}
 
 *.enable-transition {
   transition: background-color 0.8s ease;

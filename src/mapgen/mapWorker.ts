@@ -25,8 +25,11 @@ let gen: MapGenerator | null = null;
 ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
   if (req.kind === "reSeed") {
-    if (gen) gen.reSeed(req.seed);
-    else gen = new MapGenerator(req.seed);
+    if (gen) {
+      gen.reSeed(req.seed);
+    } else {
+      gen = new MapGenerator(req.seed);
+    }
     return;
   }
   if (!gen) return; // a generate arrived before any reSeed — shouldn't happen
