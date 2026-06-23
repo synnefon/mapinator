@@ -1,11 +1,15 @@
 import {
   BASE_LIGHTNESS,
   BiomeColors,
+  LAND_FAMILY_STOPS,
+  MOISTURE_STOPS,
   THEME_OVERRIDES,
   bandLightnessAt,
   colorFor as baseColorFor,
   iceColorFor,
   type ElevationBand,
+  type ElevationFamily,
+  type MoistureBand,
   type Theme,
 } from "../common/biomes";
 import {
@@ -57,6 +61,32 @@ function shapeForRules(
   e = Math.max(Math.min(e, 1 - EPSILON), -1);
   m = Math.max(Math.min(m, 1 - EPSILON), 0);
   return { elevation: e, moisture: m };
+}
+
+const nearestStop = <T extends { center: number }>(stops: T[], x: number): T =>
+  stops.reduce((best, s) => (Math.abs(s.center - x) < Math.abs(best.center - x) ? s : best));
+
+/**
+ * The discrete biome of a cell — the elevation family + moisture band the colour pipeline lands on —
+ * computed with the SAME shaping as colorAt, so it matches what's drawn. Returns null for ocean.
+ * Feature labelling uses this to find deserts / forests / mountain ranges; pure given the live dials.
+ */
+export function terrainClassOf(
+  rawElevation: number,
+  moisture: number,
+  rainfall: number
+): { family: ElevationFamily; band: MoistureBand } | null {
+  if (rawElevation < OCEAN.SEA_LEVEL.value) return null; // ocean — same waterline split as generation
+  const shapedRain = Math.max(RAINFALL_MIN, expCurve(1 - rainfall, EXP_CURVE_K) * RAINFALL_SCALE);
+  const { elevation: e, moisture: m } = shapeForRules(
+    applyContrast(rawElevation, CONTINENT.ELEVATION_CONTRAST.value),
+    moisture,
+    shapedRain
+  );
+  return {
+    family: nearestStop(LAND_FAMILY_STOPS, e).family,
+    band: nearestStop(MOISTURE_STOPS, m).band,
+  };
 }
 
 /** ================================================

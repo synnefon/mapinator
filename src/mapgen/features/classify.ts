@@ -1,6 +1,14 @@
 import type { RawComponent } from "./detect";
 
-export type FeatureKind = "OCEAN" | "SEA" | "LAKE" | "CONTINENT" | "ISLAND";
+export type FeatureKind =
+  | "OCEAN"
+  | "SEA"
+  | "LAKE"
+  | "CONTINENT"
+  | "ISLAND"
+  | "MOUNTAINS"
+  | "DESERT"
+  | "FOREST";
 
 // Thresholds are FRACTIONS of the planet's total cell count, so they're resolution-independent.
 // Exposed as a mutable object for live tuning (mirrors the settings DIALS convention). OCEAN / SEA
@@ -11,6 +19,8 @@ export const CLASSIFY = {
   //                           islands still get NAMED — they're just revealed at a higher zoom.
   CONTINENT_FRAC: 0.04, // a landmass at least this large is a continent, else an island
   LARGE_MINOR_FRAC: 0.008, // a lake / island at least this large is "large" (revealed one level earlier)
+  TERRAIN_MIN_FRAC: 0.003, // deserts / forests below this share aren't labelled
+  MOUNTAIN_MIN_FRAC: 0.002, // mountain ranges qualify a bit smaller than other terrain
 };
 
 export type MinorFeature = {

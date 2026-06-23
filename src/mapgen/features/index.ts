@@ -3,10 +3,11 @@ import type { Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
-import { classifyMinor, type FeatureKind } from "./classify";
+import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
 import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
 import { nameFeature } from "./name";
 import { subdivideOcean } from "./ocean";
+import { detectTerrainFeatures } from "./terrain";
 
 export { CLASSIFY, type FeatureKind } from "./classify";
 export { OCEAN_NAMING } from "./ocean";
@@ -78,6 +79,23 @@ export function computeMapFeatures(
       cellCount: minor.cellCount,
       extent: angularExtent(anchorCell, comp.cells, map.sites),
       minLevel: minor.minLevel,
+    });
+  }
+
+  // Terrain regions on the land — deserts, forests, mountain ranges — labelled when large enough.
+  // Mountains qualify a bit smaller than deserts/forests.
+  for (const t of detectTerrainFeatures(map, adjacency)) {
+    const minFrac = t.kind === "MOUNTAINS" ? CLASSIFY.MOUNTAIN_MIN_FRAC : CLASSIFY.TERRAIN_MIN_FRAC;
+    if (t.cells.length < minFrac * map.cellCount) continue;
+    const repCell = t.cells.reduce((min, c) => (c < min ? c : min), t.cells[0]);
+    const anchorCell = poleOfInaccessibility(t.cells, adjacency);
+    features.push({
+      kind: t.kind,
+      name: nameFeature(t.kind, mapSeed, repCell, language, namer),
+      anchor: siteVec(map, anchorCell),
+      cellCount: t.cells.length,
+      extent: angularExtent(anchorCell, t.cells, map.sites),
+      minLevel: t.cells.length / map.cellCount >= CLASSIFY.LARGE_MINOR_FRAC ? 1 : 2,
     });
   }
 

@@ -42,7 +42,7 @@ export type BiomeKey =
   | "MID_LOW"
   | "WET_LOW";
 
-type MoistureBand = "DRY" | "MID" | "WET";
+export type MoistureBand = "DRY" | "MID" | "WET";
 
 // ===================== Theme → BiomeKey → Hex =====================
 export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
@@ -305,13 +305,13 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
 // blended between the surrounding stops so biomes transition smoothly instead of
 // snapping at band edges. The result is quantized downstream (colorAt) so the
 // total palette stays small.
-const LAND_FAMILY_STOPS: { family: ElevationFamily; center: number }[] = [
+export const LAND_FAMILY_STOPS: { family: ElevationFamily; center: number }[] = [
   { family: "LOW", center: 0.11 },
   { family: "MEDIUM", center: 0.37 },
   { family: "HIGH", center: 0.72 }, // brown rock dominates the high ground (pushed up from 0.635)
   { family: "VERY_HIGH", center: 0.95 }, // gray→white snow compressed to the very crests (was 0.875)
 ];
-const MOISTURE_STOPS: { band: MoistureBand; center: number }[] = [
+export const MOISTURE_STOPS: { band: MoistureBand; center: number }[] = [
   { band: "DRY", center: 0.1 },
   { band: "MID", center: 0.4 },
   { band: "WET", center: 0.8 },

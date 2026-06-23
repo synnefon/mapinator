@@ -67,6 +67,16 @@ describe("feature pipeline on a real globe", () => {
     expect(features.some((f) => f.kind === "OCEAN")).toBe(true);
   });
 
+  it("labels sizable land terrain (mountains / deserts / forests) at tier 1+", () => {
+    const map = buildMap();
+    const features = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));
+    const terrain = features.filter(
+      (f) => f.kind === "MOUNTAINS" || f.kind === "DESERT" || f.kind === "FOREST"
+    );
+    expect(terrain.length).toBeGreaterThan(0); // the validity seed has substantial terrain
+    for (const t of terrain) expect(t.minLevel).toBeGreaterThanOrEqual(1); // never on the globe view
+  });
+
   it("anchors each feature on terrain of its own kind (the lake-on-a-mountain bug)", () => {
     const map = buildMap();
     const features = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));

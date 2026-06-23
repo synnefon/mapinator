@@ -103,5 +103,8 @@ describe("nameFeature", () => {
     expect(a).toMatch(/sea/i);
     expect(nameFeature("LAKE", "MYSEED", 42, "GREEK", namer)).toMatch(/lake/i);
     expect(nameFeature("ISLAND", "MYSEED", 7, "GREEK", namer)).toMatch(/is(land|le)/i);
+    expect(nameFeature("MOUNTAINS", "MYSEED", 7, "GREEK", namer)).toMatch(/mountains|range/i);
+    expect(nameFeature("DESERT", "MYSEED", 7, "GREEK", namer)).toMatch(/desert|wastes/i);
+    expect(nameFeature("FOREST", "MYSEED", 7, "GREEK", namer)).toMatch(/forest|woods/i);
   });
 });

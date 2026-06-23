@@ -12,6 +12,9 @@ const TEMPLATES: Record<FeatureKind, readonly string[]> = {
   LAKE: ["lake {X}", "{X} lake"],
   CONTINENT: ["{X}"], // continents wear their bare proper name
   ISLAND: ["{X} island", "isle of {X}", "{X} isle"],
+  MOUNTAINS: ["the {X} mountains", "{X} mountains", "{X} range"],
+  DESERT: ["the {X} desert", "{X} desert", "{X} wastes"],
+  FOREST: ["the {X} forest", "{X} woods", "{X} forest"],
 };
 
 /**
