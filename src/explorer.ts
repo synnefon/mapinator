@@ -3,6 +3,7 @@ import type { Theme } from "./common/biomes";
 import type { GlobeMap } from "./common/map";
 import {
   applyTuning,
+  snapshotParams,
   TUNING_SCHEMA,
   tuningDefault,
   type MapSettings,
@@ -95,7 +96,7 @@ const labelB = document.getElementById("labelB") as HTMLDivElement;
 const globesEl = document.getElementById("globes") as HTMLDivElement;
 
 const renderer = createGlobeRenderer();
-const gen = new MapGenerator(randomSeed());
+const gen = new MapGenerator(randomSeed(), snapshotParams());
 for (const c of [canvasA, canvasB]) {
   c.width = CANVAS_PX;
   c.height = CANVAS_PX;
@@ -165,7 +166,7 @@ function makePatch(value: number, param: Param): GlobeMap | null {
   const spec = capSpecForZoom(viewZoom);
   if (!spec) return null;
   applyTuning({ ...accumulated, ...overridesForParam(param, value) });
-  gen.reSeed(seed);
+  gen.configure(seed, snapshotParams());
   return gen.generateLocalMap(
     Quat.viewCenter(viewOrientation),
     spec.halfAngle,
@@ -258,7 +259,7 @@ function highlandCenter(ref: GlobeMap): Vec3 {
 /** Generate one globe's base + (zoom-driven) cap for param at value `v`. */
 function rebuildGlobe(g: GlobeState, v: number, param: Param): void {
   applyTuning({ ...accumulated, ...overridesForParam(param, v) });
-  gen.reSeed(seed);
+  gen.configure(seed, snapshotParams());
   g.base = gen.generateMap({ resolution: TILE_RESOLUTION, zoom: 0, theme: THEME });
   g.value = v;
   g.patch = makePatch(v, param);
@@ -281,7 +282,7 @@ function showCandidates(): void {
   viewZoom = param.view === "highland" ? HIGHLAND_ZOOM : 0;
   if (param.view === "highland") {
     applyTuning({ ...accumulated, ...overridesForParam(param, center) });
-    gen.reSeed(seed);
+    gen.configure(seed, snapshotParams());
     const c = highlandCenter(gen.generateMap({ resolution: TILE_RESOLUTION, zoom: 0, theme: THEME }));
     viewOrientation = Quat.between(c, { x: 0, y: 0, z: 1 });
   } else {
@@ -353,7 +354,7 @@ function renderDone(): void {
   viewOrientation = GLOBE_VIEW;
   viewZoom = 0;
   applyTuning(accumulated);
-  gen.reSeed(seed);
+  gen.configure(seed, snapshotParams());
   const base = gen.generateMap({ resolution: TILE_RESOLUTION, zoom: 0, theme: THEME });
   globeA.base = base;
   globeA.patch = null;

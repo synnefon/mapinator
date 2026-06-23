@@ -59,6 +59,11 @@ export class GlobeRenderer {
   private colorCache = new WeakMap<GlobeMap, ColorCache>();
   private shadeCache = new Map<string, string>();
 
+  /** Canvas2D draws the globe centred — no horizontal offset (cf. the WebGL renderer). */
+  public horizontalOffsetFraction(): number {
+    return 0;
+  }
+
   public draw(
     canvas: HTMLCanvasElement,
     map: GlobeMap,
@@ -178,11 +183,12 @@ export class GlobeRenderer {
    * Cached until the theme/sea level or the map changes.
    */
   private getColors(map: GlobeMap, settings: MapSettings): ColorCache {
-    const key = settings.theme;
+    // Cache key folds in the plate-overlay flag so toggling it re-resolves colours.
+    const key = `${settings.theme}|${settings.viewPlates}`;
     const cached = this.colorCache.get(map);
     if (cached && cached.key === key) return cached;
 
-    const { palette, colorIdx } = computeCellColors(map, settings.theme);
+    const { palette, colorIdx } = computeCellColors(map, settings.theme, settings.viewPlates ?? false);
     const entry: ColorCache = { key, palette, colorIdx };
     this.colorCache.set(map, entry);
     return entry;

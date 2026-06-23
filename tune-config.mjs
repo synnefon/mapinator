@@ -19,8 +19,8 @@ export function recenterInSrc(src, path, value) {
   if (!bm) throw new Error(`section "${section}" not found in settings`);
   const block = bm[0];
 
-  const rangeRe = new RegExp(`(\\n    ${key}: )\\[\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*\\] as Range`);
-  const scalarRe = new RegExp(`(\\n    ${key}: )(-?[\\d.]+)`);
+  const rangeRe = new RegExp(`(\\n    ${key}: \\{ value: )\\[\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*\\] as Range`);
+  const scalarRe = new RegExp(`(\\n    ${key}: \\{ value: )(-?[\\d.]+)`);
 
   let newValue;
   let newBlock;
@@ -47,6 +47,54 @@ export function applyPicks(file, picks) {
   for (const { path, value } of picks) {
     if (typeof path !== "string" || typeof value !== "number") throw new Error("bad pick");
     const r = recenterInSrc(src, path, value);
+    src = r.src;
+    results.push({ path, value: r.value });
+  }
+  writeFileSync(file, src);
+  return results;
+}
+
+/**
+ * Set the dial at `path` to an EXACT value (no recentering) in the settings source — used by the
+ * main app's "save current settings" button, which writes the live dial values verbatim. `path` is
+ * "SECTION.KEY" for a scalar, or "SECTION.KEY.0" / "SECTION.KEY.1" for one endpoint of a [lo, hi]
+ * range (the other endpoint is preserved). Returns { src, value } with the value actually written.
+ */
+export function setInSrc(src, path, value) {
+  const [section, key, idx] = path.split(".");
+  // Isolate the section block, exactly as recenterInSrc does (keys appear in several sections).
+  const blockRe = new RegExp(`\\n  ${section}: \\{[\\s\\S]*?\\n  \\},`);
+  const bm = src.match(blockRe);
+  if (!bm) throw new Error(`section "${section}" not found in settings`);
+  const block = bm[0];
+  const v = round(value);
+
+  let newBlock;
+  if (idx === "0" || idx === "1") {
+    const rangeRe = new RegExp(
+      `(\\n    ${key}: \\{ value: \\[\\s*)(-?[\\d.]+)(\\s*,\\s*)(-?[\\d.]+)(\\s*\\] as Range)`
+    );
+    if (!rangeRe.test(block)) throw new Error(`range dial "${section}.${key}" not found`);
+    newBlock = block.replace(rangeRe, (_, pre, lo, mid, hi, post) =>
+      idx === "0" ? `${pre}${v}${mid}${hi}${post}` : `${pre}${lo}${mid}${v}${post}`
+    );
+  } else {
+    const scalarRe = new RegExp(`(\\n    ${key}: \\{ value: )(-?[\\d.]+)`);
+    if (!scalarRe.test(block)) throw new Error(`scalar dial "${path}" not found`);
+    newBlock = block.replace(scalarRe, (_, pre) => `${pre}${v}`);
+  }
+  return { src: src.replace(block, newBlock), value: v };
+}
+
+/** Write every (path, value) literally to settings.ts (one read, one write). Returns new values. */
+export function applyValues(file, values) {
+  if (!Array.isArray(values) || values.length === 0) throw new Error("no values");
+  let src = readFileSync(file, "utf8");
+  const results = [];
+  console.log("applyValues", values);
+  for (const { path, value } of values) {
+    if (typeof path !== "string" || typeof value !== "number") throw new Error("bad value");
+    const r = setInSrc(src, path, value);
     src = r.src;
     results.push({ path, value: r.value });
   }

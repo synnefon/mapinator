@@ -1,14 +1,15 @@
 import type { AppState } from "./AppState";
 import {
+  DIAL_DOCS,
+  FEATURES,
+  LAYERS,
   TUNING_SCHEMA,
   tuningDefault,
+  type Layer,
   type TuningField,
   type TuningGroup,
 } from "./common/settings";
 import { debounce } from "./common/util";
-// Raw module source — slider tooltips are parsed straight from the dial comments in settings.ts,
-// so a dial's own inline comment is the single source of truth (no separate docs map to sync).
-import dialsSrc from "./common/settings.ts?raw";
 
 // Regeneration is heavy (full mesh rebuild off-thread), so coalesce slider drags:
 // labels update live on every input, the regen fires this long after the last change.
@@ -23,51 +24,39 @@ type AdvancedHandle = {
 const decimalsFor = (step: number): number =>
   step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(step)));
 
-// Slider hover tooltips come straight from the inline comments in the DIALS literal of
-// settings.ts (imported as raw source). A trailing `// …` on a dial line wins; otherwise the
-// comment line(s) directly above it. Brace depth is tracked so only the GROUP.KEY leaves are
-// captured. Fail-soft: braces are ignored inside comments, and anything unparsed just yields no
-// tooltip. Because it reads the live source, renaming/reordering a dial keeps its explainer.
-function parseDialDocs(src: string): Map<string, string> {
-  const docs = new Map<string, string>();
-  const from = src.indexOf("export const DIALS");
-  if (from < 0) return docs;
-  let depth = 0;
-  let started = false;
-  let group: string | null = null;
-  let lead: string[] = [];
-  for (const raw of src.slice(from).split("\n")) {
-    const line = raw.trim();
-    const isComment = line.startsWith("//");
-    const opens = isComment ? 0 : (line.match(/\{/g) ?? []).length;
-    const closes = isComment ? 0 : (line.match(/\}/g) ?? []).length;
-    if (opens > 0) started = true;
-
-    if (isComment) {
-      lead.push(line.replace(/^\/\/\s?/, ""));
-    } else {
-      const header = line.match(/^([A-Za-z0-9_]+):\s*\{/);
-      const leaf = line.match(/^([A-Za-z0-9_]+):\s*\S/);
-      if (depth === 1 && header) {
-        group = header[1]; // entering a group; its block comment isn't a leaf's doc
-        lead = [];
-      } else if (depth === 2 && leaf && group) {
-        const trailing = line.match(/\/\/\s?(.*)$/);
-        const doc = (lead.length ? lead.join(" ") : trailing?.[1] ?? "").trim();
-        if (doc) docs.set(`${group}.${leaf[1]}`, doc);
-        lead = [];
-      } else {
-        lead = []; // blank line / closing brace / anything else breaks the comment run
-      }
-    }
-
-    depth += opens - closes;
-    if (started && depth === 0) break; // end of the DIALS literal
-  }
-  return docs;
+// One shared hover tooltip for dial docs. The native `title` attribute lags ~1s and can't be
+// styled; this shows the explainer instantly, follows the cursor, and flips left near the screen
+// edge. pointer-events: none (in CSS) so it never eats slider input. Returns an `attach(el, doc)`.
+function makeDialTooltip(): (el: HTMLElement, doc: string) => void {
+  const tip = document.createElement("div");
+  tip.className = "adv-tip";
+  tip.setAttribute("role", "tooltip");
+  document.body.append(tip);
+  let active: HTMLElement | null = null;
+  const place = (e: MouseEvent) => {
+    const gap = 14;
+    const x = e.clientX + gap;
+    const flipped = x + tip.offsetWidth > window.innerWidth - 8;
+    tip.style.left = `${Math.max(8, flipped ? e.clientX - gap - tip.offsetWidth : x)}px`;
+    tip.style.top = `${e.clientY + gap}px`;
+  };
+  return (el, doc) => {
+    el.addEventListener("mouseenter", (e) => {
+      tip.textContent = doc;
+      tip.classList.add("show");
+      active = el;
+      place(e);
+    });
+    el.addEventListener("mousemove", (e) => {
+      if (active === el) place(e);
+    });
+    el.addEventListener("mouseleave", () => {
+      if (active !== el) return;
+      tip.classList.remove("show");
+      active = null;
+    });
+  };
 }
-
-const DIAL_DOCS = parseDialDocs(dialsSrc);
 
 /**
  * Builds the generation-dial sections from TUNING_SCHEMA into #advancedPanel: one
@@ -80,10 +69,13 @@ const DIAL_DOCS = parseDialDocs(dialsSrc);
 export function setupAdvancedPanel(opts: {
   appState: AppState;
   onChange: () => void; // raw regen trigger; debounced here for slider drags
+  onViewChange: () => void; // re-render only (no regen) — for view overlays like "view plates"
 }): AdvancedHandle {
-  const { appState, onChange } = opts;
+  const { appState, onChange, onViewChange } = opts;
   const panel = document.getElementById("advancedPanel");
   if (!panel) return { refresh: () => {} };
+
+  const showDoc = makeDialTooltip();
 
   const regen = debounce(onChange, REGEN_DEBOUNCE_MS);
   const valueOf = (path: string): number =>
@@ -110,7 +102,7 @@ export function setupAdvancedPanel(opts: {
     const row = document.createElement("div");
     row.className = "adv-row";
     const doc = DIAL_DOCS.get(f.path);
-    if (doc) row.title = doc; // hover explainer, sourced from the dial's comment
+    if (doc) showDoc(row, doc); // instant styled hover explainer, from the dial's comment
     const label = document.createElement("label");
     label.className = "adv-sub";
     const val = document.createElement("span");
@@ -150,7 +142,7 @@ export function setupAdvancedPanel(opts: {
     const row = document.createElement("div");
     row.className = "adv-row";
     const doc = DIAL_DOCS.get(f.path);
-    if (doc) row.title = doc; // hover explainer, sourced from the dial's comment
+    if (doc) showDoc(row, doc); // instant styled hover explainer, from the dial's comment
     const label = document.createElement("label");
     label.className = "adv-sub";
     const val = document.createElement("span");
@@ -309,6 +301,96 @@ export function setupAdvancedPanel(opts: {
     g.fields.flatMap((f) =>
       f.kind === "range" ? [`${f.path}.0`, `${f.path}.1`] : [f.path]
     );
+
+  // --- Layers: coarse on/off switches (e.g. "continents only") -------------------------------
+  // Each toggle flips a FEATURES boolean the generator early-exits on, then regenerates. The
+  // flags sync to the worker on the next `tune` message (see main.ts applyAdvancedTuning).
+  {
+    const details = document.createElement("details");
+    details.className = "adv-group";
+    details.open = false;
+
+    const summary = document.createElement("summary");
+    const title = document.createElement("span");
+    title.className = "adv-title";
+    title.textContent = "Layers";
+
+    const resetBtn = document.createElement("button");
+    resetBtn.type = "button";
+    resetBtn.className = "adv-reset";
+    resetBtn.textContent = "reset";
+    resetBtn.title = "turn all layers on";
+    summary.append(title, resetBtn);
+    details.append(summary);
+
+    const fields = document.createElement("div");
+    fields.className = "adv-fields";
+
+    const layerIsOn = (layer: Layer): boolean => FEATURES[layer.key];
+
+    // Flip a feature on/off. No regen here — the callers below batch one regen after the flip.
+    const applyLayer = (layer: Layer, on: boolean): void => {
+      FEATURES[layer.key] = on;
+    };
+
+    const rows = LAYERS.map((layer) => {
+      const row = document.createElement("label");
+      row.className = "adv-row adv-toggle";
+      if (layer.doc) showDoc(row, layer.doc);
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      const sync = () => void (box.checked = layerIsOn(layer));
+      sync();
+      box.addEventListener("change", () => {
+        applyLayer(layer, box.checked);
+        onChange(); // discrete action → regen now, not debounced
+      });
+      row.append(box, document.createTextNode(` ${layer.label}`));
+      fields.append(row);
+      // Re-derived by refresh() after a section/global reset or a save restore.
+      syncers.set(`__layer:${layer.key}`, sync);
+      return { layer, box };
+    });
+
+    const setAll = (on: boolean): void => {
+      for (const { layer, box } of rows) {
+        box.checked = on;
+        applyLayer(layer, on);
+      }
+      onChange();
+    };
+
+    resetBtn.addEventListener("click", (e) => {
+      e.preventDefault(); // a click inside <summary> would otherwise toggle it
+      e.stopPropagation();
+      setAll(true);
+    });
+
+    // A VIEW toggle (not a generation feature): recolour cells by tectonic plate. Re-renders only
+    // (no regen), so it writes the render setting directly and fires onViewChange.
+    {
+      const row = document.createElement("label");
+      row.className = "adv-row adv-toggle";
+      showDoc(
+        row,
+        "colour cells by tectonic plate instead of biome — a view overlay; doesn't change terrain"
+      );
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      const sync = () => void (box.checked = appState.settings.viewPlates ?? false);
+      sync();
+      box.addEventListener("change", () => {
+        appState.setSetting("viewPlates", box.checked);
+        onViewChange();
+      });
+      row.append(box, document.createTextNode(" view plates"));
+      fields.append(row);
+      syncers.set("__view:plates", sync);
+    }
+
+    details.append(fields);
+    panel.append(details);
+  }
 
   for (const group of TUNING_SCHEMA) {
     const details = document.createElement("details");

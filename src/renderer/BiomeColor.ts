@@ -1,15 +1,23 @@
 import {
   BASE_LIGHTNESS,
+  BiomeColors,
   THEME_OVERRIDES,
+  bandLightnessAt,
   colorFor as baseColorFor,
-  getElevationBandNameRaw,
   iceColorFor,
   type ElevationBand,
   type Theme,
 } from "../common/biomes";
-import { hexToHsl, hslToHex, mixHex, quantizeColor } from "../common/colorUtils";
+import {
+  hexToHsl,
+  hslToHex,
+  internPalette,
+  invertHex,
+  mixHex,
+  quantizeColor,
+} from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { COAST, CONTINENT } from "../common/settings";
+import { CONTINENT, FEATURES, OCEAN } from "../common/settings";
 import { applyContrast, clamp } from "../common/util";
 
 /** ================================================
@@ -33,9 +41,12 @@ function shapeForRules(
   moisture: number,
   rainfall: number
 ): { elevation: number; moisture: number } {
-  // Fixed waterline in raw-elevation space: below it renormalizes to ocean depth
-  // [-1,0], above it to land height [0,1] — so land keeps its full band range.
-  const waterline = COAST.WATERLINE;
+  // The waterline split, in CONTRASTED space (the `elevation` passed in is already contrasted).
+  // applyContrast is monotonic, so contrasted-e < applyContrast(WATERLINE) ⟺ raw-e < WATERLINE — the
+  // SAME split generation made; thresholding against the RAW waterline only matched while WATERLINE ≈
+  // the 0.5 contrast pivot, so lowering it painted generator-made land as ocean. Below → ocean depth
+  // [-1,0], above → land height [0,1] — so land keeps its full band range.
+  const waterline = applyContrast(OCEAN.SEA_LEVEL.value, CONTINENT.ELEVATION_CONTRAST.value);
   let e =
     elevation < waterline
       ? elevation / Math.max(waterline, EPSILON) - 1
@@ -66,13 +77,21 @@ export function colorAt(
 
   const { elevation: e, moisture: m } = shapeForRules(elevation, moisture, rainfall);
 
-  const baseHex = baseColorFor(theme, e, m);
-  const eBand = getElevationBandNameRaw(e);
+  // Grab the climate (biome) colour for this cell — BUT when climate is off (no moisture swing),
+  // land/ice instead take the INVERSE of the sea colour. Then continue as normal: the elevation-band
+  // lightness + saturation + quantize below (and hillshade at draw time) modulate it, so inverse-of-
+  // sea land still reads its relief. Ocean always keeps its own (depth-shaded) colour.
+  const climateOff = !FEATURES.climate;
+  const baseHex =
+    climateOff && e >= 0
+      ? invertHex(BiomeColors[theme].OCEAN)
+      : baseColorFor(theme, e, m);
   const { h, s, l } = hexToHsl(baseHex);
 
   const adj = resolveTheme(theme);
   const s2 = clamp(s * (adj.saturationScale ?? 1));
-  const delta = adj.lightness[eBand.band] ?? 0;
+  // Continuous (interpolated) band-lightness nudge — no hard step at band breaks (see biomes.ts).
+  const delta = bandLightnessAt(e, adj.lightness);
   const l2 = clamp(l + delta);
   // Quantize so the blend stays smooth-ish but the total palette stays small.
   return quantizeColor(hslToHex(h, s2, l2));
@@ -86,9 +105,9 @@ export function colorAt(
 // the WebGL renderer build their fills from this, so they stay pixel-identical.
 export type CellColors = { palette: string[]; colorIdx: Int32Array };
 
-export function computeCellColors(map: GlobeMap, theme: Theme): CellColors {
+export function computeCellColors(map: GlobeMap, theme: Theme, viewPlates: boolean): CellColors {
   const { elevation, moisture, ice, cellCount, rainfall } = map;
-  return computeColorsFromFields(
+  const colors = computeColorsFromFields(
     elevation,
     moisture,
     ice,
@@ -96,6 +115,38 @@ export function computeCellColors(map: GlobeMap, theme: Theme): CellColors {
     cellCount,
     theme
   );
+  if (!viewPlates) return colors;
+
+  // Plate overlay ON: tint each cell's biome colour with its plate's color at PLATE_OVERLAY_OPACITY
+  const plateColors = computePlateColors(map);
+  return internPalette(cellCount, (i) =>
+    quantizeColor(
+      mixHex(
+        colors.palette[colors.colorIdx[i]],
+        plateColors.palette[plateColors.colorIdx[i]],
+        PLATE_OVERLAY_OPACITY
+      )
+    )
+  );
+}
+
+/** ================================================
+ *  Tectonic-plate overlay (the "view plates" toggle)
+ *  ================================================ */
+// A stable, distinct colour per plate id: golden-angle hue rotation so neighbouring ids land on
+// well-separated hues.
+const PLATE_HUE_STEP = 137.508; // golden angle, degrees
+const PLATE_OVERLAY_OPACITY = 0.5; // plate tint strength over the biome colour when viewPlates is on
+function plateColor(plateId: number): string {
+  return hslToHex((plateId * PLATE_HUE_STEP) % 360, 0.6, 0.55);
+}
+
+/** Per-cell colours for the plate overlay: each cell takes its plate's colour, interned into a
+ *  small palette (one entry per plate). Blended over the biome colours at PLATE_OVERLAY_OPACITY
+ *  when viewPlates is on (see computeCellColors). */
+export function computePlateColors(map: GlobeMap): CellColors {
+  const { plate, cellCount } = map;
+  return internPalette(cellCount, (i) => plateColor(plate[i]));
 }
 
 /**
@@ -110,34 +161,19 @@ export function computeColorsFromFields(
   count: number,
   theme: Theme
 ): CellColors {
-  const iceColor = iceColorFor(theme); // matches this theme's snowiest peak
-  const colorIdx = new Int32Array(count);
-  const palette: string[] = [];
-  const indexOf = new Map<string, number>();
-  const intern = (hex: string): number => {
-    let idx = indexOf.get(hex);
-    if (idx === undefined) {
-      idx = palette.length;
-      palette.push(hex);
-      indexOf.set(hex, idx);
-    }
-    return idx;
-  };
-
-  for (let i = 0; i < count; i++) {
+  const iceColor = iceColorFor(theme);
+  return internPalette(count, (i) => {
     const biome = colorAt(
       theme,
-      applyContrast(elevation[i], CONTINENT.ELEVATION_CONTRAST),
+      applyContrast(elevation[i], CONTINENT.ELEVATION_CONTRAST.value),
       moisture[i],
       rainfall
     );
-    // Blend snow into the terrain by iciness (quantized to keep the palette small), so
-    // the ice edge fades like every other biome instead of being a flat sticker.
-    const hex =
-      ice[i] > 0 ? quantizeColor(mixHex(biome, iceColor, ice[i])) : biome;
-    colorIdx[i] = intern(hex);
-  }
-  return { palette, colorIdx };
+    // Blend snow into the terrain by iciness (quantized to keep the palette small), so the ice
+    // edge fades like every other biome. Ice is its own layer — the `ice` field is zeroed upstream
+    // when the ice toggle is off — independent of climate, so caps stay when climate is off.
+    return ice[i] > 0 ? quantizeColor(mixHex(biome, iceColor, ice[i])) : biome;
+  });
 }
 
 /** ================================================

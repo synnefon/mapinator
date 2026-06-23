@@ -160,3 +160,39 @@ export function quantizeColor(hexColor: string): string {
 
   return rgbToHex(quantizedR, quantizedG, quantizedB);
 }
+
+/**
+ * Inverse ("negative") of a colour — RGB_MAX minus each channel. Used for the two-tone
+ * land/ice = inverse-of-sea rendering (see BiomeColor.colorAt).
+ */
+export function invertHex(hex: string): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(RGB_MAX - rgb.r, RGB_MAX - rgb.g, RGB_MAX - rgb.b);
+}
+
+/**
+ * Build a deduplicated colour palette + a per-item index into it: calls `hexAt(i)` for each of
+ * `count` items and interns identical hex strings, so a renderer resolves each distinct colour once
+ * instead of once per item. Shared by every per-cell colour pass (biome fields, plate overlay, and
+ * the blend between them).
+ */
+export function internPalette(
+  count: number,
+  hexAt: (i: number) => string
+): { palette: string[]; colorIdx: Int32Array } {
+  const palette: string[] = [];
+  const indexOf = new Map<string, number>();
+  const colorIdx = new Int32Array(count);
+  for (let i = 0; i < count; i++) {
+    const hex = hexAt(i);
+    let idx = indexOf.get(hex);
+    if (idx === undefined) {
+      idx = palette.length;
+      palette.push(hex);
+      indexOf.set(hex, idx);
+    }
+    colorIdx[i] = idx;
+  }
+  return { palette, colorIdx };
+}

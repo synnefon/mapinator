@@ -259,6 +259,39 @@ export const BASE_LIGHTNESS: Record<ElevationBand, number> = {
   VERY_HIGH_2: 0,
 };
 
+// Band centers (midpoint of each band's [prevBreak, break] span) — the x-positions used to turn
+// the discrete BASE_LIGHTNESS lookup into a continuous ramp (see bandLightnessAt).
+const BAND_CENTERS: { center: number; band: ElevationBand }[] =
+  ELEVATION_BAND_BREAKS.map((b, i) => ({
+    center: ((i > 0 ? ELEVATION_BAND_BREAKS[i - 1].breakPoint : -1) + b.breakPoint) / 2,
+    band: b.band,
+  }));
+
+/**
+ * The per-band lightness nudge as a CONTINUOUS function of elevation. BASE_LIGHTNESS (merged with
+ * any theme override) is a hard per-band lookup, so it steps at every band break — a visible
+ * contour line between elevation zones. Interpolating those same values across the band centers
+ * turns that square-wave step into a smooth ramp: the gentle within-band shading is kept, but there
+ * are no firm lines. `e` is the shaped elevation in [-1, 1] (ocean negative, land [0, 1]).
+ */
+export function bandLightnessAt(
+  e: number,
+  lightnessByBand: Record<ElevationBand, number>
+): number {
+  const first = BAND_CENTERS[0];
+  if (e <= first.center) return lightnessByBand[first.band];
+  for (let i = 0; i < BAND_CENTERS.length - 1; i++) {
+    const lo = BAND_CENTERS[i];
+    const hi = BAND_CENTERS[i + 1];
+    if (e <= hi.center) {
+      const t = (e - lo.center) / (hi.center - lo.center);
+      const a = lightnessByBand[lo.band];
+      return a + (lightnessByBand[hi.band] - a) * t;
+    }
+  }
+  return lightnessByBand[BAND_CENTERS[BAND_CENTERS.length - 1].band];
+}
+
 export type ThemeAdjust = {
   lightness?: Partial<Record<ElevationBand, number>>;
   saturationScale?: number;
@@ -313,8 +346,8 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
 const LAND_FAMILY_STOPS: { family: ElevationFamily; center: number }[] = [
   { family: "LOW", center: 0.11 },
   { family: "MEDIUM", center: 0.37 },
-  { family: "HIGH", center: 0.635 },
-  { family: "VERY_HIGH", center: 0.875 },
+  { family: "HIGH", center: 0.72 }, // brown rock dominates the high ground (pushed up from 0.635)
+  { family: "VERY_HIGH", center: 0.95 }, // gray→white snow compressed to the very crests (was 0.875)
 ];
 const MOISTURE_STOPS: { band: MoistureBand; center: number }[] = [
   { band: "DRY", center: 0.1 },

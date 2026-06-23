@@ -1,3 +1,4 @@
+import { Quat } from "./common/3DMath";
 import { Languages, type Language } from "./common/language";
 import {
   MAP_DEFAULTS,
@@ -8,6 +9,17 @@ import {
 
 export type SettingKey = keyof MapSettings;
 type SettingsListener = (key: SettingKey) => void;
+
+/** Everything needed to reproduce a map: the seed, the map settings, the advanced-tuning
+ *  overrides, and the camera orientation. Produced by `snapshot()` and consumed by
+ *  `restore()` — the one shape the save file serializes, so new state is captured by adding
+ *  a field here rather than threading it through every save/load call site. */
+export type MapState = {
+  seed: string;
+  settings: MapSettings;
+  tuning: TuningOverrides;
+  orientation: Quat;
+};
 
 // === APPLICATION STATE ===
 // Single source of truth for the map settings + selection. Changing a setting through
@@ -21,6 +33,10 @@ export class AppState {
   // Advanced-settings overrides for the generation/appearance dials (dotted path → value).
   // Missing paths fall back to each dial's default; see applyTuning in settings.ts.
   private _tuning: TuningOverrides = {};
+  // Camera orientation (world→view quaternion), driven by the orbit controls. Lives here so
+  // it rides along in snapshot/restore; written wholesale (never mutated in place), so it's a
+  // plain accessor with no listener notification (it changes every frame during drag/inertia).
+  private _orientation: Quat = Quat.identity;
 
   constructor() {
     const urlParams = new URL(window.location.href).searchParams;
@@ -51,12 +67,18 @@ export class AppState {
   get tuningOverrides(): Readonly<TuningOverrides> {
     return this._tuning;
   }
+  get orientation(): Quat {
+    return this._orientation;
+  }
 
   set selectedLanguages(value: Language[]) {
     this._selectedLanguages = value;
   }
   set mapName(value: string) {
     this._mapName = value.toUpperCase(); // map keys are case-insensitive
+  }
+  set orientation(value: Quat) {
+    this._orientation = value;
   }
 
   /** Change one setting and notify subscribers (no-op if unchanged). */
@@ -88,6 +110,28 @@ export class AppState {
   /** Clear all advanced-tuning overrides (back to dial defaults). */
   resetTuning(): void {
     this._tuning = {};
+  }
+
+  /** Capture the full reproducible map state (deep-copied so later edits don't mutate it). */
+  snapshot(): MapState {
+    return {
+      seed: this._mapName,
+      settings: { ...this._settings },
+      tuning: { ...this._tuning },
+      orientation: { ...this._orientation },
+    };
+  }
+
+  /**
+   * Load a snapshot back into the store. Replaces settings through replaceSettings (so the UI
+   * resyncs), and updates tuning/orientation/seed. The caller is responsible for re-applying
+   * tuning to the generation worker and re-seeding — this only updates in-memory state.
+   */
+  restore(state: MapState): void {
+    this._tuning = { ...state.tuning };
+    this._orientation = { ...state.orientation };
+    this.mapName = state.seed; // setter upper-cases
+    this.replaceSettings(state.settings); // notifies changed keys last (sliders + theme resync)
   }
 
   /** Subscribe to setting changes; returns an unsubscribe fn. */

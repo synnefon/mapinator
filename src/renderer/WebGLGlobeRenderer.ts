@@ -19,6 +19,9 @@ export interface IGlobeRenderer {
     clear?: boolean,
     skipCap?: SkipCap
   ): void;
+  /** Horizontal offset of the globe centre as a fraction of canvas width (the globe is nudged
+   *  right to clear the menu). Renderer-specific, so a 2D overlay can match the projection. */
+  horizontalOffsetFraction(): number;
 }
 
 // Limb-darkening floor; matches GlobeRenderer.AMBIENT (lower = sharper terminator).
@@ -143,6 +146,11 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     } catch {
       return false;
     }
+  }
+
+  /** WebGL shifts the globe right by LOD.GLOBE_OFFSET_FRACTION (the uOffsetX uniform). */
+  public horizontalOffsetFraction(): number {
+    return LOD.GLOBE_OFFSET_FRACTION;
   }
 
   public draw(
@@ -277,9 +285,9 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       }
     }
 
-    const colorKey = settings.theme;
+    const colorKey = `${settings.theme}|${settings.viewPlates}`;
     if (entry.colorKey !== colorKey) {
-      const { palette, colorIdx } = computeCellColors(map, settings.theme);
+      const { palette, colorIdx } = computeCellColors(map, settings.theme, settings.viewPlates ?? false);
       const colorIndices = buildColorIndices(map, colorIdx);
       if (entry.colorBuf) gl.deleteBuffer(entry.colorBuf);
       if (entry.palTex) gl.deleteTexture(entry.palTex);

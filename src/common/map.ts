@@ -19,6 +19,12 @@ export interface GlobeMap {
     moisture: Float32Array; // [0,1] already-contrasted moisture
     ice: Float32Array; // [0,1] polar ice-cap mask (1 = full ice)
     shade: Float32Array; // [0,1] baked relief hillshade (1 = lit, FLOOR = shadowed); a draw-time colour multiply
+    plate: Uint16Array; // tectonic-plate index per cell (for the "view plates" render overlay)
+    // Plate-motion arrows for the "view plates" overlay (identical for every rung): flat [x,y,z,…]
+    // tail positions + unit tangent directions, one entry per arrow, sampled along plate leading
+    // edges. NOT transferred (small + memoized worker-side), so postMessage structured-clones them.
+    arrowPositions: Float32Array;
+    arrowDirections: Float32Array;
     rainfall: number; // per-seed wet/dry bias, consumed at render time
     pointCount: number;
     // Max chord from any site to its own ring verts → a conservative per-cell

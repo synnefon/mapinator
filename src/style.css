@@ -162,11 +162,19 @@ body.tools-collapsed #toolsToggle {
   box-sizing: border-box;
 }
 
-/* Reset row: the (compact) reset button sits at the top-right of the controls. */
+/* Reset row: the (compact) reset button sits at the top-right of the controls (with the
+   dev-only "save to settings.ts" button beside it when on the local dev server). */
 .controls-row {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
   width: 100%;
+}
+
+/* Dev-only controls (e.g. #saveSettingsBtn): hidden until MenuBar.ts reveals them on the
+   local dev server. Never shown in production builds. */
+.dev-only {
+  display: none;
 }
 
 /* Centre the labels + sliders horizontally (they're 90%-wide blocks). */
@@ -203,6 +211,19 @@ body.tools-collapsed #toolsToggle {
   border: 2px solid var(--menuText);
 }
 #resetSlidersBtn:hover {
+  background-color: var(--highlight);
+  color: var(--highlightText);
+}
+
+/* Dev-only "save to settings.ts" button: matches the compact reset button beside it. */
+#saveSettingsBtn {
+  flex: 0 0 auto;
+  padding: 0.4em 0.7em;
+  font-size: 0.8rem;
+  color: var(--menuText);
+  border: 2px solid var(--menuText);
+}
+#saveSettingsBtn:hover {
   background-color: var(--highlight);
   color: var(--highlightText);
 }
@@ -334,9 +355,10 @@ input[type="checkbox"] {
   vertical-align: middle;
   position: relative;
   outline: none;
-  width: 1.7em;
-  height: 1.7em;
+  width: 1.2em;
+  height: 1.2em;
   border: 2px solid var(--menuText);
+  border-radius: 4px;
   cursor: pointer;
   background-color: var(--bg);
 }
@@ -534,6 +556,20 @@ select[multiple] optgroup {
      shift (LOD.GLOBE_OFFSET_X, applied in the shader + controller), so no canvas gap. */
 }
 
+/* Plate-motion arrows: a transparent 2D canvas layered exactly over #map (the globe renders to
+   WebGL, which can't share a 2D context). Pointer-through so it never eats orbit drags; below the
+   north button (z-index 5), above the map. */
+#plateArrows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 4;
+}
+
 /* North re-orient: floated over the canvas corner. Transparent until hovered (the
    generic button:hover rule then gives it the highlight fill). */
 .map-overlay-btn {
@@ -630,6 +666,18 @@ h4 {
 .popup h3 {
   margin: 0;
   font-size: 1.2em;
+}
+
+/* Explanatory body text in a confirmation popup (e.g. the dev-only save-to-settings.ts dialog). */
+.popup-body {
+  margin: 0;
+  max-width: 28ch;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.popup-body code {
+  font-family: inherit;
+  font-weight: 700;
 }
 
 .popup button {
@@ -910,6 +958,58 @@ hr {
 
 .adv-val {
   opacity: 0.8;
+}
+
+/* Instant, styled hover explainer for dial docs (replaces the laggy/unstyleable native title).
+   position: fixed + follows the cursor; pointer-events: none so it never blocks slider input. */
+.adv-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #f1f5f9;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 90ms ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.adv-tip.show {
+  opacity: 1;
+}
+
+/* Layer on/off toggles (e.g. "continents only"): a checkbox + label on one row, and a
+   one-click preset button — styled like .adv-reset but living in the section body. */
+.adv-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5em;
+  cursor: pointer;
+}
+.adv-toggle input {
+  accent-color: var(--highlight);
+  cursor: pointer;
+}
+.adv-preset {
+  align-self: flex-start;
+  font-family: sans-serif;
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 0.15em 0.45em;
+  border: 2px solid var(--menuText);
+  color: var(--menuText);
+  background-color: var(--menuBg);
+}
+.adv-preset:hover {
+  background-color: var(--highlight);
+  color: var(--highlightText);
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 0.15em 0.45em;
 }
 
 .advanced-panel input[type="range"] {

@@ -1,34 +1,44 @@
 import type { Theme } from "./biomes";
-import { randomContinuousChoice } from "./random";
 
 /** A per-seed sample range [lo, hi]. Mutable so the advanced-settings panel can retune it. */
 export type Range = [number, number];
+
+/** A tunable dial: its live value co-located with the hover doc and (optionally) explicit slider
+ *  bounds. One descriptor is the single source for the value (generation snapshot), the panel
+ *  tooltip (DIAL_DOCS), the slider travel (min/max/step, else derived), and the /tune rewrite. */
+export type Dial = { value: number; doc: string; min?: number; max?: number; step?: number };
+export type DialRange = { value: Range; doc: string; min?: number; max?: number; step?: number };
 
 export interface MapSettings {
   resolution: number;
   zoom: number; // 0 = whole planet, 1 = max zoom toward a patch
   theme: Theme;
+  viewPlates?: boolean; // render overlay: colour cells by tectonic plate instead of biome (no regen). Optional so the dev harnesses (sweep/explorer) can omit it → no overlay.
 }
 
-export type NumericSettingKey = Exclude<keyof MapSettings, "theme">;
+// Settings whose value is a number — the keys the numeric sliders + URL parsing drive (excludes
+// theme and the boolean view toggles, which are handled on their own).
+export type NumericSettingKey = {
+  [K in keyof MapSettings]-?: MapSettings[K] extends number ? K : never;
+}[keyof MapSettings];
 
 export const MAP_DEFAULTS: MapSettings = {
   resolution: 1,
   zoom: 0,
   theme: "lush",
+  viewPlates: false,
 };
 
 // Single source of truth for the setting key lists (derived from MAP_DEFAULTS).
 const MAP_SETTINGS_KEYS = Object.keys(MAP_DEFAULTS) as (keyof MapSettings)[];
 export const NUMERIC_SETTING_KEYS = MAP_SETTINGS_KEYS.filter(
-  (k): k is NumericSettingKey => k !== "theme"
+  (k): k is NumericSettingKey => typeof MAP_DEFAULTS[k] === "number"
 );
 
 /** =====================================================================
  *  GENERATION
- *  Each wave has a WAVELENGTH (feature size) and AMPLITUDE (strength), plus
- *  the shared FRACTAL octaves. `[a, b]` tuples are ranges — some sampled per
- *  seed (sampleDial), some lerped spatially, some fixed (noted inline).
+ *  Each wave has a WAVELENGTH (feature size) and AMPLITUDE (strength) plus its own fbm
+ *  octave stack (OCTAVES/GAIN/LACUNARITY). Some lerped spatially, some fixed (noted inline).
  *  ===================================================================== */
 
 // UI slider 0..1 → actual value (via lerp).
@@ -75,35 +85,33 @@ export const HILLSHADE = {
 };
 
 /* ======================================================================
- *  DIALS — the single source of truth for every tunable group. Each numeric
- *  or [lo, hi] leaf below becomes a slider AUTOMATICALLY: the advanced panel
- *  walks this object, so adding a group (or a dial within one) makes it appear
- *  with no other edit. The section title is the key, humanized. Generation
- *  code imports the groups by their familiar names via the destructuring
- *  re-export just below — the SAME object refs, mutated in place by applyTuning.
+ *  DIALS — the single source of truth for every tunable group. Each leaf is a Dial / DialRange
+ *  descriptor { value, doc, optional min/max/step }: the value is what generation snapshots, the
+ *  doc is the panel's hover tooltip (DIAL_DOCS), and min/max/step is the slider travel (else derived
+ *  from the value via boundsFor). The advanced panel walks this object, so adding a group (or a dial
+ *  within one) makes its slider appear with no other edit. The section title is the key, humanized.
+ *  Generation reads a resolved snapshot (snapshotParams → TerrainParams), never these objects; the
+ *  aliases below feed render-time dials, mutated in place (.value) by applyTuning so readers stay live.
  *  ===================================================================== */
 export const DIALS = {
-  // Shared fractal shape — used by the COAST, MOUNTAIN, and MOISTURE waves.
-  FRACTAL: {
-    OCTAVES: 4.5, // more = finer detail, costlier
-    GAIN: 0.7, // amplitude falloff per octave; higher = rougher
-    LACUNARITY: 2, // wavelength shrink per octave
-  },
+  // Every wave below owns its fbm "octave stack" — OCTAVES (detail layers; more = finer,
+  // costlier), GAIN (amplitude falloff per octave; higher = rougher), LACUNARITY (wavelength
+  // shrink per octave) — alongside its WAVELENGTH/AMPLITUDE, tuned per wave.
 
   // CONTINENT — carrier wave: decides land vs water, then a shaping curve maps it
   // to a base height (abyss → shelf edge → inland).
   CONTINENT: {
-    OCTAVES: 6, // carrier octaves; more = more island sizes / richer coasts (was 5.5 ≡ 6 under the old ceil-loop)
-    WAVELENGTH: [1.8, 2.8] as Range, // larger = bigger, fewer continents
-    AMPLITUDE: [0.78, 0.89] as Range, // higher = more decisive land/ocean split, sharper coasts
-    BASE_HEIGHT: [0.39, 0.6] as Range, // [shelf-edge floor, inland] base height; lowered so mask-gated plains read green (ranges rise from it)
-    // Domain-warp strength (higher = more organic, wandering coasts), VARIED across the
-    // map [min..max] by a very-low-frequency wave so some regions are wavier than others.
-    WARP: [0.2313, 0.4313] as Range,
-    WARP_WAVELENGTH: 1, // wavelength of that wave; larger = broader warp regions (lower freq)
-    // Fixed elevation contrast applied before coloring.
-    ELEVATION_CONTRAST: 0.6728, // Higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones.
-    INLAND_SINK_DAMP: 0.9933, // Stops relief from digging below sea level inland (prevents lakes), so amplitude can stay high for tall mountains + jagged coasts. 1 = no inland lakes, 0 = lakes everywhere; coasts keep full downward relief (bays) regardless.
+    OCTAVES: { value: 6, doc: "carrier octaves; more = more island sizes / richer coasts" },
+    GAIN: { value: 0.7, doc: "amplitude falloff per octave; higher = rougher" },
+    LACUNARITY: { value: 2, doc: "wavelength shrink per octave" },
+    WAVELENGTH: { value: 2.45, doc: "larger = bigger, fewer continents" },
+    AMPLITUDE: { value: 0.835, doc: "higher = more decisive land/ocean split, sharper coasts" },
+    BASE_HEIGHT: { value: 0.495, doc: "[shelf-edge floor, inland] base height; lowered so mask-gated plains read green (ranges rise from it)" },
+    // NB: land height is capped to just above OCEAN.SEA_LEVEL in ElevationCalculator, so the
+    // CONTINENT + COAST surface alone stays green and only the MOUNTAIN wave makes mountains — one
+    // variable (SEA_LEVEL) drives both the coastline and that cap. No separate ceiling dial.
+    WARP: { value: 0.3313, doc: "domain-warp strength: higher = more organic, wandering coasts" },
+    ELEVATION_CONTRAST: { value: 0.6728, doc: "fixed elevation contrast applied before colouring; higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones" },
   },
 
   // OCEAN — the deep-water relief wave: broad and gentle (abyssal swells) so open
@@ -111,10 +119,13 @@ export const DIALS = {
   // damping knob: low = glassy, higher = rolling swells. Blends into COAST across
   // the shelf, so coast jaggedness only shows up near land.
   OCEAN: {
-    WAVELENGTH: [0.5131, 0.7131] as Range, // broad — large, gentle seabed features
-    AMPLITUDE: [0, 0.0671] as Range, // gentle — keep well below COAST so open water stays smooth
-    SHELF: [0.474, 0.694] as Range, // [ocean edge, full inland] continentalness band; wider = gentler coasts
-    ABYSS_HEIGHT: 0.007, // floor at deepest ocean (C=0); lower = deeper abyssal plains
+    SEA_LEVEL: { value: 0.47, doc: "elevation below it renders as ocean, above it as land" },
+    OCTAVES: { value: 1, doc: "detail layers; more = finer, costlier" },
+    GAIN: { value: 0.7, doc: "amplitude falloff per octave; higher = rougher" },
+    LACUNARITY: { value: 2, doc: "wavelength shrink per octave" },
+    WAVELENGTH: { value: 0.6131, doc: "broad — large, gentle seabed features" },
+    AMPLITUDE: { value: 0.3371, doc: "gentle — keep well below COAST so open water stays smooth" },
+    SHELF: { value: [0.474, 0.694] as Range, doc: "[ocean edge, full inland] continentalness band; wider = gentler coasts" },
   },
 
   // Relief riding on the carrier, as two waves blended by the inland ramp: a fine
@@ -122,104 +133,75 @@ export const DIALS = {
   // wavelengths keeps coasts detailed even when the interior uses big, broad
   // mountains (and when zoomed in / at high res).
   COAST: {
-    WAVELENGTH: [0.2153, 0.3153] as Range, // fine — nearshore detail; smaller = finer coast
-    AMPLITUDE: [0.1495, 0.3995] as Range, // relief near shore → jaggedness, bays, nearshore islets
-    WATERLINE: 0.47, // fixed waterline in raw-elevation space: elevation below it renders as ocean depth, above it as land height.
+    OCTAVES: { value: 4.5, doc: "detail layers; more = finer, costlier" },
+    GAIN: { value: 0.7, doc: "amplitude falloff per octave; higher = rougher" },
+    LACUNARITY: { value: 2, doc: "wavelength shrink per octave" },
+    WAVELENGTH: { value: 0.2653, doc: "fine — nearshore detail; smaller = finer coast" },
+    AMPLITUDE: { value: 0.2745, doc: "relief near shore → jaggedness, bays, nearshore islets" },
   },
 
-  MOUNTAIN_RANGE: {
-    // (2) The COARSE region mask — WHERE ranges appear: a low-freq wave gated into distinct massifs
-    // separated by (green) plains, so ridges don't blanket all inland. Must be COARSER than the
-    // ridge WAVELENGTH above (bigger value = bigger ranges).
-    OCTAVES: 3,
-    WAVELENGTH: 1.9,
-    AMPLITUDE: 1,
-    THRESHOLD: 0.7, // raise for rarer, sharper-edged ranges
+  // TECTONIC — mountain PLACEMENT via fake plate tectonics (replaces the old noise region mask).
+  // K plates drift on the sphere; where two CONVERGE, a long, linear range rises along their shared
+  // boundary — this is what makes CHAINS instead of round blobs. Only the additive mountain term is
+  // placed here; land/water shape is untouched (ocean is gated out by continentalness upstream).
+  TECTONIC: {
+    PLATE_COUNT: { value: 22, doc: "number of drifting plates → how many / how long the ranges (more = more, shorter)" },
+    RANGE_WIDTH: { value: 0.33, doc: "full angular width (radians) of the mountain belt straddling a boundary" },
+    SINUOSITY: { value: 0.19, doc: "how much ranges meander off their straight plate-boundary arcs (0 = dead straight)" },
+    CONVERGENCE_THRESHOLD: { value: 0.04, doc: "min collision strength to raise a range; higher = fewer, only the hardest collisions" },
+    VARIATION: { value: 0.73, doc: "along-strike height variation — swells, pinches, gaps along a range (0 = uniform ribbon, 1 = full gaps)" },
+    COAST_BIAS: { value: 0.08, doc: "fade interior ranges to favor coastal ones; 1 = coast-only, 0 = even across all land" },
   },
 
+  // A range = sharp ridged PEAKS on a broad SWELL. The swell's HEIGHT comes from the plate
+  // collision itself (the TECTONIC uplift), so harder/closer convergence lifts a taller range;
+  // RIDGE_AMPLITUDE is the overall height and SWELL_FRACTION splits it between body and crests.
   MOUNTAIN: {
-    // TWO wavelengths. (1) The FINE ridge wave — sharp peaks & ridges WITHIN a range:
-    // WAVELENGTH: [0.4, 0.62] as Range, // smaller = finer, more ridges
-    WAVELENGTH: 0.5,
-    // AMPLITUDE: [0.9, 0.95] as Range, // relief deep inland → mountain height (explorer pick; pinned)
-    AMPLITUDE: 0.925,
-    VALLEY_BIAS: 0.15, // fraction of amplitude carved DOWN (valleys) vs up (crests)
-
+    OCTAVES: { value: 4.5, doc: "detail layers on the ridged peaks; more = finer, costlier" },
+    GAIN: { value: 0.84, doc: "amplitude falloff per octave; higher = rougher" },
+    LACUNARITY: { value: 1.95, doc: "wavelength shrink per octave" },
+    RIDGE_WAVELENGTH: { value: 0.055, doc: "spacing of the ridged peaks; SMALLER = MORE peaks packed into a range" },
+    RIDGE_AMPLITUDE: { value: 0.72, doc: "overall range height — the collision-driven swell + the crests riding on it" },
+    SWELL_FRACTION: { value: 0.68, doc: "body vs crest: broad-swell height as a fraction of the crest rise; higher = more plateau/body, lower = spikier crests + deeper valleys" },
   },
 
   // MOISTURE — drives wet/dry biome coloring.
   MOISTURE: {
-    WAVELENGTH: [0.8, 1] as Range, // larger = bigger climate zones
-    AMPLITUDE: 0.6, // higher = stronger wet/dry swings
-    CONTRAST: 0.45, // higher = sharper wet/dry boundaries
-    NOISE_OFFSET: 31.7, // decorrelates the moisture noise from the elevation field
-    // Maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland.
-    // 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline.
-    WATER_PROXIMITY_EFFECT: 0.5,
-    // Desertification rate: how steeply maritime humidity drops from the coast toward the
-    // interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland.
-    DESERT_STEEPNESS: 2,
-    // Water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used
-    // to gauge "big water." Fewer = only large bodies (oceans) project humidity far inland (size
-    // matters more); toward CONTINENT.OCTAVES (6) = size barely matters.
-    WATER_SIZE_OCTAVES: 1, // (was 0.3 ≡ 1 under the old ceil-loop)
-    // Per-seed wet/dry bias applied at render time (not a wave). higher = wetter.
-    RAINFALL: [0.725, 0.875] as Range,
+    OCTAVES: { value: 4.5, doc: "detail layers; more = finer, costlier" },
+    GAIN: { value: 0.41, doc: "amplitude falloff per octave; higher = rougher" },
+    LACUNARITY: { value: 2.8, doc: "wavelength shrink per octave" },
+    WAVELENGTH: { value: 1.55, doc: "larger = bigger climate zones" },
+    AMPLITUDE: { value: 0.85, doc: "higher = stronger wet/dry swings" },
+    CONTRAST: { value: 0.02, doc: "higher = sharper wet/dry boundaries" },
+    WATER_PROXIMITY_EFFECT: { value: 0.29, doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline" },
+    DESERT_STEEPNESS: { value: 1.3, doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland" },
+    WATER_SIZE_OCTAVES: { value: 1, doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'. Fewer = only large bodies (oceans) project humidity far inland; toward CONTINENT.OCTAVES (6) = size barely matters" },
+    RAINFALL: { value: 0.65, doc: "per-seed wet/dry bias applied at render time (not a wave); higher = wetter" },
   },
 
-  // ICE — polar snow caps on LAND (open water doesn't ice, for now). Land is snow poleward
-  // of its snow line (EXTENT − LAND_BONUS, in |y| = sin latitude), blended back into the
-  // terrain over EDGE on the equatorward side. The line is RUFFLEd by noise (a base wave
-  // for a slightly lopsided cap + a finer octave at 3× for a ragged edge) so it isn't a
-  // clean circle. ASYMMETRY tweaks each pole. (EXTENT near 1 = tiny caps; lower for bigger.)
+  // ICE — polar snow caps on LAND (open water never ices). Four levers: COVERAGE (how far toward
+  // the equator the caps reach), WOBBLE (how raggedly the snow line wanders), FILL (how completely
+  // the cap fills vs leaving low land poking through as holes), and BLEND (how softly the cap edge
+  // fades into the surrounding land).
   ICE: {
-    EXTENT: [0.9, 0.95] as Range, // |y| poleward of which land is iced; higher = smaller caps
-    ASYMMETRY: [-0.03, 0.03] as Range, // per-pole tweak around the shared extent
-    LAND_BONUS: 0.08, // ice reaches this much farther toward the equator over land
-    EDGE: 0.04, // width (in |y|) of the soft equatorward blend; smaller = crisper edge
-    RUFFLE: 0.035, // how far the snow line wanders (|y|) → asymmetrical, ragged edge
-    RUFFLE_FREQ: 4, // base scale of the ruffle (a finer octave at 3× rides on top)
-    // Lower-lying land "pokes through" the ice (shows terrain) toward the equator, then
-    // fades to solid a little before each pole. Toward the equator only land above
-    // LAND_THRESHOLD ices (lower land shows green); approaching a pole the threshold drops
-    // to POLE_THRESHOLD (≈ sea level → all land ices) over SOLID_FADE, fully solid by SOLID_LAT.
-    LAND_THRESHOLD: 0.5, // equatorward: land below this pokes through (shows terrain)
-    POLE_THRESHOLD: 0.48, // near a pole: ice all land down to ~sea level (no poke-through)
-    SOLID_LAT: 0.95, // |y| at/after which the cap is fully solid — "a little before the pole"
-    SOLID_FADE: 0.12, // |y| span over which the poke-through fades out approaching SOLID_LAT
-  },
-
-  // FEATURE_DETAIL — "erosion": a low-frequency wave that scales the COAST/MOUNTAIN
-  // relief amplitude between smooth and rugged regions within one map.
-  FEATURE_DETAIL: {
-    WAVELENGTH: [0.8, 1.5] as Range, // larger = broader smooth/rugged zones (per seed)
-    AMPLITUDE: [0.5, 0.7] as Range, // FEATURE amplitude [smooth zones, rugged zones]; raise hi for taller/more mountains
+    COVERAGE: { value: 0.04, doc: "fraction of each hemisphere (in |sin lat|) the cap reaches; higher = bigger caps" },
+    WOBBLE: { value: 0.07, doc: "how far the snow line wanders → ragged, lopsided edge (0 = clean circle)" },
+    FILL: { value: 1.13, doc: "how completely the cap fills; higher = fewer holes (ices lower land too)" },
+    BLEND: { value: 0.085, doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer" },
   },
 };
 
-// Familiar aliases so generation code keeps importing FRACTAL, CONTINENT, … directly — the
+// Familiar aliases so generation code keeps importing CONTINENT, OCEAN, … directly — the
 // SAME object refs DIALS holds, mutated in place by applyTuning (so every reader stays live).
 export const {
-  FRACTAL,
   CONTINENT,
   OCEAN,
   COAST,
-  MOUNTAIN_RANGE,
+  TECTONIC,
   MOUNTAIN,
   MOISTURE,
   ICE,
-  FEATURE_DETAIL,
 } = DIALS;
-
-// Midpoint of the FEATURE_DETAIL amplitude; dividing by it gives a ~1-centered factor
-// used to modulate moisture (more wet/dry swing in rugged regions, less in calm ones).
-// `let` + recomputed in applyTuning so retuning FEATURE_DETAIL.AMPLITUDE keeps it in sync.
-export let FEATURE_DETAIL_MID =
-  (FEATURE_DETAIL.AMPLITUDE[0] + FEATURE_DETAIL.AMPLITUDE[1]) / 2;
-
-// Fixed waterline in raw-elevation space: elevation below it renders as ocean depth,
-// above it as land height. Not user-adjustable; this is the former default waterline
-// (lerp(0.12, 0.82, 0.5)), kept so maps look unchanged after the sea-level slider's removal.
 
 // Mesh / LOD infrastructure (not terrain shape).
 export const MESH = {
@@ -231,13 +213,6 @@ export const MESH = {
 export const INVARIANTS = {
   NEUTRAL_CENTER_POINT: 0.5, // neutral center for noise fields and midpoint math
 } as const;
-
-export function sampleDial(
-  range: readonly [number, number],
-  rng: () => number
-): number {
-  return randomContinuousChoice(range[0], range[1], rng);
-}
 
 /* ======================================================================
  *  ADVANCED SETTINGS — runtime tuning of the dials in DIALS.
@@ -258,23 +233,15 @@ export type TuningField =
 
 export type TuningGroup = { title: string; fields: TuningField[] };
 
-// A group is a string-keyed bag of numeric / [lo, hi] leaves. This view of DIALS is what the
-// generic walk (TUNING_SCHEMA) and navigation (dial) iterate.
-type DialTarget = Record<string, number | number[]>;
-const GROUPS: Record<string, DialTarget> = DIALS;
-
-// Numeric leaves to hide from the panel even though they belong to a group (e.g. a value that
-// isn't meant to be tuned by hand). Keyed by dotted path.
-const DIAL_OPTOUT = new Set<string>();
-
-// Bounds override hook: dotted path → slider travel, for the rare dial whose derived travel
-// (boundsFor) isn't what you want. Empty by default — most dials never need an entry.
-const DIAL_BOUNDS: Record<string, { min: number; max: number; step: number }> = {};
+// A group is a string-keyed bag of Dial / DialRange descriptors. This view of DIALS is what the
+// generic walk (TUNING_SCHEMA, DIAL_DOCS) and navigation (dial) iterate.
+type DialLeaf = Dial | DialRange;
+const GROUPS: Record<string, Record<string, DialLeaf>> = DIALS;
 
 // KEY → "key" label / section title (lowercase, underscores → spaces).
 const humanize = (key: string): string => key.toLowerCase().replace(/_/g, " ");
 
-const isRange = (v: unknown): v is number[] => Array.isArray(v);
+const isRange = (v: number | Range): v is Range => Array.isArray(v);
 
 // Round up to a tidy 1 / 2 / 5 × 10ⁿ ceiling; pick a step giving ~100–200 increments.
 const niceCeil = (x: number): number => {
@@ -307,24 +274,33 @@ function boundsFor(vals: number[]): { min: number; max: number; step: number } {
   return { min: 0, max, step: stepFor(max) };
 }
 
-// One leaf → its TuningField (scalar or range). Bounds: a DIAL_BOUNDS override, else derived
-// from the value; label: the humanized key.
-function toField(path: string, value: number | number[], key: string): TuningField {
+// One leaf → its TuningField (scalar or range). Bounds: the descriptor's explicit min/max/step when
+// all three are set, else derived from the value; label: the humanized key (tooltip → DIAL_DOCS).
+function toField(path: string, leaf: DialLeaf, key: string): TuningField {
+  const value = leaf.value;
   const kind = isRange(value) ? "range" : "scalar";
   const { min, max, step } =
-    DIAL_BOUNDS[path] ?? boundsFor(isRange(value) ? value : [value]);
+    leaf.min !== undefined && leaf.max !== undefined && leaf.step !== undefined
+      ? { min: leaf.min, max: leaf.max, step: leaf.step }
+      : boundsFor(isRange(value) ? value : [value]);
   return { kind, path, label: humanize(key), min, max, step } as TuningField;
 }
 
 // Walk DIALS into the grouped slider schema the panel renders. Section title = humanized key;
-// every numeric / range leaf becomes a field (in declaration order), minus DIAL_OPTOUT paths.
+// every leaf becomes a field (in declaration order).
 export const TUNING_SCHEMA: TuningGroup[] = Object.entries(GROUPS).map(
   ([key, target]) => ({
     title: humanize(key),
-    fields: Object.entries(target)
-      .map(([k, v]) => toField(`${key}.${k}`, v, k))
-      .filter((f) => !DIAL_OPTOUT.has(f.path)),
+    fields: Object.entries(target).map(([k, leaf]) => toField(`${key}.${k}`, leaf, k)),
   })
+);
+
+// Dotted path → hover doc, walked straight off the descriptors. Replaces the old ?raw comment
+// parse in AdvancedSettings — the dial's `doc` field is now the single source for its tooltip.
+export const DIAL_DOCS: Map<string, string> = new Map(
+  Object.entries(GROUPS).flatMap(([g, target]) =>
+    Object.entries(target).map(([k, leaf]): [string, string] => [`${g}.${k}`, leaf.doc])
+  )
 );
 
 /** A user-supplied override map: dotted path → value. Missing paths use the default. */
@@ -342,16 +318,17 @@ export const TUNING_PATHS: string[] = TUNING_SCHEMA.flatMap((g) =>
  * one navigation. Every dial lives in a DIALS object (mutated by reference → every reader sees
  * the change at call time).
  */
-type Dial = { get(): number; set(v: number): void };
-function dial(path: string): Dial {
+type DialAccess = { get(): number; set(v: number): void };
+function dial(path: string): DialAccess {
   const [g, k, idx] = path.split(".");
   const leaf = GROUPS[g][k];
-  if (Array.isArray(leaf)) {
-    const i = Number(idx); // e.g. CONTINENT.WAVELENGTH.0 — a [lo, hi] range property
-    return { get: () => leaf[i], set: (v) => void (leaf[i] = v) };
+  if (Array.isArray(leaf.value)) {
+    const arr = leaf.value;
+    const i = Number(idx); // e.g. OCEAN.SHELF.0 — one endpoint of a [lo, hi] range dial
+    return { get: () => arr[i], set: (v) => void (arr[i] = v) };
   }
-  // e.g. FRACTAL.LACUNARITY — a plain numeric property.
-  return { get: () => GROUPS[g][k] as number, set: (v) => void (GROUPS[g][k] = v) };
+  // a plain scalar dial, e.g. CONTINENT.LACUNARITY
+  return { get: () => leaf.value as number, set: (v) => void (leaf.value = v) };
 }
 
 // Pristine defaults, snapshot at module load BEFORE any applyTuning mutates the dials.
@@ -371,6 +348,87 @@ export function tuningDefault(path: string): number {
  */
 export function applyTuning(overrides: TuningOverrides): void {
   for (const p of TUNING_PATHS) dial(p).set(overrides[p] ?? TUNING_DEFAULTS[p]);
-  // Derived; keep in sync with the (possibly retuned) FEATURE_DETAIL amplitude.
-  FEATURE_DETAIL_MID = (FEATURE_DETAIL.AMPLITUDE[0] + FEATURE_DETAIL.AMPLITUDE[1]) / 2;
 }
+
+/* ======================================================================
+ *  FEATURES — coarse on/off switches for whole terrain features. Each is a plain boolean the
+ *  generator branches on via an EARLY EXIT (mountains → skip the MOUNTAIN relief term, leaving
+ *  the CONTINENT shape untouched; climate → skip the MOISTURE field, leaving flat moisture;
+ *  ice → skip the polar ice caps). Mutated in place like DIALS and synced to the worker on the
+ *  `tune` message — NOT pinned dials.
+ *  ===================================================================== */
+export type Features = { mountains: boolean; climate: boolean; ice: boolean };
+
+/** All features on — the normal planet. */
+export const FEATURE_DEFAULTS: Features = { mountains: true, climate: true, ice: true };
+
+/** Live feature switches, read at generation time. Mutated in place; reset via FEATURE_DEFAULTS. */
+export const FEATURES: Features = { ...FEATURE_DEFAULTS };
+
+/* ======================================================================
+ *  GENERATION PARAMS — a frozen, self-contained snapshot of every tuned value the generator reads,
+ *  resolved on the main thread and handed across the worker seam (and to direct callers / tests).
+ *  Generation reads ITS params, never the live global dials — so the interface names its whole
+ *  dependency and the worker no longer replays applyTuning in its own realm. Render-time dials still
+ *  read the aliases above on the main thread. HILLSHADE / MESH / INVARIANTS are fixed constants, not
+ *  params, so generation keeps importing them directly.
+ *  ===================================================================== */
+export type TerrainParams = {
+  CONTINENT: DialValues<typeof CONTINENT>;
+  OCEAN: DialValues<typeof OCEAN>;
+  COAST: DialValues<typeof COAST>;
+  TECTONIC: DialValues<typeof TECTONIC>;
+  MOUNTAIN: DialValues<typeof MOUNTAIN>;
+  MOISTURE: DialValues<typeof MOISTURE>;
+  ICE: DialValues<typeof ICE>;
+  features: Features;
+};
+
+// The plain-value shape of a descriptor group: each leaf's `.value` (number or Range) — the form
+// generation consumes, never the descriptors themselves.
+type DialValues<G> = { [K in keyof G]: G[K] extends { value: infer V } ? V : never };
+function dialValues<G extends Record<string, DialLeaf>>(group: G): DialValues<G> {
+  const out: Record<string, number | Range> = {};
+  for (const k in group) {
+    const v = group[k].value;
+    out[k] = Array.isArray(v) ? ([...v] as Range) : v;
+  }
+  return out as DialValues<G>;
+}
+
+/** Capture the current live dial values + feature switches as a standalone params snapshot. Each
+ *  descriptor's `.value` is copied out (ranges deep-copied), so later tuning of the globals can't
+ *  mutate a snapshot already handed to the generator. */
+export function snapshotParams(): TerrainParams {
+  return {
+    CONTINENT: dialValues(CONTINENT),
+    OCEAN: dialValues(OCEAN),
+    COAST: dialValues(COAST),
+    TECTONIC: dialValues(TECTONIC),
+    MOUNTAIN: dialValues(MOUNTAIN),
+    MOISTURE: dialValues(MOISTURE),
+    ICE: dialValues(ICE),
+    features: { ...FEATURES },
+  };
+}
+
+/** One toggle in the Layers panel: which feature it flips, its label, and a hover doc. */
+export type Layer = { key: keyof Features; label: string; doc: string };
+
+export const LAYERS: Layer[] = [
+  {
+    key: "mountains",
+    label: "mountains",
+    doc: "ridged peaks and their ground swell; off ⇒ the CONTINENT shape is untouched (all-green continents)",
+  },
+  {
+    key: "climate",
+    label: "climate",
+    doc: "wet/dry moisture variation and maritime humidity; off ⇒ flat moisture, colour driven by elevation alone",
+  },
+  {
+    key: "ice",
+    label: "ice caps",
+    doc: "polar snow caps on land; off ⇒ no ice anywhere",
+  },
+];

@@ -29,6 +29,7 @@ export type BoundSlider = {
 export type UIElements = {
   // Core elements
   map: HTMLCanvasElement;
+  plateArrows: HTMLCanvasElement; // 2D overlay for the plate-motion arrows (layered over #map)
   mapTitle: HTMLInputElement;
 
   // Buttons
@@ -43,6 +44,10 @@ export type UIElements = {
   downloadPNGBtn: HTMLButtonElement;
   downloadSaveBtn: HTMLButtonElement;
   cancelPopupBtn: HTMLButtonElement;
+  // Dev-only (local server): overwrite settings.ts with the live dial values, behind a popup.
+  saveSettingsBtn: HTMLButtonElement;
+  confirmSaveSettingsBtn: HTMLButtonElement;
+  cancelSaveSettingsBtn: HTMLButtonElement;
   // toggleAllLanguagesBtn: HTMLButtonElement;
 
   // Collections
@@ -69,6 +74,7 @@ export class UIManager {
   private initializeElements(): UIElements {
     const elementIds = [
       "map",
+      "plateArrows",
       "regenBtn",
       "regenBtnImg",
       "northBtn",
@@ -81,6 +87,9 @@ export class UIManager {
       "downloadPNGBtn",
       "downloadSaveBtn",
       "cancelPopupBtn",
+      "saveSettingsBtn",
+      "confirmSaveSettingsBtn",
+      "cancelSaveSettingsBtn",
       // "toggleAllLanguagesBtn",
     ];
 

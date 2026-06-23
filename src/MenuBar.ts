@@ -1,13 +1,19 @@
 import { setupAdvancedPanel } from "./AdvancedSettings";
-import type { AppState } from "./AppState";
+import type { AppState, MapState } from "./AppState";
 import {
   downloadFile,
   openSaveFile,
   SAVE_EXTENSION,
   serializeSave,
-  type SaveFile,
 } from "./common/mapFile";
-import { MAP_DEFAULTS, type MapSettings } from "./common/settings";
+import {
+  FEATURE_DEFAULTS,
+  FEATURES,
+  MAP_DEFAULTS,
+  TUNING_PATHS,
+  tuningDefault,
+  type MapSettings,
+} from "./common/settings";
 import { applyThemeUIColors } from "./common/themeColors";
 import type { CompassNeedle } from "./renderer/compassNeedle";
 import { sliderDefs, type UIManager } from "./UIManager";
@@ -25,8 +31,8 @@ type MenuBarDeps = {
   drawMap: () => void;
   ensureMap: (eager?: boolean) => void;
   clearMapCache: () => void;
-  loadMap: (name: string) => void;
   loadNewMap: (name: string) => void;
+  loadSavedMap: (state: MapState) => void;
   downloadPNG: (title: string) => void;
   applyAdvancedTuning: () => void;
 };
@@ -70,8 +76,8 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     needle,
     generateMapName,
     drawMap,
-    loadMap,
     loadNewMap,
+    loadSavedMap,
     downloadPNG,
     applyAdvancedTuning,
   } = deps;
@@ -88,6 +94,9 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     downloadPNGBtn,
     downloadSaveBtn,
     cancelPopupBtn,
+    saveSettingsBtn,
+    confirmSaveSettingsBtn,
+    cancelSaveSettingsBtn,
   } = ui.getAllElements();
 
   mapTitle.maxLength = MAX_TITLE_LEN; // block typing past the limit
@@ -147,7 +156,7 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
   // --- Advanced settings ---
   // Collapsible panel of sliders for every generation/appearance dial (settings.ts).
   // Slider input writes the override into app state; applyAdvancedTuning regenerates.
-  const advanced = setupAdvancedPanel({ appState, onChange: applyAdvancedTuning });
+  const advanced = setupAdvancedPanel({ appState, onChange: applyAdvancedTuning, onViewChange: drawMap });
 
   // --- Theme ---
   ui.themeRadios.forEach((radio) => {
@@ -172,8 +181,9 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     fadeOut(resetSlidersBtn);
     sliderDefs.forEach((d) => appState.setSetting(d.key, MAP_DEFAULTS[d.key])); // subscriber syncs labels
     appState.resetTuning(); // clear advanced overrides too
-    advanced.refresh(); // sync the advanced sliders back to their defaults
-    applyAdvancedTuning(); // re-apply (now-default) dials everywhere + regenerate
+    Object.assign(FEATURES, FEATURE_DEFAULTS); // turn all layers back on
+    advanced.refresh(); // sync the advanced sliders + layer toggles back to their defaults
+    applyAdvancedTuning(); // re-apply (now-default) dials + features everywhere + regenerate
   });
 
   loadTitleBtn.addEventListener("click", () => {
@@ -197,20 +207,20 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
   const handleDownloadSave = () => {
     const title = mapTitle.value || "Untitled Map";
     downloadFile(
-      serializeSave(appState.mapName, appState.settings),
+      serializeSave(appState.snapshot()),
       `${title.replace(/\s+/g, "_")}${SAVE_EXTENSION}`,
       "application/json"
     );
   };
 
-  // Apply a loaded save: settings go through the store (subscriber recolors + syncs sliders),
-  // then sync the theme radios (not driven by the store) and switch to the saved seed.
-  const applySave = (save: SaveFile) => {
-    appState.replaceSettings(save.mapSettings);
+  // Apply a loaded save: loadSavedMap restores the snapshot (settings + tuning + orientation +
+  // seed) and regenerates; we only sync the theme radios here, since they're not driven by the
+  // store's subscriber.
+  const applySave = (save: MapState) => {
+    loadSavedMap(save);
     ui.themeRadios.forEach(
-      (radio) => (radio.checked = radio.value === save.mapSettings.theme)
+      (radio) => (radio.checked = radio.value === save.settings.theme)
     );
-    loadMap(save.seed);
   };
 
   const handleUpload = async () => {
@@ -260,6 +270,60 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     handleCancelPopup();
   });
   cancelPopupBtn.addEventListener("click", handleCancelPopup);
+
+  // --- Dev-only: save current dials → settings.ts (local server only) ---
+  // The /tune/save endpoint exists only in the dev server (and is loopback-guarded), so the button
+  // is revealed only when we're actually running on it — production builds never show it (the DEV
+  // guard is statically false there, so this whole block is dropped). Clicking opens a confirmation
+  // popup; confirming overwrites settings.ts with the live dial values (then Vite hot-reloads it).
+  type SaveResponse = { ok: boolean; error?: string };
+  const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+  if (import.meta.env.DEV && LOOPBACK_HOSTS.has(location.hostname)) {
+    const savePopup = document.getElementById("saveSettingsPopup");
+    const saveEsc = (e: KeyboardEvent) => e.key === "Escape" && closeSavePopup();
+    const saveBackdrop = (e: MouseEvent) => e.target === savePopup && closeSavePopup();
+    const closeSavePopup = () => {
+      savePopup?.classList.remove("show");
+      document.removeEventListener("keydown", saveEsc);
+      savePopup?.removeEventListener("click", saveBackdrop);
+    };
+    const openSavePopup = () => {
+      savePopup?.classList.add("show");
+      document.addEventListener("keydown", saveEsc);
+      savePopup?.addEventListener("click", saveBackdrop);
+    };
+
+    // Overwrite settings.ts with the current value of every dial (override, else its default).
+    const writeSettings = async () => {
+      console.log("writeSettings");
+      const values = TUNING_PATHS.map((path) => ({
+        path,
+        value: appState.tuningOverrides[path] ?? tuningDefault(path),
+      }));
+      console.table(values);
+      confirmSaveSettingsBtn.disabled = true;
+      try {
+        const res = await fetch("/tune/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ values }),
+        });
+        const json = (await res.json()) as SaveResponse;
+        if (!json.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+        closeSavePopup();
+        fadeOut(saveSettingsBtn); // flash confirmation; Vite then hot-reloads the rewritten file
+      } catch (e) {
+        alert(`save failed: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        confirmSaveSettingsBtn.disabled = false;
+      }
+    };
+
+    saveSettingsBtn.classList.remove("dev-only"); // reveal on the dev server
+    saveSettingsBtn.addEventListener("click", openSavePopup);
+    confirmSaveSettingsBtn.addEventListener("click", writeSettings);
+    cancelSaveSettingsBtn.addEventListener("click", closeSavePopup);
+  }
 
   return { setToolsCollapsed, setTitle };
 }
