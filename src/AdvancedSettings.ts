@@ -3,6 +3,7 @@ import {
   DIAL_DOCS,
   FEATURES,
   LAYERS,
+  layerDefault,
   TUNING_SCHEMA,
   tuningDefault,
   type Layer,
@@ -319,21 +320,27 @@ export function setupAdvancedPanel(opts: {
     resetBtn.type = "button";
     resetBtn.className = "adv-reset";
     resetBtn.textContent = "reset";
-    resetBtn.title = "turn all layers on";
+    resetBtn.title = "reset layers to defaults";
     summary.append(title, resetBtn);
     details.append(summary);
 
     const fields = document.createElement("div");
     fields.className = "adv-fields";
 
-    const layerIsOn = (layer: Layer): boolean => FEATURES[layer.key];
+    const layerIsOn = (layer: Layer): boolean =>
+      layer.kind === "feature" ? FEATURES[layer.key] : (appState.settings[layer.key] ?? false);
 
-    // Flip a feature on/off. No regen here — the callers below batch one regen after the flip.
+    // Flip a layer. Features mutate the generation switch; views write the render setting. No
+    // re-render here — each call site fires the right follow-up (regen for features, redraw for views).
     const applyLayer = (layer: Layer, on: boolean): void => {
-      FEATURES[layer.key] = on;
+      if (layer.kind === "feature") FEATURES[layer.key] = on;
+      else appState.setSetting(layer.key, on);
     };
 
-    const rows = LAYERS.map((layer) => {
+    // Layers defaulting to OFF sink to the bottom; a stable sort keeps source order within each group.
+    const ordered = [...LAYERS].sort((a, b) => Number(layerDefault(b)) - Number(layerDefault(a)));
+
+    const rows = ordered.map((layer) => {
       const row = document.createElement("label");
       row.className = "adv-row adv-toggle";
       if (layer.doc) showDoc(row, layer.doc);
@@ -343,7 +350,9 @@ export function setupAdvancedPanel(opts: {
       sync();
       box.addEventListener("change", () => {
         applyLayer(layer, box.checked);
-        onChange(); // discrete action → regen now, not debounced
+        // Feature layers change terrain → regen now (discrete action, not debounced); views re-render.
+        if (layer.kind === "feature") onChange();
+        else onViewChange();
       });
       row.append(box, document.createTextNode(` ${layer.label}`));
       fields.append(row);
@@ -352,63 +361,24 @@ export function setupAdvancedPanel(opts: {
       return { layer, box };
     });
 
-    const setAll = (on: boolean): void => {
+    // Reset restores every layer to its default (features regen; views re-render).
+    const resetLayers = (): void => {
+      let regen = false;
       for (const { layer, box } of rows) {
-        box.checked = on;
-        applyLayer(layer, on);
+        const def = layerDefault(layer);
+        box.checked = def;
+        applyLayer(layer, def);
+        if (layer.kind === "feature") regen = true;
       }
-      onChange();
+      if (regen) onChange(); // a regen re-renders too, so it also reflects any view resets
+      else onViewChange();
     };
 
     resetBtn.addEventListener("click", (e) => {
       e.preventDefault(); // a click inside <summary> would otherwise toggle it
       e.stopPropagation();
-      setAll(true);
+      resetLayers();
     });
-
-    // A VIEW toggle (not a generation feature): recolour cells by tectonic plate. Re-renders only
-    // (no regen), so it writes the render setting directly and fires onViewChange.
-    {
-      const row = document.createElement("label");
-      row.className = "adv-row adv-toggle";
-      showDoc(
-        row,
-        "colour cells by tectonic plate instead of biome — a view overlay; doesn't change terrain"
-      );
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      const sync = () => void (box.checked = appState.settings.viewPlates ?? false);
-      sync();
-      box.addEventListener("change", () => {
-        appState.setSetting("viewPlates", box.checked);
-        onViewChange();
-      });
-      row.append(box, document.createTextNode(" view plates"));
-      fields.append(row);
-      syncers.set("__view:plates", sync);
-    }
-
-    // "view labels": draw generated names for the map's features (seas, continents, …). A view
-    // overlay like "view plates" — no regen, so it writes the render setting directly + redraws.
-    {
-      const row = document.createElement("label");
-      row.className = "adv-row adv-toggle";
-      showDoc(
-        row,
-        "draw generated names for the map's features (seas, continents, …) — a view overlay; doesn't change terrain"
-      );
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      const sync = () => void (box.checked = appState.settings.viewLabels ?? false);
-      sync();
-      box.addEventListener("change", () => {
-        appState.setSetting("viewLabels", box.checked);
-        onViewChange();
-      });
-      row.append(box, document.createTextNode(" view labels"));
-      fields.append(row);
-      syncers.set("__view:labels", sync);
-    }
 
     details.append(fields);
     panel.append(details);

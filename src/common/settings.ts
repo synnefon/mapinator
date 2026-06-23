@@ -558,23 +558,34 @@ export function snapshotParams(): TerrainParams {
   };
 }
 
-/** One toggle in the Layers panel: which feature it flips, its label, and a hover doc. */
-export type Layer = { key: keyof Features; label: string; doc: string };
+/** One toggle in the Layers panel. All toggle metadata lives here so the definitions are colocated.
+ *  A FEATURE flips a generation switch (FEATURES; needs a regen on change); a VIEW flips a render
+ *  overlay (a MapSettings flag; re-renders only, no regen). */
+export type ViewLayerKey = "viewPlates" | "viewLabels";
+export type Layer =
+  | { kind: "feature"; key: keyof Features; label: string; doc: string }
+  | { kind: "view"; key: ViewLayerKey; label: string; doc: string };
 
+/** A layer's default on/off — features from FEATURE_DEFAULTS, views from MAP_DEFAULTS. The Layers
+ *  panel orders by this so any layer defaulting to OFF sinks to the bottom. */
+export const layerDefault = (layer: Layer): boolean =>
+  layer.kind === "feature" ? FEATURE_DEFAULTS[layer.key] : (MAP_DEFAULTS[layer.key] ?? false);
+
+// Source order is logical (features, then view overlays); the panel re-sorts by default (off last).
 export const LAYERS: Layer[] = [
+  { kind: "feature", key: "mountains", label: "mountains", doc: "ridged peaks and their ground swell" },
+  { kind: "feature", key: "climate", label: "climate", doc: "wet/dry moisture variation and maritime humidity" },
+  { kind: "feature", key: "ice", label: "ice caps", doc: "polar snow caps on land" },
   {
-    key: "mountains",
-    label: "mountains",
-    doc: "ridged peaks and their ground swell",
+    kind: "view",
+    key: "viewLabels",
+    label: "view labels",
+    doc: "draw generated names for the map's features (seas, continents, …) — a view overlay; doesn't change terrain",
   },
   {
-    key: "climate",
-    label: "climate",
-    doc: "wet/dry moisture variation and maritime humidity",
-  },
-  {
-    key: "ice",
-    label: "ice caps",
-    doc: "polar snow caps on land",
+    kind: "view",
+    key: "viewPlates",
+    label: "view plates",
+    doc: "colour cells by tectonic plate instead of biome — a view overlay; doesn't change terrain",
   },
 ];
