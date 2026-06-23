@@ -304,7 +304,7 @@ export const DIALS = {
       doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'"
     },
     RAINFALL: {
-      value: 0.65,
+      value: 0.68,
       doc: "higher = wetter",
     },
   },

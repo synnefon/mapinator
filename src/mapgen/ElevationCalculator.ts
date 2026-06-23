@@ -94,9 +94,11 @@ export class ElevationCalculator {
   /**
    * Top-level elevation in [0,1] at a unit-sphere point: base + relief. `C` is the
    * continentalness at this point; the caller passes it in (see continentalness) so it isn't
-   * recomputed here and again for moisture / water-proximity.
+   * recomputed here and again for moisture / water-proximity. `upliftOverride` (optional) supplies
+   * the tectonic uplift already computed at `site` so the per-cell sampler doesn't re-derive it;
+   * omit it elsewhere (the hillshade slope samples at offset points compute their own).
    */
-  public elevationAt(site: Vec3, C: number): number {
+  public elevationAt(site: Vec3, C: number, upliftOverride?: number): number {
     const { CONTINENT, OCEAN, COAST, TECTONIC } = this.params;
     const { x, y, z } = site;
     const coastWavelength = COAST.WAVELENGTH;
@@ -159,7 +161,7 @@ export class ElevationCalculator {
     // deepens toward the coastline's level but never below it (no mountain-made lakes / sea).
     const landMask = smoothstep(OCEAN.SHELF[0], OCEAN.SHELF[1], C);
     const mountainWeight = landMask * (1 - TECTONIC.COAST_BIAS * inland);
-    const mountains = mountainWeight * this.mountainRelief(x, y, z);
+    const mountains = mountainWeight * this.mountainRelief(x, y, z, upliftOverride);
     return clamp(Math.max(land + mountains, OCEAN.SEA_LEVEL));
   }
 
@@ -259,10 +261,12 @@ export class ElevationCalculator {
    * taller where plates converge harder. RIDGE_WAVELENGTH sets how many peaks (smaller = more);
    * RIDGE_AMPLITUDE is the overall height (collision swell + crests). uplift's band tapers it to foothills.
    */
-  private mountainRelief(x: number, y: number, z: number): number {
+  private mountainRelief(x: number, y: number, z: number, upliftOverride?: number): number {
     const { MOUNTAIN, TECTONIC, features } = this.params;
     if (!features.mountains) return 0; // mountains layer off → no relief term (CONTINENT shape untouched)
-    const uplift = this.tectonics.upliftAt(x, y, z);
+    // Reuse the uplift the per-cell sampler already computed (alongside the plate); only the offset
+    // slope samples in hillshadeAt pass nothing and re-derive it. `??` (not `||`) so a real 0 stands.
+    const uplift = upliftOverride ?? this.tectonics.upliftAt(x, y, z);
     if (uplift <= 0) return 0; // off every boundary → flat plain (skip the ridged sample)
     // Sharp ridged crests in [0, RIDGE_AMPLITUDE]: near 0 in the valleys between peaks, near
     // RIDGE_AMPLITUDE on the ridgelines. RIDGE_WAVELENGTH sets how closely packed the peaks are.
@@ -352,13 +356,16 @@ export class ElevationCalculator {
       continentalnessOverride !== undefined
         ? { full: continentalnessOverride, broad: continentalnessOverride }
         : this.continentalness(site.x, site.y, site.z, MOISTURE.WATER_SIZE_OCTAVES);
-    const elevation = this.elevationAt(site, continentalness);
+    // Uplift (mountain weight) + owning plate share ONE warp + nearest-plate scan (see
+    // Tectonics.upliftAndPlateAt); pass uplift into elevationAt so it isn't re-sampled. Drops a
+    // redundant warp + scan per land cell; bit-identical to the old separate upliftAt + plateAt.
+    const { uplift, plate } = this.tectonics.upliftAndPlateAt(site.x, site.y, site.z);
+    const elevation = this.elevationAt(site, continentalness, uplift);
     // Relief shading from the SAME field — reuses continentalness, only re-samples the relief twice
     // (for the slope). Baked per cell → a free colour multiply at draw time.
     const shade = this.hillshadeAt(site, continentalness, elevation);
     const moisture = this.moistureAt(site, continentalness, broadContinentalness);
     const ice = this.iceAt(site, elevation, clamp(ICE.COVERAGE));
-    const plate = this.tectonics.plateAt(site.x, site.y, site.z);
     return { elevation, moisture, ice, shade, plate };
   }
 

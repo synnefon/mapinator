@@ -2,10 +2,10 @@ import { v4 as uuid } from "uuid";
 import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
-import { logMem, mapBytes, MEM_PROFILE } from "./common/memProfile";
 import { applyTuning, LOD, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
 import { NameGenerator } from "./mapgen/NameGenerator";
+import { recommendedWorkerCount, WorkerPool } from "./mapgen/WorkerPool";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 import { createCompassNeedle } from "./renderer/compassNeedle";
 import { GlobeController } from "./renderer/GlobeController";
@@ -149,48 +149,15 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // --- Map Rendering ---
-  // Terrain generation runs in a Web Worker so heavy meshing/noise never blocks the
-  // UI thread; the globe's typed arrays transfer back zero-copy. Rotate/zoom only
-  // re-project (reading the cached arrays), so they stay on the main thread.
-  const worker = new Worker(new URL("./mapgen/mapWorker.ts", import.meta.url), {
-    type: "module",
-  });
-  let reqId = 0;
-  const pending = new Map<number, (map: GlobeMap) => void>();
-  // The LOD pipeline (ladder, cache, queue, view→rung math, staleness epoch) is created below,
-  // once requestMap exists — see renderer/LodPipeline.ts.
+  // Terrain generation runs in a POOL of Web Workers so heavy meshing/noise never blocks the UI
+  // thread AND independent LOD rungs build in parallel; the globe's typed arrays transfer back
+  // zero-copy. Rotate/zoom only re-project (reading the cached arrays), so they stay on the main
+  // thread. The pool SIZE caps peak generation memory (see WorkerPool / recommendedWorkerCount).
+  const pool = new WorkerPool(recommendedWorkerCount());
 
-  worker.onmessage = (e: MessageEvent<{ id: number; map: GlobeMap }>) => {
-    const resolve = pending.get(e.data.id);
-    if (!resolve) return;
-    pending.delete(e.data.id);
-    const bytes = mapBytes(e.data.map);
-    resolve(e.data.map);
-    // Profile after a microtask so the pipeline's own .then has cached this map first — the LOD
-    // figures then include the arrival. GPU bytes lag a frame (uploaded at the next draw); fine.
-    if (MEM_PROFILE) {
-      queueMicrotask(() => {
-        const { count, bytes: lodBytes } = pipeline.cacheStats();
-        logMem(`+map ${(bytes / (1024 * 1024)).toFixed(1)}MB`, {
-          lodCount: count,
-          lodBytes,
-          gpuBytes: globeRenderer.gpuBytes(canvas),
-        });
-      });
-    }
-  };
-  worker.onerror = (e) => {
-    console.error("map worker error:", e.message);
-  };
+  const requestMap = (req: GenRequest): Promise<GlobeMap> => pool.generate(req);
 
-  const requestMap = (req: GenRequest): Promise<GlobeMap> =>
-    new Promise((resolve) => {
-      const id = ++reqId;
-      pending.set(id, resolve);
-      worker.postMessage({ id, ...req });
-    });
-
-  // The LOD pipeline: it feeds ONE generate job at a time to the worker (requestMap), reads the
+  // The LOD pipeline: it feeds generate jobs to the worker pool (up to pool.size at once), reads the
   // live view (zoom/orientation/resolution + canvas size), and re-renders via scheduleRender
   // (hoisted below) whenever the base globe or the detail overlay changes.
   const pipeline = createLodPipeline({
@@ -203,16 +170,18 @@ document.addEventListener("DOMContentLoaded", () => {
       height: canvas.height,
     }),
     onReady: scheduleRender,
+    maxInFlight: pool.size, // up to one concurrent generate per worker
   });
 
   const reseedWorker = (seed: string) => {
     pipeline.reset(); // bump the staleness epoch + drop cached maps from the previous seed
-    // Config carries the seed + the current resolved generation params (snapshotParams reads the
-    // live dials, post-applyTuning). postMessage ordering keeps it ahead of the first generate.
-    worker.postMessage({ id: ++reqId, kind: "config", seed, params: snapshotParams() });
+    // Config carries the seed + the current resolved generation params (snapshotParams reads the live
+    // dials, post-applyTuning), broadcast to EVERY worker. Per-worker postMessage ordering keeps it
+    // ahead of that worker's first generate.
+    pool.configure({ seed, params: snapshotParams() });
   };
 
-  // Seed the worker before the first generate (postMessage ordering keeps it first).
+  // Seed every worker before the first generate (per-worker postMessage ordering keeps it first).
   reseedWorker(appState.mapName);
 
   function render() {
@@ -314,15 +283,40 @@ document.addEventListener("DOMContentLoaded", () => {
     applyTuning({ ...appState.tuningOverrides }); // render-side dials (sea level, contrast, colours) on this thread
     // Generation dials + features → worker as a params snapshot (no seed change). snapshotParams()
     // reads the dials applyTuning just wrote, plus the live FEATURES.
-    worker.postMessage({ id: ++reqId, kind: "config", params: snapshotParams() });
+    pool.configure({ params: snapshotParams() });
     pipeline.reset();
     ensureMap();
   }
 
-  // View / setting change: re-render now (cheap) and keep the progressive octave stack synced.
+  // Generation is throttled during continuous pan/zoom: re-projecting cached maps stays per-frame
+  // smooth (scheduleRender), but QUEUEING new detail every frame floods the worker pool with patches
+  // for centres that go stale before they finish — each landing forces a GPU upload, the cause of pan
+  // jank. So sync at most once per GEN_SYNC_MS, with a trailing call so the resting view gets detail.
+  const GEN_SYNC_MS = 150;
+  let lastSyncMs = 0;
+  let syncTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleSync(): void {
+    if (syncTimer !== null) return; // a trailing sync is already pending
+    const since = performance.now() - lastSyncMs;
+    if (since >= GEN_SYNC_MS) {
+      lastSyncMs = performance.now();
+      pipeline.sync();
+    } else {
+      syncTimer = setTimeout(() => {
+        syncTimer = null;
+        lastSyncMs = performance.now();
+        pipeline.sync();
+      }, GEN_SYNC_MS - since);
+    }
+  }
+
+  // View change (pan/zoom/momentum): re-render now (cheap, cached re-projection) and throttle the
+  // generation sync (above) so a continuous gesture stays smooth instead of flooding the pool every
+  // frame. Explicit regen (seed/tuning/load) goes through ensureMap for an immediate sync.
   function drawMap(): void {
     scheduleRender();
-    ensureMap();
+    lastZoomedIn = pipeline.view().level > 0; // cheap; keep current for the menu auto-collapse
+    scheduleSync();
   }
 
   // --- UI Helpers ---

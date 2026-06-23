@@ -228,11 +228,14 @@ export class Tectonics {
   }
 
   /**
-   * Mountain placement weight in [0,1] at a unit-sphere point: high along CONVERGENT plate
-   * boundaries (where ranges form), tapering to 0 across the RANGE_WIDTH belt, and 0 on divergent /
-   * transform boundaries and in plate interiors.
+   * Mountain placement weight in [0,1] AND owning plate at a unit-sphere point, in ONE pass: the
+   * weight is high along CONVERGENT plate boundaries (where ranges form), tapering to 0 across the
+   * RANGE_WIDTH belt, and 0 on divergent / transform boundaries and in plate interiors; `plate` is
+   * the nearest plate seed. upliftAt + plateAt each redo the SAME warp + nearest-plate scan, so a
+   * per-cell sample (which needs both) shares them here — dropping a redundant warp (3 noise lookups)
+   * + scan per land cell. The uplift is bit-identical to upliftAt, the plate to plateAt.
    */
-  public upliftAt(x: number, y: number, z: number): number {
+  public upliftAndPlateAt(x: number, y: number, z: number): { uplift: number; plate: number } {
     this.ensureBuilt();
     const w = this.warp(x, y, z);
     x = w.x;
@@ -271,7 +274,7 @@ export class Tectonics {
     const dist = Math.asin(Math.min(1, Math.abs(x * nx + y * ny + z * nz) / chordLen));
     const reach = Math.max(0.5 * this.params.TECTONIC.RANGE_WIDTH, 1e-6);
     const band = 1 - smoothstep(0, reach, dist);
-    if (band <= 0) return 0; // plate interior → no range (skip the convergence math)
+    if (band <= 0) return { uplift: 0, plate: iA }; // plate interior → no range (skip the convergence math)
 
     // Reuse that chord as the boundary normal: project it into the tangent plane at p and normalize
     // — it points across the boundary (A → B), so velocity along it measures approach.
@@ -302,12 +305,18 @@ export class Tectonics {
     // Only convergent boundaries raise ranges: nothing below THRESHOLD, full height by THRESHOLD +
     // CONVERGENCE_SOFTNESS, graded between (stronger collisions → taller ranges). band then tapers
     // the range out across its width.
-    return (
+    const uplift =
       smoothstep(
         this.params.TECTONIC.CONVERGENCE_THRESHOLD,
         this.params.TECTONIC.CONVERGENCE_THRESHOLD + CONVERGENCE_SOFTNESS,
         convergence
-      ) * band * junction
-    );
+      ) * band * junction;
+    return { uplift, plate: iA };
+  }
+
+  /** Mountain placement weight only — a thin wrapper over upliftAndPlateAt for callers that don't
+   *  need the plate (the hillshade slope samples at offset points). */
+  public upliftAt(x: number, y: number, z: number): number {
+    return this.upliftAndPlateAt(x, y, z).uplift;
   }
 }

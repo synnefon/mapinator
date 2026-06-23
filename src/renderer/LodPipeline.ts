@@ -1,6 +1,5 @@
 import { Quat, type Vec3 } from "../common/3DMath";
 import type { GlobeMap } from "../common/map";
-import { mapBytes } from "../common/memProfile";
 import { LOD, MAP_DEFAULTS } from "../common/settings";
 import { globePointCount } from "../mapgen/MapGenerator";
 import { globeRadiusPx } from "./GlobeRenderer";
@@ -85,12 +84,14 @@ export type LodView = {
 };
 
 export type LodDeps = {
-  /** Enqueue ONE worker generate job; resolves with the built map. (main.ts → worker.postMessage) */
+  /** Enqueue a worker generate job; resolves with the built map. (main.ts → worker pool) */
   postGenerate: (req: GenRequest) => Promise<GlobeMap>;
   /** The live view (zoom, orientation, resolution, canvas size). */
   getView: () => LodView;
   /** Called whenever the base/overlay maps change, so the caller re-renders. */
   onReady: () => void;
+  /** Max generate jobs in flight at once — the worker-pool size. Defaults to 1 (serial). */
+  maxInFlight?: number;
 };
 
 export type LodPipeline = {
@@ -106,12 +107,11 @@ export type LodPipeline = {
   reset: () => void;
   /** Cached rung keys, oldest→newest (LRU order). Read-only introspection for debugging/tests. */
   cachedKeys: () => string[];
-  /** Cache occupancy for memory profiling: resident rung count + their summed typed-array bytes. */
-  cacheStats: () => { count: number; bytes: number };
 };
 
 export function createLodPipeline(deps: LodDeps): LodPipeline {
   const { postGenerate, getView, onReady } = deps;
+  const maxInFlight = Math.max(1, deps.maxInFlight ?? 1); // worker-pool size; 1 = serial (default)
   const LOD_LEVELS: LodLevel[] = buildLodLevels();
 
   // Bumped on every seed/tuning change; results tagged with a stale epoch are dropped so an
@@ -125,7 +125,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
   let overlayLevel = 0; // level of the patch currently shown (0 = none; for switch hysteresis)
   const lodCache = new Map<string, GlobeMap>(); // "level|…" → rung map (LRU by insertion)
   let lodQueue: { key: string; level: number; center: Vec3 }[] = []; // missing rungs, coarse→fine
-  let lodActive: string | null = null; // rung key currently in the worker
+  const lodActive = new Set<string>(); // rung keys currently in flight (≤ maxInFlight at once)
 
   // Orthographic globe radius (px) at a zoom — globeRadiusPx only reads width/height, so a plain
   // {width,height} stands in for the canvas (keeps the pipeline DOM-free + testable).
@@ -262,7 +262,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     lodQueue = [];
     for (let l = 0; l <= t.level; l++) {
       const key = bucketKey(v, l, t.center);
-      if (!covered.has(l) && key !== lodActive) {
+      if (!covered.has(l) && !lodActive.has(key)) {
         lodQueue.push({ key, level: l, center: t.center });
       }
     }
@@ -270,38 +270,37 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     pumpLod();
   }
 
-  // Generate the next queued rung — ONE worker job at a time — caching + rendering each as it
-  // lands, then pumping the next. Rung 0 becomes the sticky base; ≥1 upgrade the overlay.
+  // Generate queued rungs — up to maxInFlight worker jobs at once (the pool size) — caching +
+  // rendering each as it lands, then pumping the next. Rung 0 becomes the sticky base; ≥1 upgrade the
+  // overlay. Coarse→fine: on a fresh view the globe and first caps dispatch together, then refine.
   function pumpLod(): void {
-    if (lodActive !== null) return; // one at a time
-    const job = lodQueue.shift();
-    if (!job) return;
-    if (lodCache.has(job.key)) {
-      pumpLod(); // cached in the meantime
-      return;
-    }
-    lodActive = job.key;
-    const epoch = seedEpoch;
-    const v = getView();
-    const spec = rungSpec(v, job.level, job.center);
-    postGenerate({
-      kind: "generate",
-      center: spec.center,
-      halfAngle: spec.halfAngle,
-      points: spec.points,
-    }).then((map) => {
-      lodActive = null;
-      if (epoch === seedEpoch) {
-        cacheLod(getView(), job.key, map);
-        if (job.level === 0) {
-          baseMap = map; // sticky base: swaps only when a fresh globe lands → never blanks
-        } else {
-          refreshOverlay(getView()); // a new patch landed → upgrade the overlay if it's finest covering
+    while (lodActive.size < maxInFlight) {
+      const job = lodQueue.shift();
+      if (!job) return; // queue drained
+      if (lodCache.has(job.key)) continue; // cached in the meantime → skip to the next
+      lodActive.add(job.key);
+      const epoch = seedEpoch;
+      const v = getView();
+      const spec = rungSpec(v, job.level, job.center);
+      postGenerate({
+        kind: "generate",
+        center: spec.center,
+        halfAngle: spec.halfAngle,
+        points: spec.points,
+      }).then((map) => {
+        lodActive.delete(job.key);
+        if (epoch === seedEpoch) {
+          cacheLod(getView(), job.key, map);
+          if (job.level === 0) {
+            baseMap = map; // sticky base: swaps only when a fresh globe lands → never blanks
+          } else {
+            refreshOverlay(getView()); // a new patch landed → upgrade the overlay if it's finest covering
+          }
+          onReady();
         }
-        onReady();
-      }
-      pumpLod(); // next rung (coarse → fine)
-    });
+        pumpLod(); // a worker freed → dispatch the next queued rung
+      });
+    }
   }
 
   return {
@@ -319,13 +318,10 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
       overlay = null;
       overlayLevel = 0;
       lodQueue = [];
-      // lodActive's in-flight result is discarded by the seedEpoch bump above.
+      // Clear in-flight tracking so the new seed dispatches immediately; any pre-reset results still
+      // land but are dropped by the seedEpoch bump above (and re-cached harmlessly if re-requested).
+      lodActive.clear();
     },
     cachedKeys: () => [...lodCache.keys()],
-    cacheStats: () => {
-      let bytes = 0;
-      for (const map of lodCache.values()) bytes += mapBytes(map);
-      return { count: lodCache.size, bytes };
-    },
   };
 }
