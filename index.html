@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
-  <script type="module" crossorigin src="/mapinator/assets/index-SPme260W.js"></script>
-  <link rel="stylesheet" crossorigin href="/mapinator/assets/index-BPzss7-m.css">
+  <script type="module" crossorigin src="/mapinator/assets/index-DdlWFNAl.js"></script>
+  <link rel="stylesheet" crossorigin href="/mapinator/assets/index-o7nE3GFA.css">
 </head>
 
 <body>
@@ -31,6 +31,19 @@
     </div>
   </div>
 
+  <!-- Dev-only confirmation for "save to settings.ts" (wired in MenuBar.ts). -->
+  <div class="popup-backdrop" id="saveSettingsPopup">
+    <div class="popup">
+      <h3>overwrite settings.ts?</h3>
+      <p class="popup-body">
+        write the current dial values into <code>src/common/settings.ts</code>, replacing the saved
+        defaults. there's no undo (use git to revert).
+      </p>
+      <button id="confirmSaveSettingsBtn" class="downloadPopupBtn">save &amp; overwrite</button>
+      <button id="cancelSaveSettingsBtn" class="downloadPopupBtn">cancel</button>
+    </div>
+  </div>
+
   <div class="left-sidebar">
     <!-- 1. title (full width; check floats at the right) -->
     <div id="titleContainer">
@@ -45,6 +58,11 @@
          collapsed by default. No outer box / label — the sidebar is the container. -->
     <div class="settings-section">
       <div class="controls-row">
+        <!-- Dev-only: overwrite settings.ts with the live dial values. Hidden (.dev-only) until
+             MenuBar.ts reveals it on the local dev server. Inert in production (no save endpoint). -->
+        <button id="saveSettingsBtn" class="dev-only"
+          title="overwrite src/common/settings.ts with the current dial values (dev only)">save to
+          settings.ts</button>
         <button id="resetSlidersBtn">reset</button>
       </div>
 
@@ -79,6 +97,10 @@
   <div id="mapContainer">
     <div id="mapFrame">
       <canvas id="map" width="1000" height="1000"></canvas>
+      <!-- Plate-motion arrows: a transparent 2D canvas layered over the (WebGL) map canvas,
+           drawn in main.ts when "view plates" is on. Pointer-through, so orbit drags hit #map.
+           Like the compass, it's a separate canvas so it never lands in the PNG export. -->
+      <canvas id="plateArrows" width="1000" height="1000"></canvas>
       <!-- Map overlay: re-orient north. A DOM element over the canvas, so it never
            appears in the PNG export (which composites only the canvas bitmap). -->
       <button id="northBtn" class="map-overlay-btn img-button-container" title="point north">
