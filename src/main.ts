@@ -2,14 +2,17 @@ import { v4 as uuid } from "uuid";
 import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
-import { applyTuning, LOD, snapshotParams } from "./common/settings";
+import { Languages, type Language } from "./common/language";
+import { applyTuning, LOD, OCEAN, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
+import { computeMapFeatures, type MapFeature } from "./mapgen/features";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { recommendedWorkerCount, WorkerPool } from "./mapgen/WorkerPool";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 import { createCompassNeedle } from "./renderer/compassNeedle";
 import { GlobeController } from "./renderer/GlobeController";
 import { createLodPipeline, type GenRequest } from "./renderer/LodPipeline";
+import { drawFeatureLabels } from "./renderer/featureLabels";
 import { drawPlateArrows } from "./renderer/plateArrows";
 import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
 import { sliderDefs, UIManager } from "./UIManager";
@@ -46,26 +49,41 @@ document.addEventListener("DOMContentLoaded", () => {
   const appState = new AppState();
   const ui = new UIManager();
   const nameGenerator = new NameGenerator(uuid());
-  const genOneName = () =>
-    nameGenerator.generate({
-      lang: appState.selectedLanguages.length
-        ? appState.selectedLanguages[
-        Math.floor(Math.random() * appState.selectedLanguages.length)
-        ]
-        : undefined,
-    });
-  // Keep generated names within the title limit: retry a few times, truncate as a fallback.
-  const generateMapName = () => {
-    for (let i = 0; i < 20; i++) {
-      const name = genOneName();
-      if (name.length <= MAX_TITLE_LEN) return name;
+  // A dedicated namer for feature labels: every call passes an explicit per-feature seed (so names
+  // are deterministic), which keeps the title namer's stream above untouched.
+  const featureNamer = new NameGenerator("features");
+
+  // The map's language: ONE per map, used for both the title and the feature labels (so they match).
+  // Picked from the selected languages — all of them by default. Stored on appState + saved in the
+  // map state, so a loaded save relabels in its original language.
+  const pickMapLanguage = (): Language => {
+    const pool = appState.selectedLanguages.length ? appState.selectedLanguages : Languages;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
+  // Set whenever generateMapName produces a title, so loadNewMap can tell a just-generated name
+  // (language already chosen, title built in it) from a typed-in one (needs a fresh language).
+  let lastGeneratedName = "";
+
+  // Generate a NEW map title: pick the map's language, store it, and build a title in it — within
+  // the title length limit (retry a few times, then truncate as a fallback).
+  const generateMapName = (): string => {
+    const lang = pickMapLanguage();
+    appState.language = lang;
+    let name = nameGenerator.generate({ lang });
+    for (let i = 0; i < 20 && name.length > MAX_TITLE_LEN; i++) {
+      name = nameGenerator.generate({ lang });
     }
-    return genOneName().slice(0, MAX_TITLE_LEN);
+    if (name.length > MAX_TITLE_LEN) name = name.slice(0, MAX_TITLE_LEN);
+    lastGeneratedName = name;
+    return name;
   };
 
   // Initialize mapName if not already set
   if (!appState.mapName) {
-    appState.mapName = generateMapName();
+    appState.mapName = generateMapName(); // also picks + stores the map's language
+  } else {
+    appState.language = pickMapLanguage(); // a seed came from the URL — give its labels a language
   }
 
   const globeRenderer = createGlobeRenderer();
@@ -82,7 +100,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let setTitle: (name: string) => void = () => { };
 
   // UI Elements (main keeps the canvas + the north overlay; the rest live in the menu).
-  const { map: canvas, plateArrows: arrowCanvas, northBtn } = ui.getAllElements();
+  const {
+    map: canvas,
+    plateArrows: arrowCanvas,
+    featureLabels: labelCanvas,
+    northBtn,
+  } = ui.getAllElements();
 
   // The north button's 3D compass needle (Zdog), spun each frame to point at north.
   const northCanvas = northBtn.querySelector<HTMLCanvasElement>("#northCompass");
@@ -98,9 +121,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (key === "theme") {
       applyThemeUIColors(appState.settings.theme);
       needle?.recolor();
-    } else if (key !== "viewPlates" && sliderKeys.has(key)) {
-      // viewPlates is a render-only view flag, not a numeric slider — skip it here (its toggle
-      // re-renders directly); the !== narrows key to the numeric slider keys for updateSliderValue.
+    } else if (key !== "viewPlates" && key !== "viewLabels" && sliderKeys.has(key)) {
+      // viewPlates/viewLabels are render-only view flags, not numeric sliders — skip them here (their
+      // toggles re-render directly); the !== checks narrow key to the numeric slider keys below.
       ui.updateSliderValue(key, appState.settings[key]);
     }
   });
@@ -139,6 +162,8 @@ document.addEventListener("DOMContentLoaded", () => {
       canvas.height = h;
       arrowCanvas.width = w; // keep the arrow overlay's bitmap matched to the map's, 1:1
       arrowCanvas.height = h;
+      labelCanvas.width = w; // and the feature-label overlay
+      labelCanvas.height = h;
       return true;
     }
     return false;
@@ -184,6 +209,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // Seed every worker before the first generate (per-worker postMessage ordering keeps it first).
   reseedWorker(appState.mapName);
 
+  // Feature labels are computed once per (base map, sea level, language) and re-projected each
+  // frame. Keyed on the base GlobeMap, so a new/regenerated map recomputes automatically; the
+  // seaLevel/language guard catches a render-dial change that happened to reuse the same map object.
+  type FeatureCacheEntry = { seaLevel: number; language: Language; features: MapFeature[] };
+  const featureCache = new WeakMap<GlobeMap, FeatureCacheEntry>();
+
   function render() {
     // Spin the 3D compass needle to point along north's direction in view space (x right,
     // y up, z toward camera) — a live compass that foreshortens as north tilts in/out and,
@@ -221,6 +252,41 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     } else {
       arrowCanvas.getContext("2d")?.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
+    }
+
+    // Feature name labels: a 2D overlay like the arrows, projected to match the globe. The feature
+    // set is computed once per (base map, sea level, language) and cached; here we just re-project.
+    // The toggle is a master switch (default ON): off → no labels ever. When on, the reveal tier
+    // ramps with the level: 0 = continents + oceans (shown on the whole-globe view, drawn small),
+    // 1 = seas + large lakes/islands, 2 = everything else.
+    const viewLevel = pipeline.view().level;
+    if (appState.settings.viewLabels ?? false) {
+      const seaLevel = OCEAN.SEA_LEVEL.value;
+      let entry = featureCache.get(baseMap);
+      if (!entry || entry.seaLevel !== seaLevel || entry.language !== appState.language) {
+        entry = {
+          seaLevel,
+          language: appState.language,
+          features: computeMapFeatures(
+            baseMap,
+            seaLevel,
+            appState.language,
+            appState.mapName,
+            featureNamer
+          ),
+        };
+        featureCache.set(baseMap, entry);
+      }
+      drawFeatureLabels(
+        labelCanvas,
+        entry.features,
+        appState.orientation,
+        appState.settings.zoom,
+        globeRenderer.horizontalOffsetFraction(),
+        viewLevel
+      );
+    } else {
+      labelCanvas.getContext("2d")?.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
     }
   }
 
@@ -365,6 +431,9 @@ document.addEventListener("DOMContentLoaded", () => {
       setTitle("");
       return;
     }
+    // A typed-in name has no generation language — give it (and its labels) a freshly picked one.
+    // A just-generated name already had its language chosen by generateMapName; keep that one.
+    if (name !== lastGeneratedName) appState.language = pickMapLanguage();
     resetView();
     loadMap(name);
   }

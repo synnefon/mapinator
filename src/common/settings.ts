@@ -18,6 +18,7 @@ export interface MapSettings {
   zoom: number; // 0 = whole planet, 1 = max zoom toward a patch
   theme: Theme;
   viewPlates?: boolean; // render overlay: colour cells by tectonic plate instead of biome (no regen). Optional so the dev harnesses (sweep/explorer) can omit it → no overlay.
+  viewLabels?: boolean; // render overlay: draw generated names for the map's features (seas, continents, …). Optional like viewPlates.
 }
 
 // Settings whose value is a number — the keys the numeric sliders + URL parsing drive (excludes
@@ -31,6 +32,7 @@ export const MAP_DEFAULTS: MapSettings = {
   zoom: 0,
   theme: "lush",
   viewPlates: false,
+  viewLabels: true,
 };
 
 // Single source of truth for the setting key lists (derived from MAP_DEFAULTS).

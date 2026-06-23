@@ -388,6 +388,28 @@ export function setupAdvancedPanel(opts: {
       syncers.set("__view:plates", sync);
     }
 
+    // "view labels": draw generated names for the map's features (seas, continents, …). A view
+    // overlay like "view plates" — no regen, so it writes the render setting directly + redraws.
+    {
+      const row = document.createElement("label");
+      row.className = "adv-row adv-toggle";
+      showDoc(
+        row,
+        "draw generated names for the map's features (seas, continents, …) — a view overlay; doesn't change terrain"
+      );
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      const sync = () => void (box.checked = appState.settings.viewLabels ?? false);
+      sync();
+      box.addEventListener("change", () => {
+        appState.setSetting("viewLabels", box.checked);
+        onViewChange();
+      });
+      row.append(box, document.createTextNode(" view labels"));
+      fields.append(row);
+      syncers.set("__view:labels", sync);
+    }
+
     details.append(fields);
     panel.append(details);
   }

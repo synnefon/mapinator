@@ -570,6 +570,19 @@ select[multiple] optgroup {
   z-index: 4;
 }
 
+/* Feature name labels: a transparent 2D canvas layered exactly over #map, like #plateArrows.
+   Pointer-through so it never eats orbit drags; same band as the arrows, above the map. */
+#featureLabels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 4;
+}
+
 /* North re-orient: floated over the canvas corner. Transparent until hovered (the
    generic button:hover rule then gives it the highlight fill). */
 .map-overlay-btn {

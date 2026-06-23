@@ -19,6 +19,7 @@ export type MapState = {
   settings: MapSettings;
   tuning: TuningOverrides;
   orientation: Quat;
+  language?: Language; // the map's title + feature-label language; optional — older saves predate it
 };
 
 // === APPLICATION STATE ===
@@ -29,6 +30,9 @@ export class AppState {
   private _settings: MapSettings;
   private _selectedLanguages: Language[] = [...Languages];
   private _mapName: string;
+  // The map's language: titles + feature labels are generated in it. Resolved once per map (see
+  // main.ts) and carried in snapshot/restore so a loaded save relabels in its original language.
+  private _language: Language = Languages[0];
   private listeners = new Set<SettingsListener>();
   // Advanced-settings overrides for the generation/appearance dials (dotted path → value).
   // Missing paths fall back to each dial's default; see applyTuning in settings.ts.
@@ -63,6 +67,9 @@ export class AppState {
   get mapName() {
     return this._mapName;
   }
+  get language(): Language {
+    return this._language;
+  }
   /** Current advanced-tuning overrides (read-only view). */
   get tuningOverrides(): Readonly<TuningOverrides> {
     return this._tuning;
@@ -76,6 +83,9 @@ export class AppState {
   }
   set mapName(value: string) {
     this._mapName = value.toUpperCase(); // map keys are case-insensitive
+  }
+  set language(value: Language) {
+    this._language = value;
   }
   set orientation(value: Quat) {
     this._orientation = value;
@@ -119,6 +129,7 @@ export class AppState {
       settings: { ...this._settings },
       tuning: { ...this._tuning },
       orientation: { ...this._orientation },
+      language: this._language,
     };
   }
 
@@ -130,6 +141,7 @@ export class AppState {
   restore(state: MapState): void {
     this._tuning = { ...state.tuning };
     this._orientation = { ...state.orientation };
+    this._language = state.language ?? this._language; // older saves predate the language field
     this.mapName = state.seed; // setter upper-cases
     this.replaceSettings(state.settings); // notifies changed keys last (sliders + theme resync)
   }

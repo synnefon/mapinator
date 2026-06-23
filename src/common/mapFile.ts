@@ -1,6 +1,10 @@
 import type { MapState } from "../AppState";
 import { Quat } from "./3DMath";
+import { Languages, type Language } from "./language";
 import { MAP_DEFAULTS, type MapSettings, type TuningOverrides } from "./settings";
+
+const isLanguage = (v: unknown): v is Language =>
+  typeof v === "string" && (Languages as readonly string[]).includes(v);
 
 // Save-file format for a downloadable/loadable map: a full MapState (seed + settings + advanced
 // tuning + camera orientation). Serialize / parse / validate live here so the format has one
@@ -63,6 +67,7 @@ export function parseSave(text: string): MapState | null {
     settings: { ...MAP_DEFAULTS, ...rawSettings } as MapSettings,
     tuning: isRecord(raw.tuning) ? (raw.tuning as TuningOverrides) : {},
     orientation: parseOrientation(raw.orientation),
+    language: isLanguage(raw.language) ? raw.language : undefined, // omitted by pre-feature saves
   };
 }
 

@@ -30,6 +30,7 @@ export type UIElements = {
   // Core elements
   map: HTMLCanvasElement;
   plateArrows: HTMLCanvasElement; // 2D overlay for the plate-motion arrows (layered over #map)
+  featureLabels: HTMLCanvasElement; // 2D overlay for feature name labels (layered over #map)
   mapTitle: HTMLInputElement;
 
   // Buttons
@@ -75,6 +76,7 @@ export class UIManager {
     const elementIds = [
       "map",
       "plateArrows",
+      "featureLabels",
       "regenBtn",
       "regenBtnImg",
       "northBtn",
