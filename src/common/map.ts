@@ -18,6 +18,7 @@ export interface GlobeMap {
     elevation: Float32Array; // [0,1] raw elevation (pre sea-level contrast)
     moisture: Float32Array; // [0,1] already-contrasted moisture
     ice: Float32Array; // [0,1] polar ice-cap mask (1 = full ice)
+    shade: Float32Array; // [0,1] baked relief hillshade (1 = lit, FLOOR = shadowed); a draw-time colour multiply
     rainfall: number; // per-seed wet/dry bias, consumed at render time
     pointCount: number;
     // Max chord from any site to its own ring verts → a conservative per-cell

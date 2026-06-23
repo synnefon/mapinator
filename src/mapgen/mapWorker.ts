@@ -64,6 +64,7 @@ ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
     map.elevation.buffer,
     map.moisture.buffer,
     map.ice.buffer,
+    map.shade.buffer,
   ] as Transferable[];
   ctx.postMessage({ id: req.id, map }, transfer);
 };

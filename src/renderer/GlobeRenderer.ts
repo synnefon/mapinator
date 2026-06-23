@@ -126,7 +126,7 @@ export class GlobeRenderer {
       }
 
       const bucket = Math.round(
-        clamp(AMBIENT + (1 - AMBIENT) * rsz, 0, 1) * SHADE_BUCKETS
+        clamp(AMBIENT + (1 - AMBIENT) * rsz, 0, 1) * map.shade[i] * SHADE_BUCKETS
       );
       const gkey = colorIdx[i] * (SHADE_BUCKETS + 1) + bucket;
       let path = groups.get(gkey);

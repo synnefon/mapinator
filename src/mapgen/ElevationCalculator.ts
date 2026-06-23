@@ -1,19 +1,21 @@
 import type { NoiseFunction3D } from "simplex-noise";
 import type { Vec3 } from "../common/3DMath";
+import { getElevationBandNameRaw } from "../common/biomes";
 import { type RNG } from "../common/random";
 import {
   COAST,
   CONTINENT,
   FEATURE_DETAIL,
   FRACTAL,
-  INLAND_SINK_DAMP,
+  HILLSHADE,
   INVARIANTS,
   MOUNTAIN,
+  MOUNTAIN_RANGE,
   OCEAN,
   sampleDial,
 } from "../common/settings";
-import { clamp, lerp, smoothstep } from "../common/util";
-import { fbm3 } from "./fbm";
+import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
+import { fbm3, ridgedFbm3 } from "./fbm";
 
 /** Relief wavelengths + octave depth for elevationAt, bundled so the call site
  * isn't a long list of interchangeable numbers. */
@@ -34,6 +36,9 @@ const EROSION_OFFSET_Z = 3.1;
 const WARP_VAR_OFFSET_X = 17.4;
 const WARP_VAR_OFFSET_Y = 23.1;
 const WARP_VAR_OFFSET_Z = 8.6;
+const MTN_REGION_OFFSET_X = 41.2;
+const MTN_REGION_OFFSET_Y = 13.8;
+const MTN_REGION_OFFSET_Z = 29.5;
 
 /**
  * Continentalness-based elevation (model B), sampled on the unit sphere.
@@ -51,15 +56,26 @@ export class ElevationCalculator {
   private continentAmplitude: number;
   private erosionWavelength: number;
   private oceanAmplitude: number;
+  // Hillshade light in the local (east, north, up) tangent frame, from the fixed azimuth +
+  // altitude. Precomputed here (not per cell); re-derived on reSeed if the dials are tuned.
+  private light: { e: number; n: number; u: number };
 
   constructor(rng: RNG, noise3D: NoiseFunction3D) {
     this.noise3D = noise3D;
     this.coastAmplitude = sampleDial(COAST.AMPLITUDE, rng);
-    this.mountainAmplitude = sampleDial(MOUNTAIN.AMPLITUDE, rng);
+    // this.mountainAmplitude = sampleDial(MOUNTAIN.AMPLITUDE, rng);
+    this.mountainAmplitude = MOUNTAIN.AMPLITUDE;
     this.continentWavelength = sampleDial(CONTINENT.WAVELENGTH, rng);
     this.continentAmplitude = sampleDial(CONTINENT.AMPLITUDE, rng);
     this.erosionWavelength = sampleDial(FEATURE_DETAIL.WAVELENGTH, rng);
     this.oceanAmplitude = sampleDial(OCEAN.AMPLITUDE, rng);
+    const az = (HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
+    const alt = (HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;
+    this.light = {
+      e: Math.sin(az) * Math.cos(alt),
+      n: Math.cos(az) * Math.cos(alt),
+      u: Math.sin(alt),
+    };
   }
 
   /**
@@ -79,49 +95,119 @@ export class ElevationCalculator {
       reliefCfg;
     // Shelf ramp: 0 out in open ocean → 1 once fully inland. Sets the base height
     // and blends ocean relief into land relief across the continental shelf.
-    const shelf = smoothstep(CONTINENT.SHELF[0], CONTINENT.SHELF[1], C);
+    const shelf = smoothstep(OCEAN.SHELF[0], OCEAN.SHELF[1], C);
     // Below the shelf, depth tracks the carrier: deepest abyss at C=0 rising to the
     // shelf-edge floor; above it, the shelf-edge floor rises to the inland peak.
     const base =
-      C < CONTINENT.SHELF[0]
+      C < OCEAN.SHELF[0]
         ? lerp(
-            CONTINENT.ABYSS_HEIGHT,
-            CONTINENT.BASE_HEIGHT[0],
-            smoothstep(0, CONTINENT.SHELF[0], C)
-          )
+          OCEAN.ABYSS_HEIGHT,
+          CONTINENT.BASE_HEIGHT[0],
+          smoothstep(0, OCEAN.SHELF[0], C)
+        )
         : lerp(CONTINENT.BASE_HEIGHT[0], CONTINENT.BASE_HEIGHT[1], shelf);
     // Coast → inland ramp: 0 at the shoreline, 1 deep inland. Drives both the
     // coast/mountain amplitude blend and the downward sink-damp.
-    const inland = smoothstep(CONTINENT.SHELF[1], 1, C);
+    const inland = smoothstep(OCEAN.SHELF[1], 1, C);
 
-    // Relief blends ocean → shore → inland: a gentle OCEAN swell in deep water,
-    // fine COAST jaggedness at the shore, broad MOUNTAIN relief inland. Each wave's
-    // weight (shelf / inland) saturates to exactly 0 or 1 outside its band, so we
-    // evaluate only the waves that actually contribute. Most cells are open ocean
-    // (shelf = 0 → ocean only) or deep interior (shelf = 1 → land only), skipping
-    // one or two fBm evaluations with bit-identical output.
-    let relief: number;
+    // TIER 1 — the CONTINENT surface: base height + a gentle OCEAN swell (deep water) or fine
+    // COAST jaggedness (near the shore, fading inland). This ALONE decides land vs water; no
+    // mountain term touches it, so the MOUNTAIN dials can never move the coastline.
+    let detail: number;
     if (shelf <= 0) {
-      relief = this.relief(x, y, z, oceanWavelength, this.oceanAmplitude, extraOctaves);
+      detail = this.relief(x, y, z, oceanWavelength, this.oceanAmplitude, extraOctaves);
     } else {
-      const land = this.landRelief(
-        x, y, z, coastWavelength, mountainWavelength, inland, extraOctaves
-      );
-      relief =
+      const coast =
+        (1 - inland) *
+        this.relief(x, y, z, coastWavelength, this.coastAmplitude, extraOctaves);
+      detail =
         shelf >= 1
-          ? land
+          ? coast
           : lerp(
-              this.relief(x, y, z, oceanWavelength, this.oceanAmplitude, extraOctaves),
-              land,
-              shelf
-            );
+            this.relief(x, y, z, oceanWavelength, this.oceanAmplitude, extraOctaves),
+            coast,
+            shelf
+          );
     }
+    const continent = clamp(base + erosion * detail);
+    // Ocean: the continent decides outright — mountains never raise islands out of the sea.
+    if (continent < COAST.WATERLINE) return continent;
 
-    let r = erosion * relief;
-    // Relief may dig below sea level near the coast (bays, channels) but not deep
-    // inland (no lakes). Upward relief (mountains) is never damped.
-    if (r < 0) r *= 1 - INLAND_SINK_DAMP * inland;
-    return clamp(base + r);
+    // TIER 2/3 — MOUNTAINS: ridged relief (placed by the region mask) scaled by continentalness
+    // (`inland` = the continent→mountain influence) and added ON TOP of the land. Clamped to the
+    // waterline so they ONLY ADD relief — a valley can deepen toward the coastline's level but
+    // never below it (no mountain-made lakes / sea). At MOUNTAIN amplitude 0 this term is 0 and
+    // the continent is untouched: the dials modify the existing land (none → a lot), never reshape it.
+    const mountains =
+      inland * erosion * this.mountainRelief(x, y, z, mountainWavelength, extraOctaves);
+    return clamp(Math.max(continent + mountains, COAST.WATERLINE));
+  }
+
+  /**
+   * Relief (hillshade) for a cell, in [FLOOR, 1]: a fixed cartographic light over the local
+   * slope, baked once per cell so it's a free colour multiply at draw time. The slope is two
+   * cheap finite-difference relief samples in the cell's east/north tangent frame — reusing
+   * this cell's `erosion` + `C` so only the fast-varying relief is re-sampled (not the warp /
+   * continent carrier). `h0` is the already-computed elevation at `site` (don't recompute).
+   */
+  public hillshadeAt(
+    site: Vec3,
+    reliefCfg: ReliefConfig,
+    erosion: number,
+    C: number,
+    h0: number
+  ): number {
+    // Relief shading is for MOUNTAINS only — the HIGH + VERY_HIGH elevation families. Map h0
+    // through the same contrast + waterline remap the renderer bands on (BiomeColor), then gate
+    // on the family: ocean and lower land (LOW/MEDIUM) stay flat-lit (shade 1). This also skips
+    // the slope samples for the vast majority of cells.
+    const ec = applyContrast(h0, CONTINENT.ELEVATION_CONTRAST);
+    if (ec < COAST.WATERLINE) return 1;
+    const landE = Math.min((ec - COAST.WATERLINE) / (1 - COAST.WATERLINE), 1 - 1e-9);
+    const family = getElevationBandNameRaw(landE).colorFamily;
+    if (family !== "HIGH" && family !== "VERY_HIGH") return 1;
+    const { x, y, z } = site;
+    // North tangent = world +Y projected onto the tangent plane; at the poles (+Y has no
+    // tangential part) fall back to +X. East = site × north (unit, since both are unit & ⊥).
+    let nx = -y * x;
+    let ny = 1 - y * y;
+    let nz = -y * z;
+    let nl = Math.hypot(nx, ny, nz);
+    if (nl < 1e-4) {
+      nx = 1 - x * x;
+      ny = -x * y;
+      nz = -x * z;
+      nl = Math.hypot(nx, ny, nz);
+    }
+    nx /= nl;
+    ny /= nl;
+    nz /= nl;
+    const ex = y * nz - z * ny;
+    const ey = z * nx - x * nz;
+    const ez = x * ny - y * nx;
+
+    const e = HILLSHADE.EPSILON;
+    const hE = this.elevationAt(
+      { x: x + ex * e, y: y + ey * e, z: z + ez * e },
+      reliefCfg,
+      erosion,
+      C
+    );
+    const hN = this.elevationAt(
+      { x: x + nx * e, y: y + ny * e, z: z + nz * e },
+      reliefCfg,
+      erosion,
+      C
+    );
+
+    // Surface normal in (east, north, up): the up vector tilted opposite the uphill slope,
+    // exaggerated. Dot with the fixed light; FLOOR lifts shadows off pure black.
+    const k = HILLSHADE.EXAGGERATION;
+    const nE = -k * (hE - h0);
+    const nN = -k * (hN - h0);
+    const len = Math.hypot(nE, nN, 1);
+    const dot = (nE * this.light.e + nN * this.light.n + this.light.u) / len;
+    return lerp(HILLSHADE.FLOOR, 1, clamp(dot));
   }
 
   /** One relief fBm wave (shared fractal shape; only wavelength + amplitude vary). */
@@ -146,28 +232,57 @@ export class ElevationCalculator {
     );
   }
 
-  /** Land relief: fine COAST at the shore → broad MOUNTAIN inland, blended by
-   * `inland`. Skips whichever wave has zero weight at the saturated ends. */
-  private landRelief(
+  /** Ridged-multifractal relief for the inland MOUNTAIN wave: sharp branched ridgelines that
+   * rise from the base into the snow band, instead of the smooth fBm lumps used for coast /
+   * ocean. In [0, amplitude] (ridges up; valleys sit near the inland base height). */
+  private mountainRelief(
     x: number,
     y: number,
     z: number,
-    coastWavelength: number,
-    mountainWavelength: number,
-    inland: number,
+    wavelength: number,
     extraOctaves: number
   ): number {
-    if (inland <= 0) {
-      return this.relief(x, y, z, coastWavelength, this.coastAmplitude, extraOctaves);
-    }
-    const mountain = this.relief(
-      x, y, z, mountainWavelength, this.mountainAmplitude, extraOctaves
-    );
-    if (inland >= 1) return mountain;
-    const coast = this.relief(
-      x, y, z, coastWavelength, this.coastAmplitude, extraOctaves
-    );
-    return lerp(coast, mountain, inland);
+    // FINE ridge wave, centered: subtract a fraction of the amplitude so ridges carve DOWN into
+    // valleys as well as up into crests — green valleys between rock/snow crests.
+    const ridges =
+      ridgedFbm3(
+        this.noise3D,
+        x,
+        y,
+        z,
+        wavelength,
+        this.mountainAmplitude,
+        FRACTAL.OCTAVES + extraOctaves,
+        FRACTAL.GAIN,
+        FRACTAL.LACUNARITY
+      ) -
+      this.mountainAmplitude * MOUNTAIN.VALLEY_BIAS;
+    // Gated by the COARSE region mask so the ridges form distinct massifs separated by flat
+    // (green) plains, rather than covering all inland. mask 0 → relief vanishes → base plain.
+    return ridges * this.mountainMask(x, y, z);
+  }
+
+  /**
+   * Coarse low-frequency mask in [0,1] marking WHERE mountain ranges are — the SECOND, much
+   * larger wavelength: a low-octave wave thresholded into distinct massifs separated by plains.
+   * Decorrelated (offsets) so ranges don't mirror the ridge / warp fields. Region-scale only, so
+   * it's deliberately NOT zoom-dependent (the same ranges at every LOD).
+   */
+  private mountainMask(x: number, y: number, z: number): number {
+    const m =
+      INVARIANTS.NEUTRAL_CENTER_POINT +
+      fbm3(
+        this.noise3D,
+        x + MTN_REGION_OFFSET_X,
+        y + MTN_REGION_OFFSET_Y,
+        z + MTN_REGION_OFFSET_Z,
+        MOUNTAIN_RANGE.WAVELENGTH,
+        MOUNTAIN_RANGE.AMPLITUDE,
+        MOUNTAIN_RANGE.OCTAVES,
+        FRACTAL.GAIN,
+        FRACTAL.LACUNARITY
+      );
+    return clamp(m) > MOUNTAIN_RANGE.THRESHOLD ? 1 : 0;
   }
 
   /**
@@ -209,7 +324,7 @@ export class ElevationCalculator {
 
   /**
    * Domain-warp strength at a point, varied across the map by a very-low-frequency wave
-   * (CONTINENT.WARP_VAR_WAVELENGTH) between CONTINENT.WARP's min/max — so some regions
+   * (CONTINENT.WARP_WAVELENGTH) between CONTINENT.WARP's min/max — so some regions
    * get wandering, organic coasts and others smoother ones. It's a function of position,
    * so it's identical at every zoom level (the global mesh and the dense patches sample
    * the same field), needing no per-zoom handling.
@@ -218,11 +333,11 @@ export class ElevationCalculator {
     const t =
       INVARIANTS.NEUTRAL_CENTER_POINT +
       0.5 *
-        this.noise3D(
-          x / CONTINENT.WARP_VAR_WAVELENGTH + WARP_VAR_OFFSET_X,
-          y / CONTINENT.WARP_VAR_WAVELENGTH + WARP_VAR_OFFSET_Y,
-          z / CONTINENT.WARP_VAR_WAVELENGTH + WARP_VAR_OFFSET_Z
-        );
+      this.noise3D(
+        x / CONTINENT.WARP_WAVELENGTH + WARP_VAR_OFFSET_X,
+        y / CONTINENT.WARP_WAVELENGTH + WARP_VAR_OFFSET_Y,
+        z / CONTINENT.WARP_WAVELENGTH + WARP_VAR_OFFSET_Z
+      );
     return lerp(CONTINENT.WARP[0], CONTINENT.WARP[1], clamp(t));
   }
 

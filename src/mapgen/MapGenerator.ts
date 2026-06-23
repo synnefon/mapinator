@@ -12,7 +12,6 @@ import {
   MOISTURE,
   MOUNTAIN,
   OCEAN,
-  RAINFALL,
   SLIDER_RANGES,
   sampleDial,
   type MapSettings,
@@ -124,9 +123,9 @@ export class MapGenerator {
   private sampleFlavor(): Flavor {
     const flavorRng = makeRNG(this.seed + "-flavor");
     const coastWavelength = sampleDial(COAST.WAVELENGTH, flavorRng);
-    const mountainWavelength = sampleDial(MOUNTAIN.WAVELENGTH, flavorRng);
+    const mountainWavelength = MOUNTAIN.WAVELENGTH;// sampleDial(MOUNTAIN.WAVELENGTH, flavorRng);
     const moistureWavelength = sampleDial(MOISTURE.WAVELENGTH, flavorRng);
-    const rainfall = sampleDial(RAINFALL, flavorRng);
+    const rainfall = sampleDial(MOISTURE.RAINFALL, flavorRng);
     const oceanWavelength = sampleDial(OCEAN.WAVELENGTH, flavorRng);
     // One shared cap size, with a small per-pole tweak so the two aren't identical.
     const iceExtent = sampleDial(ICE.EXTENT, flavorRng);
@@ -163,6 +162,7 @@ export class MapGenerator {
     const elevation = new Float32Array(n);
     const moisture = new Float32Array(n);
     const ice = new Float32Array(n);
+    const shade = new Float32Array(n);
 
     let vo = 0;
     let maxChord2 = 0; // largest squared site→ring-vert distance (cull radius)
@@ -190,6 +190,7 @@ export class MapGenerator {
       elevation[i] = cell.elevation;
       moisture[i] = cell.moisture;
       ice[i] = cell.ice;
+      shade[i] = cell.shade;
     }
     ringOffsets[n] = vo;
 
@@ -201,6 +202,7 @@ export class MapGenerator {
       elevation,
       moisture,
       ice,
+      shade,
       rainfall: flavor.rainfall,
       pointCount,
       maxRingRadius: Math.sqrt(maxChord2),
@@ -217,7 +219,7 @@ export class MapGenerator {
     site: Vec3,
     flavor: Flavor,
     extraOctaves: number
-  ): { elevation: number; moisture: number; ice: number } {
+  ): { elevation: number; moisture: number; ice: number; shade: number } {
     // erosion scales terrain relief AND modulates the moisture swing; continentalness
     // drives both the land/ocean elevation and the moisture maritime layer (`broad` =
     // the low-octave low-pass that sizes the maritime reach to the water body).
@@ -229,16 +231,26 @@ export class MapGenerator {
         site.z,
         MOISTURE.WATER_SIZE_OCTAVES
       );
+    const reliefCfg = {
+      coastWavelength: flavor.coastWavelength,
+      mountainWavelength: flavor.mountainWavelength,
+      oceanWavelength: flavor.oceanWavelength,
+      extraOctaves,
+    };
     const elevation = this.elevationCalc.elevationAt(
       site,
-      {
-        coastWavelength: flavor.coastWavelength,
-        mountainWavelength: flavor.mountainWavelength,
-        oceanWavelength: flavor.oceanWavelength,
-        extraOctaves,
-      },
+      reliefCfg,
       erosion,
       continentalness
+    );
+    // Relief shading from the SAME field — reuses erosion + continentalness, only re-samples
+    // the relief twice (for the slope). Baked per cell → a free colour multiply at draw time.
+    const shade = this.elevationCalc.hillshadeAt(
+      site,
+      reliefCfg,
+      erosion,
+      continentalness,
+      elevation
     );
     const moisture = this.moistureAt(
       site,
@@ -249,7 +261,7 @@ export class MapGenerator {
       broadContinentalness
     );
     const ice = this.iceAt(site, elevation, flavor.iceCapNorth, flavor.iceCapSouth);
-    return { elevation, moisture, ice };
+    return { elevation, moisture, ice, shade };
   }
 
   /** Build (or reuse) the global hex (Goldberg) mesh for a point count. The point count

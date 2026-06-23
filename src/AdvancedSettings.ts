@@ -6,6 +6,9 @@ import {
   type TuningGroup,
 } from "./common/settings";
 import { debounce } from "./common/util";
+// Raw module source — slider tooltips are parsed straight from the dial comments in settings.ts,
+// so a dial's own inline comment is the single source of truth (no separate docs map to sync).
+import dialsSrc from "./common/settings.ts?raw";
 
 // Regeneration is heavy (full mesh rebuild off-thread), so coalesce slider drags:
 // labels update live on every input, the regen fires this long after the last change.
@@ -19,6 +22,52 @@ type AdvancedHandle = {
 // Decimal places to show for a slider value, derived from its step (0.01 → 2, 0.5 → 1, 1 → 0).
 const decimalsFor = (step: number): number =>
   step >= 1 ? 0 : Math.max(0, -Math.floor(Math.log10(step)));
+
+// Slider hover tooltips come straight from the inline comments in the DIALS literal of
+// settings.ts (imported as raw source). A trailing `// …` on a dial line wins; otherwise the
+// comment line(s) directly above it. Brace depth is tracked so only the GROUP.KEY leaves are
+// captured. Fail-soft: braces are ignored inside comments, and anything unparsed just yields no
+// tooltip. Because it reads the live source, renaming/reordering a dial keeps its explainer.
+function parseDialDocs(src: string): Map<string, string> {
+  const docs = new Map<string, string>();
+  const from = src.indexOf("export const DIALS");
+  if (from < 0) return docs;
+  let depth = 0;
+  let started = false;
+  let group: string | null = null;
+  let lead: string[] = [];
+  for (const raw of src.slice(from).split("\n")) {
+    const line = raw.trim();
+    const isComment = line.startsWith("//");
+    const opens = isComment ? 0 : (line.match(/\{/g) ?? []).length;
+    const closes = isComment ? 0 : (line.match(/\}/g) ?? []).length;
+    if (opens > 0) started = true;
+
+    if (isComment) {
+      lead.push(line.replace(/^\/\/\s?/, ""));
+    } else {
+      const header = line.match(/^([A-Za-z0-9_]+):\s*\{/);
+      const leaf = line.match(/^([A-Za-z0-9_]+):\s*\S/);
+      if (depth === 1 && header) {
+        group = header[1]; // entering a group; its block comment isn't a leaf's doc
+        lead = [];
+      } else if (depth === 2 && leaf && group) {
+        const trailing = line.match(/\/\/\s?(.*)$/);
+        const doc = (lead.length ? lead.join(" ") : trailing?.[1] ?? "").trim();
+        if (doc) docs.set(`${group}.${leaf[1]}`, doc);
+        lead = [];
+      } else {
+        lead = []; // blank line / closing brace / anything else breaks the comment run
+      }
+    }
+
+    depth += opens - closes;
+    if (started && depth === 0) break; // end of the DIALS literal
+  }
+  return docs;
+}
+
+const DIAL_DOCS = parseDialDocs(dialsSrc);
 
 /**
  * Builds the generation-dial sections from TUNING_SCHEMA into #advancedPanel: one
@@ -60,6 +109,8 @@ export function setupAdvancedPanel(opts: {
     const d = decimalsFor(f.step);
     const row = document.createElement("div");
     row.className = "adv-row";
+    const doc = DIAL_DOCS.get(f.path);
+    if (doc) row.title = doc; // hover explainer, sourced from the dial's comment
     const label = document.createElement("label");
     label.className = "adv-sub";
     const val = document.createElement("span");
@@ -84,7 +135,11 @@ export function setupAdvancedPanel(opts: {
     syncers.set(f.path, sync);
   };
 
-  // Range dial: "<label> <min> – <max>" above two thumbs sharing ONE bar (min ≤ max).
+  // Range dial: "<label> <min> – <max>" above two thumbs sharing ONE bar (min ≤ max). The BAR
+  // owns every pointer gesture — the native inputs are click-through, kept only for rendering +
+  // keyboard + screen readers. Press/drag the track → the NEAREST thumb jumps there (so an equal
+  // [x, x] range, or a thumb pinned at a bound, is always grabbable on mouse and touch alike, with
+  // no z-index trickery); drag the highlighted span → move both, preserving the gap.
   const addRange = (
     parent: HTMLElement,
     f: Extract<TuningField, { kind: "range" }>
@@ -94,6 +149,8 @@ export function setupAdvancedPanel(opts: {
     const p1 = `${f.path}.1`;
     const row = document.createElement("div");
     row.className = "adv-row";
+    const doc = DIAL_DOCS.get(f.path);
+    if (doc) row.title = doc; // hover explainer, sourced from the dial's comment
     const label = document.createElement("label");
     label.className = "adv-sub";
     const val = document.createElement("span");
@@ -103,17 +160,25 @@ export function setupAdvancedPanel(opts: {
     const bar = document.createElement("div");
     bar.className = "adv-range";
     const fill = document.createElement("div");
-    fill.className = "adv-fill"; // visible selected span + handle for dragging both thumbs
+    fill.className = "adv-fill"; // visible selected span (decorative; the bar owns input)
     const lo = makeRange(f.min, f.max, f.step);
     const hi = makeRange(f.min, f.max, f.step);
+    // Distinguish the two thumbs for screen readers (both are role=slider via the native input).
+    lo.setAttribute("aria-label", `${f.label} minimum`);
+    hi.setAttribute("aria-label", `${f.label} maximum`);
     // fill first so the inputs (and their thumbs) paint on top of it
     bar.append(fill, lo, hi);
 
     const span = f.max - f.min;
     const pctOf = (v: number) => (span > 0 ? ((v - f.min) / span) * 100 : 0);
+    const clampToBounds = (v: number) => Math.max(f.min, Math.min(v, f.max));
     // Snap to the dial's step (relative to min, like a native range input) and tidy float noise.
     const snap = (v: number) =>
       Number((f.min + Math.round((v - f.min) / f.step) * f.step).toFixed(6));
+    // Pointer x → snapped, clamped value on the bar.
+    const valueAt = (clientX: number, rect: DOMRect) =>
+      snap(clampToBounds(f.min + ((clientX - rect.left) / rect.width) * span));
+
     // Keep the label and the fill bar in sync with the two thumbs.
     const update = () => {
       const a = Number(lo.value);
@@ -123,65 +188,102 @@ export function setupAdvancedPanel(opts: {
       fill.style.width = `${Math.max(0, pctOf(b) - pctOf(a))}%`;
     };
 
-    lo.addEventListener("input", () => {
-      let v = Number(lo.value);
-      if (v > Number(hi.value)) {
-        v = Number(hi.value); // keep min ≤ max
-        lo.value = String(v);
-      }
+    // Commit one or both thumbs: enforce min ≤ max (thumbs stop at each other, never cross),
+    // push to app state, repaint, regen. Keyboard (arrows/Home/End on the focused native thumb)
+    // and the pointer gestures below both route through these.
+    const commitLo = () => {
+      const v = Math.min(Number(lo.value), Number(hi.value));
+      lo.value = String(v);
       appState.setTuning(p0, v);
       update();
       regen();
-    });
-    hi.addEventListener("input", () => {
-      let v = Number(hi.value);
-      if (v < Number(lo.value)) {
-        v = Number(lo.value);
-        hi.value = String(v);
-      }
+    };
+    const commitHi = () => {
+      const v = Math.max(Number(hi.value), Number(lo.value));
+      hi.value = String(v);
       appState.setTuning(p1, v);
       update();
       regen();
-    });
-
-    // Drag the fill to shift BOTH thumbs together — preserving the gap, clamped to bounds.
-    let dragX: number | null = null;
-    let startLo = 0;
-    let startHi = 0;
-    fill.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      fill.setPointerCapture(e.pointerId);
-      dragX = e.clientX;
-      startLo = Number(lo.value);
-      startHi = Number(hi.value);
-    });
-    fill.addEventListener("pointermove", (e) => {
-      if (dragX === null) return;
-      const rect = bar.getBoundingClientRect();
-      if (rect.width === 0) return;
-      const gap = startHi - startLo;
-      const dv = ((e.clientX - dragX) / rect.width) * span;
-      let a = Math.max(f.min, Math.min(startLo + dv, f.max - gap));
-      a = Math.max(f.min, Math.min(snap(a), f.max - gap)); // snap, then re-clamp
-      const b = a + gap;
+    };
+    const commitBoth = (a: number, b: number) => {
       lo.value = String(a);
       hi.value = String(b);
       appState.setTuning(p0, a);
       appState.setTuning(p1, b);
       update();
       regen();
+    };
+    lo.addEventListener("input", commitLo);
+    hi.addEventListener("input", commitHi);
+
+    // --- Pointer gestures on the bar ---
+    // A press within THUMB_PX/2 of a thumb grabs THAT thumb (not "move both"), even when it sits
+    // inside the highlighted span.
+    const THUMB_PX = 18;
+    let drag: null | "lo" | "hi" | "both" = null;
+    let dragX = 0;
+    let startLo = 0;
+    let startHi = 0;
+
+    bar.addEventListener("pointerdown", (e) => {
+      const rect = bar.getBoundingClientRect();
+      if (rect.width === 0) return;
+      e.preventDefault();
+      bar.setPointerCapture(e.pointerId);
+      const a = Number(lo.value);
+      const b = Number(hi.value);
+      const pv = valueAt(e.clientX, rect);
+      const endGrab = (THUMB_PX / 2 / rect.width) * span;
+      if (pv > a + endGrab && pv < b - endGrab) {
+        drag = "both"; // pressed the span interior → shift both, preserving the gap
+        dragX = e.clientX;
+        startLo = a;
+        startHi = b;
+        return;
+      }
+      // Otherwise grab the nearer thumb (ties — including an equal range — break to the side the
+      // press is on) and jump it to the press, so click-to-position works like a single slider.
+      drag = Math.abs(pv - a) < Math.abs(pv - b) || (a === b && pv < a) ? "lo" : "hi";
+      if (drag === "lo") {
+        lo.value = String(pv);
+        lo.focus();
+        commitLo();
+      } else {
+        hi.value = String(pv);
+        hi.focus();
+        commitHi();
+      }
     });
+
+    bar.addEventListener("pointermove", (e) => {
+      if (!drag) return;
+      const rect = bar.getBoundingClientRect();
+      if (rect.width === 0) return;
+      if (drag === "both") {
+        const gap = startHi - startLo;
+        const dv = ((e.clientX - dragX) / rect.width) * span;
+        const a = Math.max(f.min, Math.min(snap(startLo + dv), f.max - gap));
+        commitBoth(a, a + gap);
+      } else if (drag === "lo") {
+        lo.value = String(valueAt(e.clientX, rect));
+        commitLo();
+      } else {
+        hi.value = String(valueAt(e.clientX, rect));
+        commitHi();
+      }
+    });
+
     const endDrag = (e: PointerEvent) => {
-      if (dragX === null) return;
-      dragX = null;
+      if (!drag) return;
+      drag = null;
       try {
-        fill.releasePointerCapture(e.pointerId);
+        bar.releasePointerCapture(e.pointerId);
       } catch {
         /* pointer already released */
       }
     };
-    fill.addEventListener("pointerup", endDrag);
-    fill.addEventListener("pointercancel", endDrag);
+    bar.addEventListener("pointerup", endDrag);
+    bar.addEventListener("pointercancel", endDrag);
 
     syncers.set(p0, () => {
       lo.value = String(valueOf(p0));

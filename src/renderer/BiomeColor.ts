@@ -7,10 +7,10 @@ import {
   type ElevationBand,
   type Theme,
 } from "../common/biomes";
-import type { GlobeMap } from "../common/map";
-import { applyContrast, clamp } from "../common/util";
 import { hexToHsl, hslToHex, mixHex, quantizeColor } from "../common/colorUtils";
-import { ELEVATION_CONTRAST, WATERLINE } from "../common/settings";
+import type { GlobeMap } from "../common/map";
+import { COAST, CONTINENT } from "../common/settings";
+import { applyContrast, clamp } from "../common/util";
 
 /** ================================================
  *  Named constants (no magic numbers)
@@ -35,7 +35,7 @@ function shapeForRules(
 ): { elevation: number; moisture: number } {
   // Fixed waterline in raw-elevation space: below it renormalizes to ocean depth
   // [-1,0], above it to land height [0,1] — so land keeps its full band range.
-  const waterline = WATERLINE;
+  const waterline = COAST.WATERLINE;
   let e =
     elevation < waterline
       ? elevation / Math.max(waterline, EPSILON) - 1
@@ -127,7 +127,7 @@ export function computeColorsFromFields(
   for (let i = 0; i < count; i++) {
     const biome = colorAt(
       theme,
-      applyContrast(elevation[i], ELEVATION_CONTRAST),
+      applyContrast(elevation[i], CONTINENT.ELEVATION_CONTRAST),
       moisture[i],
       rainfall
     );

@@ -41,6 +41,7 @@ const VERT_SRC = `#version 300 es
 precision highp float;
 layout(location = 0) in vec3 aPos;      // unit-sphere position
 layout(location = 1) in uint aColorIdx; // per-vertex palette index (one colour per cell)
+layout(location = 2) in float aShade;   // per-cell baked relief hillshade [0,1]
 uniform vec4 uQuat;      // world -> view rotation (x,y,z,w)
 uniform vec2 uViewport;  // canvas size in device px
 uniform float uRadius;   // apparent globe radius in px
@@ -49,6 +50,7 @@ uniform float uOffsetX;  // globe horizontal shift in NDC (room beside the menu)
 uniform sampler2D uPalette; // 1×N RGBA8 palette; cell colour fetched by index
 out vec3 vColor;
 out float vShade;        // view-space z → limb darkening
+out float vTerrain;      // baked relief hillshade
 
 // Same optimized quaternion rotation as common/3DMath.ts:Quat.rotate.
 vec3 qrot(vec4 q, vec3 v) {
@@ -68,18 +70,21 @@ void main() {
   // One palette texel per deduped cell colour → no per-vertex RGB to upload.
   vColor = texelFetch(uPalette, ivec2(int(aColorIdx), 0), 0).rgb;
   vShade = r.z;
+  vTerrain = aShade;
 }`;
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
 in vec3 vColor;
 in float vShade;
+in float vTerrain;
 uniform float uAmbient;
 out vec4 fragColor;
 void main() {
   // Per-pixel limb darkening (smoother than the Canvas2D per-cell shade buckets).
   float shade = uAmbient + (1.0 - uAmbient) * clamp(vShade, 0.0, 1.0);
-  fragColor = vec4(vColor * shade, 1.0);
+  // Baked relief hillshade makes mountains read as 3D — just a multiply, no per-frame work.
+  fragColor = vec4(vColor * shade * vTerrain, 1.0);
 }`;
 
 type GeomEntry = {
@@ -87,11 +92,12 @@ type GeomEntry = {
   // each cell ring. Colour is a per-vertex palette INDEX (u16) resolved against palTex.
   posBuf: WebGLBuffer;
   idxBuf: WebGLBuffer;
+  shadeBuf: WebGLBuffer; // per-vertex u8 relief hillshade (static, built with the geometry)
   indexCount: number;
   colorKey: string | null;
   colorBuf: WebGLBuffer | null;
   palTex: WebGLTexture | null;
-  bytes: number; // GPU bytes (pos + idx + colour + palette) for the byte-budget LRU
+  bytes: number; // GPU bytes (pos + idx + shade + colour + palette) for the byte-budget LRU
 };
 
 type GLState = {
@@ -177,6 +183,9 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.bindBuffer(gl.ARRAY_BUFFER, entry.colorBuf);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_SHORT, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, entry.shadeBuf);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 1, gl.UNSIGNED_BYTE, true, 0, 0); // normalized → [0,1]
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, entry.palTex);
     gl.uniform1i(st.uPalette, 0);
@@ -244,11 +253,12 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       entry = {
         posBuf: makeBuffer(gl, gl.ARRAY_BUFFER, map.ringVerts),
         idxBuf: makeBuffer(gl, gl.ELEMENT_ARRAY_BUFFER, indices),
+        shadeBuf: makeBuffer(gl, gl.ARRAY_BUFFER, buildShadeBytes(map)),
         indexCount,
         colorKey: null,
         colorBuf: null,
         palTex: null,
-        bytes: map.ringVerts.byteLength + indices.byteLength,
+        bytes: map.ringVerts.byteLength + indices.byteLength + map.ringVerts.length / 3,
       };
       st.geom.set(map, entry);
       st.geomBytes += entry.bytes;
@@ -259,6 +269,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
         const e = st.geom.get(oldest)!;
         gl.deleteBuffer(e.posBuf);
         gl.deleteBuffer(e.idxBuf);
+        gl.deleteBuffer(e.shadeBuf);
         if (e.colorBuf) gl.deleteBuffer(e.colorBuf);
         if (e.palTex) gl.deleteTexture(e.palTex);
         st.geomBytes -= e.bytes;
@@ -311,6 +322,18 @@ function buildIndices(map: GlobeMap): { indices: Uint32Array; indexCount: number
     }
   }
   return { indices, indexCount };
+}
+
+/** One u8 [0,255] relief-shade per ring vertex (every vertex of a cell shares the cell's
+ *  shade), in ring-vertex order. Read as a normalized [0,1] float attribute in the shader. */
+function buildShadeBytes(map: GlobeMap): Uint8Array {
+  const { ringOffsets, cellCount, shade } = map;
+  const out = new Uint8Array(map.ringVerts.length / 3);
+  for (let i = 0; i < cellCount; i++) {
+    const s = Math.max(0, Math.min(255, Math.round(shade[i] * 255)));
+    for (let v = ringOffsets[i]; v < ringOffsets[i + 1]; v++) out[v] = s;
+  }
+  return out;
 }
 
 /** One u16 palette index per ring vertex (every vertex of a cell shares the cell's colour),

@@ -114,17 +114,17 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     // OCEAN: "#44447a",
     OCEAN: "#34699A",
 
-    // very high — snow caps (white)
-    DRY_VERY_HIGH: "#d9dbdd", // wind-scoured pale rock/snow
-    MID_VERY_HIGH: "#eef1f3", // snow
+    // very high — scoured gray peaks rising into snow (the brief gray → white at the top).
+    DRY_VERY_HIGH: "#b5b0a6", // wind-scoured bare gray rock
+    MID_VERY_HIGH: "#dfe2e5", // patchy snow over gray
     WET_VERY_HIGH: "#ffffff", // deep snow
 
-    // high — treeline: dry = bare rock, wetter = alpine forest (snow caps sit above,
-    // in VERY_HIGH). The moisture field varies spatially, so mountains come out a mix
-    // of bare rocky slopes and forested ones rather than uniform rock.
-    DRY_HIGH: "#9d978b", // light gray rock — exposed, arid alpine
-    MID_HIGH: "#5e6b4a", // sparse scrub / krummholz over rock (olive)
-    WET_HIGH: "#3f5a37", // montane conifer forest (deep green)
+    // high — ABOVE TREELINE: bare rock / scree, brown→tan (forest is below in MEDIUM; snow is
+    // above in VERY_HIGH). Real ranges go green→brown→gray→white with elevation, so the rock
+    // band is brown regardless of moisture, just damper/darker where wetter.
+    DRY_HIGH: "#a98963", // sun-baked tan rock
+    MID_HIGH: "#8c6f4f", // brown rock / scree
+    WET_HIGH: "#6f5a44", // dark damp rock, sparse alpine
 
     // medium — dry = tan steppe, wetter = green
     DRY_MEDIUM: "#b59f70", // arid-palette tan

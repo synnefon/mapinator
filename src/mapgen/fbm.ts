@@ -56,3 +56,62 @@ export function fbm3(
   }
   return sum;
 }
+
+// Ridged-multifractal feedback gain: each octave is weighted by the PREVIOUS one, so fine
+// detail piles onto ridgelines and valleys stay smooth — the branched, dendritic crest
+// structure of real mountain ranges. Higher = sharper, more branched; ~1 = nearly plain.
+const RIDGE_FEEDBACK = 2.5;
+// Crest sharpness: (1 - |noise|) raised to this power. Higher = narrower, POINTIER peaks with
+// broader valleys; 2 = rounded ridges, 3–5 = increasingly spiky.
+const RIDGE_SHARPNESS = 3.5;
+
+/**
+ * Ridged-multifractal noise (Musgrave) over a 3D position, in [0, amplitude]. Unlike fBm's
+ * rounded lumps, the `1 - |noise|` fold makes sharp CRESTS where the noise crosses zero, and
+ * the per-octave weight feedback concentrates detail along those crests — so it reads as a
+ * mountain range (ridgelines + carved valleys) rather than rolling hills. Same octave / gain
+ * / lacunarity knobs as fbm3, and the same fractional-top-octave fade for smooth zoom LOD.
+ */
+export function ridgedFbm3(
+  noise3D: NoiseFunction3D,
+  x: number,
+  y: number,
+  z: number,
+  scale: number,
+  amplitude: number,
+  octaves: number,
+  gain: number,
+  lacunarity: number
+): number {
+  const inv = 1 / scale;
+  let sx = x * inv;
+  let sy = y * inv;
+  let sz = z * inv;
+  let amp = 1; // octave weight (normalized); the whole result is scaled by `amplitude` at the end
+  let weight = 1; // ridged feedback: the previous octave's crest gates the next octave's detail
+  let sum = 0;
+  let norm = 0; // running Σ amp, so the result normalizes to [0, amplitude] regardless of octaves
+  const ridge = (): number => {
+    let n = 1 - Math.abs(noise3D(sx, sy, sz)); // crest where noise ≈ 0
+    n = Math.pow(n, RIDGE_SHARPNESS); // sharpen the crest → pointier peaks
+    n *= weight;
+    weight = Math.min(1, n * RIDGE_FEEDBACK); // next octave only detailed under this ridge
+    return n;
+  };
+  const whole = Math.floor(octaves);
+  for (let i = 0; i < whole; i++) {
+    sum += ridge() * amp;
+    norm += amp;
+    amp *= gain;
+    sx *= lacunarity;
+    sy *= lacunarity;
+    sz *= lacunarity;
+  }
+  const frac = octaves - whole;
+  if (frac > 0) {
+    const w = smoothstep(0, 1, frac);
+    sum += ridge() * amp * w;
+    norm += amp * w;
+  }
+  return norm > 0 ? (amplitude * sum) / norm : 0;
+}

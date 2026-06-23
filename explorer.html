@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>terrain tuning wizard</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px 16px;
+        background: #111;
+        color: #ddd;
+        font: 13px system-ui, sans-serif;
+      }
+      #bar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      #progress {
+        display: block;
+        margin: 12px 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: #eee;
+      }
+      #globes {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+      }
+      .globe {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+      canvas {
+        width: 440px;
+        height: 440px;
+        background: #000;
+        border-radius: 8px;
+        cursor: grab;
+        touch-action: none;
+      }
+      .pick {
+        font-size: 14px;
+        padding: 9px 22px;
+        font-weight: 600;
+      }
+      .vlabel {
+        color: #bbb;
+        font: 12px ui-monospace, monospace;
+      }
+      input,
+      button {
+        background: #222;
+        color: #ddd;
+        border: 1px solid #444;
+        padding: 5px 8px;
+        border-radius: 4px;
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      #save {
+        border-color: #4a8;
+        color: #6db;
+      }
+      .hint {
+        color: #888;
+      }
+      #cfg {
+        margin-top: 18px;
+        color: #aaa;
+      }
+      summary {
+        cursor: pointer;
+      }
+      #config {
+        margin-top: 8px;
+        background: #000;
+        padding: 8px;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow: auto;
+        color: #8c8;
+        font: 12px ui-monospace, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <button id="back">&lt;--</button>
+      <button id="skip">--&gt;</button>
+      <button id="lock">✓ lock &amp; next</button>
+      <button id="restart">↻ restart</button>
+      <button id="regen">🎲 regen map</button>
+      <label>seed <input id="seed" /></label>
+      <button id="save">💾 save to settings.ts</button>
+      <span class="hint">— pick the globe you prefer to narrow the dial (repeat as many rounds as you like), then ✓ lock &amp; next. Drag either globe to rotate (both move), wheel to zoom. 💾 save writes <code>settings.ts</code> (localhost) &amp; reloads. Dials come from settings.ts (hide one via DIAL_OPTOUT).</span>
+    </div>
+    <span id="progress"></span>
+    <div id="globes">
+      <div class="globe">
+        <canvas id="canvasA"></canvas>
+        <button class="pick" id="pickA">▲ pick left</button>
+        <div class="vlabel" id="labelA"></div>
+      </div>
+      <div class="globe">
+        <canvas id="canvasB"></canvas>
+        <button class="pick" id="pickB">pick right ▲</button>
+        <div class="vlabel" id="labelB"></div>
+      </div>
+    </div>
+    <details id="cfg" open>
+      <summary>picks this session (locked in memory; 💾 save writes them to <code>settings.ts</code>)</summary>
+      <pre id="config"></pre>
+    </details>
+    <script type="module" src="/src/explorer.ts"></script>
+  </body>
+</html>
