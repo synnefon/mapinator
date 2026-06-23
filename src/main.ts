@@ -2,6 +2,7 @@ import { v4 as uuid } from "uuid";
 import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
+import { logMem, mapBytes, MEM_PROFILE } from "./common/memProfile";
 import { applyTuning, LOD, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
 import { NameGenerator } from "./mapgen/NameGenerator";
@@ -163,7 +164,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const resolve = pending.get(e.data.id);
     if (!resolve) return;
     pending.delete(e.data.id);
+    const bytes = mapBytes(e.data.map);
     resolve(e.data.map);
+    // Profile after a microtask so the pipeline's own .then has cached this map first — the LOD
+    // figures then include the arrival. GPU bytes lag a frame (uploaded at the next draw); fine.
+    if (MEM_PROFILE) {
+      queueMicrotask(() => {
+        const { count, bytes: lodBytes } = pipeline.cacheStats();
+        logMem(`+map ${(bytes / (1024 * 1024)).toFixed(1)}MB`, {
+          lodCount: count,
+          lodBytes,
+          gpuBytes: globeRenderer.gpuBytes(canvas),
+        });
+      });
+    }
   };
   worker.onerror = (e) => {
     console.error("map worker error:", e.message);
@@ -428,7 +442,6 @@ document.addEventListener("DOMContentLoaded", () => {
       center: view.center,
       halfAngle: view.halfAngle,
       points,
-      extraOctaves: view.extraOctaves,
     }).then((patch) => {
       globeRenderer.draw(
         canvas,

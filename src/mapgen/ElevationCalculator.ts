@@ -1,22 +1,10 @@
 import type { NoiseFunction3D } from "simplex-noise";
 import type { Vec3 } from "../common/3DMath";
-import { getElevationBandNameRaw } from "../common/biomes";
+import { getElevationBandNameRaw } from "../common/elevationBands";
 import { HILLSHADE, INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import { Tectonics } from "./Tectonics";
-
-/** Relief wavelengths + octave depth for elevationAt, bundled so the call site
- * isn't a long list of interchangeable numbers. */
-export type ReliefConfig = {
-  coastWavelength: number;
-  peakWavelength: number;
-  oceanWavelength: number;
-  // VESTIGIAL: no relief wave reads this anymore — COAST/OCEAN/MOUNTAIN each use their OWN fixed
-  // octave count now, so nothing crawls as you zoom. Still threaded in by the LOD ladder; safe to
-  // remove with the rest of the extraOctaves plumbing (worker msg + main.ts LOD specs).
-  extraOctaves: number;
-};
 
 /** A wave's fbm octave stack — each dial group (OCEAN, COAST, …) carries its own. */
 type FbmShape = { OCTAVES: number; GAIN: number; LACUNARITY: number };
@@ -37,6 +25,18 @@ const LAND_HAIR = 0.02;
 // often it pinches; the offset decorrelates it from the other fields.
 const RANGE_ENVELOPE_WAVELENGTH = 0.5;
 const RANGE_ENVELOPE_OFFSET = 19.7;
+
+// Phase offset decorrelating the moisture noise from the elevation field (any value works; not a dial).
+const MOISTURE_NOISE_OFFSET = 25;
+// Ice-edge ruffle: base wobble frequency + a phase offset so the snow line isn't a clean circle and
+// doesn't line up with the elevation field (a finer octave at 3× rides on top).
+const ICE_RUFFLE_OFFSET = 53.1;
+const ICE_RUFFLE_FREQ = 4.2;
+// Ice FILL patchiness from a FIXED-wavelength noise (NOT elevation) → holes / nunataks independent of
+// where mountains sit (plates can't shape the cap) and stable across zoom. FREQ sets hole size
+// (bigger = smaller holes); SOFTNESS the hole-edge softness.
+const ICE_HOLE_FREQ = 10;
+const ICE_HOLE_SOFTNESS = 0.15;
 
 /**
  * Continentalness-based elevation (model B), sampled on the unit sphere.
@@ -96,14 +96,11 @@ export class ElevationCalculator {
    * continentalness at this point; the caller passes it in (see continentalness) so it isn't
    * recomputed here and again for moisture / water-proximity.
    */
-  public elevationAt(
-    site: Vec3,
-    reliefCfg: ReliefConfig,
-    C: number
-  ): number {
+  public elevationAt(site: Vec3, C: number): number {
     const { CONTINENT, OCEAN, COAST, TECTONIC } = this.params;
     const { x, y, z } = site;
-    const { coastWavelength, peakWavelength, oceanWavelength } = reliefCfg;
+    const coastWavelength = COAST.WAVELENGTH;
+    const oceanWavelength = OCEAN.WAVELENGTH;
     // Shelf ramp: 0 out in open ocean → 1 once fully inland. Sets the base height
     // and blends ocean relief into land relief across the continental shelf.
     const shelf = smoothstep(OCEAN.SHELF[0], OCEAN.SHELF[1], C);
@@ -124,7 +121,7 @@ export class ElevationCalculator {
     // TIER 1 — the CONTINENT surface: base height + a gentle OCEAN swell (deep water) or fine
     // COAST jaggedness (near the shore, fading inland). This ALONE decides land vs water; no
     // mountain term touches it, so the MOUNTAIN dials can never move the coastline. The COAST and
-    // OCEAN waves use their OWN fixed octave counts (no zoom `extraOctaves`) so this surface — and
+    // OCEAN waves use their OWN fixed octave counts (never zoom-varying) so this surface — and
     // thus the coastline — is identical at every zoom: zooming in resolves the SAME line with a
     // finer mesh instead of growing new octaves that crawl it around.
     let detail: number;
@@ -162,8 +159,7 @@ export class ElevationCalculator {
     // deepens toward the coastline's level but never below it (no mountain-made lakes / sea).
     const landMask = smoothstep(OCEAN.SHELF[0], OCEAN.SHELF[1], C);
     const mountainWeight = landMask * (1 - TECTONIC.COAST_BIAS * inland);
-    const mountains =
-      mountainWeight * this.mountainRelief(x, y, z, peakWavelength);
+    const mountains = mountainWeight * this.mountainRelief(x, y, z);
     return clamp(Math.max(land + mountains, OCEAN.SEA_LEVEL));
   }
 
@@ -174,12 +170,7 @@ export class ElevationCalculator {
    * this cell's `C` so only the fast-varying relief is re-sampled (not the warp / continent
    * carrier). `h0` is the already-computed elevation at `site` (don't recompute).
    */
-  public hillshadeAt(
-    site: Vec3,
-    reliefCfg: ReliefConfig,
-    C: number,
-    h0: number
-  ): number {
+  public hillshadeAt(site: Vec3, C: number, h0: number): number {
     const { CONTINENT, OCEAN } = this.params;
     // Relief shading is for MOUNTAINS only — the HIGH + VERY_HIGH elevation families. Map h0
     // through the same contrast + waterline remap the renderer bands on (BiomeColor), then gate
@@ -219,16 +210,8 @@ export class ElevationCalculator {
     const ez = x * ny - y * nx;
 
     const e = HILLSHADE.EPSILON;
-    const hE = this.elevationAt(
-      { x: x + ex * e, y: y + ey * e, z: z + ez * e },
-      reliefCfg,
-      C
-    );
-    const hN = this.elevationAt(
-      { x: x + nx * e, y: y + ny * e, z: z + nz * e },
-      reliefCfg,
-      C
-    );
+    const hE = this.elevationAt({ x: x + ex * e, y: y + ey * e, z: z + ez * e }, C);
+    const hN = this.elevationAt({ x: x + nx * e, y: y + ny * e, z: z + nz * e }, C);
 
     // Surface normal in (east, north, up): the up vector tilted opposite the uphill slope,
     // exaggerated. Dot with the fixed light; FLOOR lifts shadows off pure black.
@@ -241,12 +224,12 @@ export class ElevationCalculator {
   }
 
   /**
-   * One relief fBm wave (COAST or OCEAN) at the wave's OWN fixed octave count — deliberately NOT
-   * the zoom `extraOctaves`. These two waves sum into `continent`, which decides land vs water, so
-   * freezing their octaves keeps the COASTLINE identical at every zoom (a finer mesh just resolves
-   * the same line, rather than adding octaves that move it). Want a more detailed coast? Raise
-   * COAST.OCTAVES — it applies to the globe and every patch uniformly and stays zoom-stable. Only
-   * the additive MOUNTAIN relief (clamped to never cross the waterline) gains octaves on zoom.
+   * One relief fBm wave (COAST or OCEAN) at the wave's OWN fixed octave count — never zoom-varying.
+   * These two waves sum into `continent`, which decides land vs water, so freezing their octaves
+   * keeps the COASTLINE identical at every zoom (a finer mesh just resolves the same line, rather
+   * than adding octaves that move it). Want a more detailed coast? Raise COAST.OCTAVES — it applies
+   * to the globe and every patch uniformly. Every wave (COAST/OCEAN/MOUNTAIN/MOISTURE) now uses a
+   * fixed octave count, so nothing crawls as you zoom.
    */
   private relief(
     x: number,
@@ -276,12 +259,7 @@ export class ElevationCalculator {
    * taller where plates converge harder. RIDGE_WAVELENGTH sets how many peaks (smaller = more);
    * RIDGE_AMPLITUDE is the overall height (collision swell + crests). uplift's band tapers it to foothills.
    */
-  private mountainRelief(
-    x: number,
-    y: number,
-    z: number,
-    peakWavelength: number
-  ): number {
+  private mountainRelief(x: number, y: number, z: number): number {
     const { MOUNTAIN, TECTONIC, features } = this.params;
     if (!features.mountains) return 0; // mountains layer off → no relief term (CONTINENT shape untouched)
     const uplift = this.tectonics.upliftAt(x, y, z);
@@ -293,9 +271,9 @@ export class ElevationCalculator {
       x,
       y,
       z,
-      peakWavelength,
+      MOUNTAIN.RIDGE_WAVELENGTH,
       MOUNTAIN.RIDGE_AMPLITUDE,
-      MOUNTAIN.OCTAVES, // fixed (NOT + extraOctaves) so ridge detail doesn't crawl as you zoom — like COAST/OCEAN/MOISTURE
+      MOUNTAIN.OCTAVES, // fixed octave count (never zoom-varying) so ridge detail doesn't crawl — like COAST/OCEAN/MOISTURE
       MOUNTAIN.GAIN,
       MOUNTAIN.LACUNARITY
     );
@@ -316,13 +294,6 @@ export class ElevationCalculator {
     return uplift * envelope * (MOUNTAIN.RIDGE_AMPLITUDE * MOUNTAIN.SWELL_FRACTION + peaks);
   }
 
-  /**
-   * Continentalness carrier sampled twice from ONE domain-warp: `full` (CONTINENT.OCTAVES — the
-   * land/water + relief structure that drives terrain) and `broad` (only `broadOctaves` low-
-   * frequency octaves → just the big land/water masses, ignoring small lakes/islands). The
-   * maritime moisture layer takes min(full, broad), so a big ocean projects humidity far inland
-   * while an oasis only does so locally. Computed once per cell, shared by elevation + moisture.
-   */
   public continentalness(
     x: number,
     y: number,
@@ -361,5 +332,100 @@ export class ElevationCalculator {
       y / this.continentWavelength,
       z / this.continentWavelength
     );
+  }
+
+  /**
+   * The full per-cell field pipeline in ONE place: sample the shared continentalness once (expensive
+   * noise lookups, reused across fields), then derive elevation, hillshade, moisture, ice, and the
+   * tectonic plate from it. `continentalnessOverride` (the /sweep flat-base hook) forces
+   * continentalness to a constant so the base is a flat plain and ONLY MOUNTAIN/TECTONIC vary;
+   * undefined = normal terrain. MapGenerator just meshes + packs the result.
+   */
+  public sampleCell(
+    site: Vec3,
+    continentalnessOverride?: number
+  ): { elevation: number; moisture: number; ice: number; shade: number; plate: number } {
+    const { ICE, MOISTURE } = this.params;
+    // continentalness drives both the land/ocean elevation and the moisture maritime layer
+    // (`broad` = the low-octave low-pass that sizes the maritime reach to the water body).
+    const { full: continentalness, broad: broadContinentalness } =
+      continentalnessOverride !== undefined
+        ? { full: continentalnessOverride, broad: continentalnessOverride }
+        : this.continentalness(site.x, site.y, site.z, MOISTURE.WATER_SIZE_OCTAVES);
+    const elevation = this.elevationAt(site, continentalness);
+    // Relief shading from the SAME field — reuses continentalness, only re-samples the relief twice
+    // (for the slope). Baked per cell → a free colour multiply at draw time.
+    const shade = this.hillshadeAt(site, continentalness, elevation);
+    const moisture = this.moistureAt(site, continentalness, broadContinentalness);
+    const ice = this.iceAt(site, elevation, clamp(ICE.COVERAGE));
+    const plate = this.tectonics.plateAt(site.x, site.y, site.z);
+    return { elevation, moisture, ice, shade, plate };
+  }
+
+  /**
+   * Moisture in [0,1] at a sphere point; contrast baked in (it's a fixed dial). Like the COAST /
+   * OCEAN waves, this wave uses its OWN fixed octave count — never zoom octaves — so the biome
+   * boundaries it decides don't crawl as you zoom (a finer mesh resolves the SAME boundaries).
+   * Maritime humidity pulls moisture toward wet near water (min(full, broad) so a big ocean reaches
+   * far inland while an oasis only dents the local field).
+   */
+  private moistureAt(
+    site: Vec3,
+    continentalness: number,
+    broadContinentalness: number
+  ): number {
+    const { MOISTURE, features } = this.params;
+    if (!features.climate) return INVARIANTS.NEUTRAL_CENTER_POINT; // climate off → flat moisture everywhere
+    const raw = fbm3(
+      this.noise3D,
+      site.x + MOISTURE_NOISE_OFFSET,
+      site.y + MOISTURE_NOISE_OFFSET,
+      site.z + MOISTURE_NOISE_OFFSET,
+      MOISTURE.WAVELENGTH,
+      MOISTURE.AMPLITUDE,
+      MOISTURE.OCTAVES, // fixed octave count (never zoom-varying) so biome boundaries don't crawl as you zoom
+      MOISTURE.GAIN,
+      MOISTURE.LACUNARITY
+    );
+    let m = clamp(INVARIANTS.NEUTRAL_CENTER_POINT + raw);
+    const oceanic = Math.min(continentalness, broadContinentalness);
+    const waterProximity = Math.pow(1 - oceanic, MOISTURE.DESERT_STEEPNESS);
+    m = lerp(m, 1, MOISTURE.WATER_PROXIMITY_EFFECT * waterProximity);
+    return applyContrast(m, MOISTURE.CONTRAST);
+  }
+
+  /**
+   * Polar iciness in [0,1] — LAND ONLY (open water never ices). A cap poleward of a COVERAGE snow
+   * line, wobbled (WOBBLE) so it isn't a clean circle, fading into land over BLEND, with low-lying
+   * land poking through as holes below a FILL-controlled threshold (higher FILL → fewer holes).
+   */
+  private iceAt(site: Vec3, elevation: number, coverage: number): number {
+    const { ICE, OCEAN, features } = this.params;
+    if (!features.ice) return 0; // ice layer off → no polar caps anywhere
+    // Snow line in |sin lat|: COVERAGE is the fraction of each hemisphere the cap reaches (line at
+    // 1 − COVERAGE; higher COVERAGE → line nearer the equator → bigger caps).
+    const line = 1 - coverage;
+    const f = ICE_RUFFLE_FREQ;
+    const o = ICE_RUFFLE_OFFSET;
+    const wobble =
+      ICE.WOBBLE *
+      (this.noise3D(site.x * f + o, site.y * f + o, site.z * f + o) +
+        0.5 *
+        this.noise3D(site.x * f * 3 + o, site.y * f * 3 + o, site.z * f * 3 + o));
+    const inCap = smoothstep(line - ICE.BLEND, line, Math.abs(site.y) + wobble);
+    if (inCap <= 0) return 0;
+    // LAND ONLY — ocean sits below the waterline, so it never ices.
+    if (elevation < OCEAN.SEA_LEVEL) return 0;
+    // FILL → holes from a fixed-wavelength noise (independent of mountains, stable across zoom).
+    const h =
+      0.5 +
+      0.5 *
+        this.noise3D(
+          site.x * ICE_HOLE_FREQ + ICE_RUFFLE_OFFSET,
+          site.y * ICE_HOLE_FREQ + ICE_RUFFLE_OFFSET,
+          site.z * ICE_HOLE_FREQ + ICE_RUFFLE_OFFSET
+        );
+    const solid = smoothstep(1 - ICE.FILL, 1 - ICE.FILL + ICE_HOLE_SOFTNESS, h);
+    return inCap * solid;
   }
 }

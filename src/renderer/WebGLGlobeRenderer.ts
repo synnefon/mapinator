@@ -22,6 +22,8 @@ export interface IGlobeRenderer {
   /** Horizontal offset of the globe centre as a fraction of canvas width (the globe is nudged
    *  right to clear the menu). Renderer-specific, so a 2D overlay can match the projection. */
   horizontalOffsetFraction(): number;
+  /** Resident GPU buffer bytes for this canvas (the byte-budget LRU's total). For memory profiling. */
+  gpuBytes(canvas: HTMLCanvasElement): number;
 }
 
 // Limb-darkening floor; matches GlobeRenderer.AMBIENT (lower = sharper terminator).
@@ -151,6 +153,11 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
   /** WebGL shifts the globe right by LOD.GLOBE_OFFSET_FRACTION (the uOffsetX uniform). */
   public horizontalOffsetFraction(): number {
     return LOD.GLOBE_OFFSET_FRACTION;
+  }
+
+  /** Resident GPU buffer bytes for this canvas (0 before its first draw). For memory profiling. */
+  public gpuBytes(canvas: HTMLCanvasElement): number {
+    return this.states.get(canvas)?.geomBytes ?? 0;
   }
 
   public draw(

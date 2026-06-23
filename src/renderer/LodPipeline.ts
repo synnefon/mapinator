@@ -1,5 +1,6 @@
 import { Quat, type Vec3 } from "../common/3DMath";
 import type { GlobeMap } from "../common/map";
+import { mapBytes } from "../common/memProfile";
 import { LOD, MAP_DEFAULTS } from "../common/settings";
 import { globePointCount } from "../mapgen/MapGenerator";
 import { globeRadiusPx } from "./GlobeRenderer";
@@ -16,9 +17,8 @@ const {
   DENSITY_STEP_RATIO,
   DETAIL_BIAS,
   PATCH_PRELOAD_MARGIN,
-  FINEST_EXTRA_OCTAVES,
 } = LOD;
-// The global mesh is the curve's zoom-0 anchor (rung 0, 0 extra octaves).
+// The global mesh is the curve's zoom-0 anchor (rung 0).
 const GLOBAL_POINTS = globePointCount(MAP_DEFAULTS.resolution);
 
 const LOD_CACHE_CAP = 18; // ~16 patch slots + the live globe(s); finest patches are large, LRU trims
@@ -29,7 +29,6 @@ const PATCH_COMFORT = 1.2;
 export type LodLevel = {
   aboveZoom: number; // activate this rung once zoom ≥ this (0..1)
   points: number;
-  octaves: number;
 };
 
 /** LOD ladder, coarsest → finest. Rung 0 is the whole globe; rungs ≥1 are detail caps sampled
@@ -44,24 +43,18 @@ export function buildLodLevels(): LodLevel[] {
   // level is active around the zoom it best fits (and the finest gets a band, not just zoom 1).
   const span = Math.log(FINEST_PATCH_POINTS / GLOBAL_POINTS);
   const halfRung = (0.5 * Math.log(DENSITY_STEP_RATIO)) / span;
-  const numPatches = points.length;
-  const patches = points.map((p, i) => {
+  const patches = points.map((p) => {
     const t = Math.log(p / GLOBAL_POINTS) / span; // 0..1 along the curve (1 at MAX)
     // DETAIL_BIAS > 1 pulls denser detail to lower zoom (earlier).
     const aboveZoom = Math.pow(Math.max(0, Math.min(1, t - halfRung)), DETAIL_BIAS);
     return {
       points: p,
       aboveZoom: parseFloat(aboveZoom.toFixed(4)),
-      // Octaves spread evenly from the globe (rung 0 → 0) up to the finest patch
-      // (FINEST_EXTRA_OCTAVES). Fractional (not rounded): fbm3 fades the top octave in as zoom
-      // raises it — no pop.
-      octaves: (FINEST_EXTRA_OCTAVES * (i + 1)) / numPatches,
     };
   });
-  // Rung 0 = the whole globe: active from zoom 0, no extra octaves. Its `points` here is just the
-  // curve anchor; rung 0's REAL density follows the resolution slider live (see rungSpec), and its
-  // octaves are always 0 — nothing extra is ever lumped onto the globe.
-  const globe: LodLevel = { aboveZoom: 0, points: GLOBAL_POINTS, octaves: 0 };
+  // Rung 0 = the whole globe: active from zoom 0. Its `points` here is just the curve anchor; rung
+  // 0's REAL density follows the resolution slider live (see rungSpec).
+  const globe: LodLevel = { aboveZoom: 0, points: GLOBAL_POINTS };
   return [globe, ...patches];
 }
 
@@ -71,7 +64,6 @@ export type GenRequest = {
   center: Vec3;
   halfAngle: number; // ≥ π ⇒ the whole globe (rung 0); smaller ⇒ a detail cap
   points: number;
-  extraOctaves: number;
 };
 
 /** The current view's LOD rung, derived from zoom + orientation. level 0 = whole globe. */
@@ -80,7 +72,6 @@ export type View = {
   center: Vec3;
   halfAngle: number;
   points: number;
-  extraOctaves: number;
 };
 
 /** Dynamic inputs the pipeline samples each operation. Plain data (no DOM) so it's testable:
@@ -115,6 +106,8 @@ export type LodPipeline = {
   reset: () => void;
   /** Cached rung keys, oldest→newest (LRU order). Read-only introspection for debugging/tests. */
   cachedKeys: () => string[];
+  /** Cache occupancy for memory profiling: resident rung count + their summed typed-array bytes. */
+  cacheStats: () => { count: number; bytes: number };
 };
 
 export function createLodPipeline(deps: LodDeps): LodPipeline {
@@ -140,8 +133,8 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     globeRadiusPx({ width: v.width, height: v.height } as HTMLCanvasElement, zoom);
 
   // Generation spec for a rung at a centre. Rung 0 (the globe) is the ONE place its "globe-ness"
-  // lives: it spans the whole sphere (halfAngle π → full mesh in the worker), takes its density from
-  // the resolution slider, and carries 0 extra octaves. Detail rungs read the ladder.
+  // lives: it spans the whole sphere (halfAngle π → full mesh in the worker) and takes its density
+  // from the resolution slider. Detail rungs read the ladder.
   function rungSpec(v: LodView, level: number, center: Vec3): View {
     if (level === 0) {
       return {
@@ -149,11 +142,10 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
         center,
         halfAngle: Math.PI,
         points: globePointCount(v.resolution),
-        extraOctaves: 0,
       };
     }
     const lv = LOD_LEVELS[level];
-    return { level, center, halfAngle: levelCap(v, level), points: lv.points, extraOctaves: lv.octaves };
+    return { level, center, halfAngle: levelCap(v, level), points: lv.points };
   }
 
   function currentView(v: LodView): View {
@@ -297,7 +289,6 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
       center: spec.center,
       halfAngle: spec.halfAngle,
       points: spec.points,
-      extraOctaves: spec.extraOctaves,
     }).then((map) => {
       lodActive = null;
       if (epoch === seedEpoch) {
@@ -331,5 +322,10 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
       // lodActive's in-flight result is discarded by the seedEpoch bump above.
     },
     cachedKeys: () => [...lodCache.keys()],
+    cacheStats: () => {
+      let bytes = 0;
+      for (const map of lodCache.values()) bytes += mapBytes(map);
+      return { count: lodCache.size, bytes };
+    },
   };
 }

@@ -50,7 +50,6 @@ const THEME: Theme = "lush";
 const CANVAS_PX = 440;
 const TILE_RESOLUTION = 0.5; // global (base) mesh density
 const HIGHLAND_ZOOM = 0.45; // start zoom for highland (mountain) params so the cap is on
-const CAP_EXTRA_OCTAVES = 3; // extra noise detail to match a cap mesh's finer hexes
 const CAP_ONSET = 0.3; // below this zoom: whole globe, no cap; at/above: a cap appears at the view centre
 const GLOBE_VIEW = Quat.fromAxisAngle(1, 0, 0, -0.4); // whole-globe tilt so a pole shows
 const SEARCH_MARGIN = 0.3; // how far past the current range to search, as a fraction of |centre|…
@@ -170,8 +169,7 @@ function makePatch(value: number, param: Param): GlobeMap | null {
   return gen.generateLocalMap(
     Quat.viewCenter(viewOrientation),
     spec.halfAngle,
-    spec.points,
-    CAP_EXTRA_OCTAVES
+    spec.points
   );
 }
 

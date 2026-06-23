@@ -54,30 +54,27 @@ function harness(view: LodView) {
 }
 
 describe("buildLodLevels", () => {
-  it("rung 0 is the whole globe; patches ascend in density, activation zoom, and octaves", () => {
+  it("rung 0 is the whole globe; patches ascend in density and activation zoom", () => {
     const levels = buildLodLevels();
     expect(levels.length).toBeGreaterThan(1);
     expect(levels[0]).toStrictEqual({
       aboveZoom: 0,
       points: globePointCount(MAP_DEFAULTS.resolution),
-      octaves: 0,
     });
     for (let i = 1; i < levels.length; i++) {
       expect(levels[i].points).toBeGreaterThan(levels[i - 1].points); // denser
       expect(levels[i].aboveZoom).toBeGreaterThanOrEqual(levels[i - 1].aboveZoom); // later
-      expect(levels[i].octaves).toBeGreaterThan(levels[i - 1].octaves); // more detail
     }
   });
 });
 
 describe("LodPipeline.view", () => {
-  it("is the whole globe at zoom 0 — full sphere, resolution density, no extra octaves", () => {
+  it("is the whole globe at zoom 0 — full sphere, resolution density", () => {
     const { pipeline } = harness({ ...BASE_VIEW, zoom: 0 });
     const v = pipeline.view();
     expect(v.level).toBe(0);
     expect(v.halfAngle).toBe(Math.PI);
     expect(v.points).toBe(globePointCount(BASE_VIEW.resolution));
-    expect(v.extraOctaves).toBe(0);
   });
 
   it("reaches the finest rung at zoom 1", () => {

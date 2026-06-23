@@ -19,8 +19,10 @@ export function recenterInSrc(src, path, value) {
   if (!bm) throw new Error(`section "${section}" not found in settings`);
   const block = bm[0];
 
-  const rangeRe = new RegExp(`(\\n    ${key}: \\{ value: )\\[\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*\\] as Range`);
-  const scalarRe = new RegExp(`(\\n    ${key}: \\{ value: )(-?[\\d.]+)`);
+  // `\{\s*value:\s*` tolerates both the single-line `{ value: N` and the multi-line
+  // `{\n      value: N` dial layouts (value is always the first key, so \s* can't skip past it).
+  const rangeRe = new RegExp(`(\\n    ${key}: \\{\\s*value:\\s*)\\[\\s*(-?[\\d.]+)\\s*,\\s*(-?[\\d.]+)\\s*\\] as Range`);
+  const scalarRe = new RegExp(`(\\n    ${key}: \\{\\s*value:\\s*)(-?[\\d.]+)`);
 
   let newValue;
   let newBlock;
@@ -72,14 +74,14 @@ export function setInSrc(src, path, value) {
   let newBlock;
   if (idx === "0" || idx === "1") {
     const rangeRe = new RegExp(
-      `(\\n    ${key}: \\{ value: \\[\\s*)(-?[\\d.]+)(\\s*,\\s*)(-?[\\d.]+)(\\s*\\] as Range)`
+      `(\\n    ${key}: \\{\\s*value:\\s*\\[\\s*)(-?[\\d.]+)(\\s*,\\s*)(-?[\\d.]+)(\\s*\\] as Range)`
     );
     if (!rangeRe.test(block)) throw new Error(`range dial "${section}.${key}" not found`);
     newBlock = block.replace(rangeRe, (_, pre, lo, mid, hi, post) =>
       idx === "0" ? `${pre}${v}${mid}${hi}${post}` : `${pre}${lo}${mid}${v}${post}`
     );
   } else {
-    const scalarRe = new RegExp(`(\\n    ${key}: \\{ value: )(-?[\\d.]+)`);
+    const scalarRe = new RegExp(`(\\n    ${key}: \\{\\s*value:\\s*)(-?[\\d.]+)`);
     if (!scalarRe.test(block)) throw new Error(`scalar dial "${path}" not found`);
     newBlock = block.replace(scalarRe, (_, pre) => `${pre}${v}`);
   }

@@ -52,3 +52,40 @@ describe("tune-config rewrites the descriptor format", () => {
     expect(src).toContain('WAVELENGTH: { value: 1.55, doc: "larger = bigger climate zones" }');
   });
 });
+
+// The actual settings.ts writes dials MULTI-LINE (value on its own indented line, doc beneath) —
+// the layout that broke the single-line regexes (the "scalar dial not found" save failure).
+const MULTILINE = `export const DIALS = {
+  CONTINENT: {
+    OCTAVES: {
+      value: 4.5,
+      doc: "detail layers",
+    },
+  },
+  OCEAN: {
+    SHELF: {
+      value: [0.474, 0.694] as Range,
+      doc: "shelf band",
+    },
+  },
+};`;
+
+describe("tune-config handles the multi-line dial layout", () => {
+  it("recenters a multi-line scalar dial", () => {
+    const { src, value } = recenterInSrc(MULTILINE, "CONTINENT.OCTAVES", 5);
+    expect(value).toBe(5);
+    expect(src).toContain("OCTAVES: {\n      value: 5,");
+    expect(src).toContain('doc: "detail layers"'); // doc preserved
+  });
+
+  it("setInSrc writes a multi-line scalar verbatim (the save path that failed)", () => {
+    const { src, value } = setInSrc(MULTILINE, "CONTINENT.OCTAVES", 6);
+    expect(value).toBe(6);
+    expect(src).toContain("OCTAVES: {\n      value: 6,");
+  });
+
+  it("setInSrc sets one endpoint of a multi-line range, preserving the other", () => {
+    const { src } = setInSrc(MULTILINE, "OCEAN.SHELF.1", 0.8);
+    expect(src).toContain("value: [0.474, 0.8] as Range");
+  });
+});

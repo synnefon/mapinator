@@ -1,5 +1,14 @@
 import { clamp } from "./util";
 import { mixHex } from "./colorUtils";
+import {
+  ELEVATION_BAND_BREAKS,
+  type ElevationBand,
+  type ElevationFamily,
+} from "./elevationBands";
+// Re-exported so render-side consumers (e.g. BiomeColor) keep importing the band types from here;
+// the definitions now live in the neutral common/elevationBands module, shared with generation's
+// hillshade gate so generation no longer reaches into this render module for them.
+export type { ElevationBand, ElevationFamily };
 
 // ===================== Public Types =====================
 export type Theme =
@@ -33,36 +42,7 @@ export type BiomeKey =
   | "MID_LOW"
   | "WET_LOW";
 
-type ElevationFamily = "OCEAN" | "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
 type MoistureBand = "DRY" | "MID" | "WET";
-
-// ===================== Elevation Discretization =====================
-// Raw elevation domain is [-1..1], ocean is [-1..0], land is [0..1].
-// Breaks are inclusive upper-bounds for each band.
-export type ElevationBand =
-  | "OCEAN_1"
-  | "OCEAN_2"
-  | "OCEAN_3"
-  | "LOW_1"
-  | "LOW_2"
-  | "MEDIUM_1"
-  | "MEDIUM_2"
-  | "HIGH_1"
-  | "HIGH_2"
-  | "VERY_HIGH_1"
-  | "VERY_HIGH_2";
-
-// Continuous elevation -> unified band (or null for ocean)
-export function getElevationBandNameRaw(elevation: number): {
-  breakPoint: number;
-  colorFamily: ElevationFamily;
-  band: ElevationBand;
-} {
-  const firstBreak = ELEVATION_BAND_BREAKS.find(
-    ({ breakPoint }) => elevation < breakPoint
-  );
-  return firstBreak!;
-}
 
 // ===================== Theme → BiomeKey → Hex =====================
 export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
@@ -225,24 +205,6 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
     WET_LOW: "#1A1A1A",
   },
 } as const;
-
-const ELEVATION_BAND_BREAKS: readonly {
-  breakPoint: number;
-  band: ElevationBand;
-  colorFamily: ElevationFamily;
-}[] = [
-  { breakPoint: -0.7, colorFamily: "OCEAN", band: "OCEAN_3" }, // deep
-  { breakPoint: -0.35, colorFamily: "OCEAN", band: "OCEAN_2" }, // medium
-  { breakPoint: 0, colorFamily: "OCEAN", band: "OCEAN_1" }, // shallow
-  { breakPoint: 0.2, colorFamily: "LOW", band: "LOW_1" },
-  { breakPoint: 0.22, colorFamily: "LOW", band: "LOW_2" },
-  { breakPoint: 0.35, colorFamily: "MEDIUM", band: "MEDIUM_1" },
-  { breakPoint: 0.52, colorFamily: "MEDIUM", band: "MEDIUM_2" },
-  { breakPoint: 0.62, colorFamily: "HIGH", band: "HIGH_1" },
-  { breakPoint: 0.75, colorFamily: "HIGH", band: "HIGH_2" },
-  { breakPoint: 0.87, colorFamily: "VERY_HIGH", band: "VERY_HIGH_1" },
-  { breakPoint: 1.0, colorFamily: "VERY_HIGH", band: "VERY_HIGH_2" },
-] as const;
 
 // ===================== Lightness & Theme overrides =====================
 export const BASE_LIGHTNESS: Record<ElevationBand, number> = {

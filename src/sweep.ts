@@ -34,7 +34,6 @@ const THEME: Theme = "lush";
 const TILE_PX = 260;
 const ZOOM = 0.5; // cap zoom so peaks read clearly
 const BASE_RES = 0.5; // global base mesh density (flat plain behind the cap)
-const CAP_EXTRA_OCTAVES = 3; // finer detail on the dense patch
 // Fixed view (a point off the poles) — identical camera for every tile.
 const CAP_CENTER = Vec3.normalize({ x: 0.25, y: 0.32, z: 1 });
 const ORIENTATION = Quat.between(CAP_CENTER, { x: 0, y: 0, z: 1 });
@@ -67,7 +66,6 @@ const glCanvas = Object.assign(document.createElement("canvas"), {
   height: TILE_PX,
 });
 const gen = new MapGenerator(randomSeed(), snapshotParams());
-gen.flatBaseC = FLAT_C;
 
 // Cap spec for the fixed zoom: the dense patch's half-angle (cover the visible disk) + point
 // count (its level). Mirrors the /tune wizard's capSpecForZoom.
@@ -94,12 +92,13 @@ function renderTile(
   const ov: TuningOverrides = { [ROWS.path]: rowVal, [COLS.path]: colVal };
   applyTuning(ov); // sets the two swept dials; every other dial reverts to its settings.ts value
   gen.configure(seed, snapshotParams()); // same seed → same noise; re-resolve params from the tuned dials
-  const base = gen.generateMap({ resolution: BASE_RES, zoom: 0, theme: THEME });
+  // FLAT_C forces continentalness flat (the /sweep flat-base hook) so only MOUNTAIN/TECTONIC vary.
+  const base = gen.generateMap({ resolution: BASE_RES, zoom: 0, theme: THEME }, FLAT_C);
   const cap = gen.generateLocalMap(
     CAP_CENTER,
     CAP.halfAngle,
     CAP.points,
-    CAP_EXTRA_OCTAVES
+    FLAT_C
   );
   const s: MapSettings = { resolution: BASE_RES, zoom: ZOOM, theme: THEME };
   renderer.draw(glCanvas, base, s, ORIENTATION, true, cap.cap);

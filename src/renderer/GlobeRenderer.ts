@@ -64,6 +64,11 @@ export class GlobeRenderer {
     return 0;
   }
 
+  /** Canvas2D keeps no GPU buffers, so its profiled GPU footprint is always zero. */
+  public gpuBytes(): number {
+    return 0;
+  }
+
   public draw(
     canvas: HTMLCanvasElement,
     map: GlobeMap,

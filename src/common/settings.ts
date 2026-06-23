@@ -6,8 +6,12 @@ export type Range = [number, number];
 /** A tunable dial: its live value co-located with the hover doc and (optionally) explicit slider
  *  bounds. One descriptor is the single source for the value (generation snapshot), the panel
  *  tooltip (DIAL_DOCS), the slider travel (min/max/step, else derived), and the /tune rewrite. */
-export type Dial = { value: number; doc: string; min?: number; max?: number; step?: number };
-export type DialRange = { value: Range; doc: string; min?: number; max?: number; step?: number };
+export type Dial = {
+  value: number; doc: string; min?: number; max?: number; step?: number
+};
+export type DialRange = {
+  value: Range; doc: string; min?: number; max?: number; step?: number
+};
 
 export interface MapSettings {
   resolution: number;
@@ -54,7 +58,6 @@ export const SLIDER_RANGES = {
 export const LOD = {
   // --- detail ceiling (max / deepest zoom) ---
   FINEST_PATCH_POINTS: 11_000_000, // finest level's point density = max-zoom fidelity; raise = sharper deepest zoom
-  FINEST_EXTRA_OCTAVES: 6, // extra fractal octaves at the finest level (fine surface detail)
   MAX_ZOOM_SCALE: 26, // radius multiplier at zoom 1; deeper = finest cells spread over less area = sharper
 
   // --- when detail kicks in (higher-def earlier) ---
@@ -86,7 +89,8 @@ export const HILLSHADE = {
 
 /* ======================================================================
  *  DIALS — the single source of truth for every tunable group. Each leaf is a Dial / DialRange
- *  descriptor { value, doc, optional min/max/step }: the value is what generation snapshots, the
+ *  descriptor {
+      value, doc, optional min/max/step }: the value is what generation snapshots, the
  *  doc is the panel's hover tooltip (DIAL_DOCS), and min/max/step is the slider travel (else derived
  *  from the value via boundsFor). The advanced panel walks this object, so adding a group (or a dial
  *  within one) makes its slider appear with no other edit. The section title is the key, humanized.
@@ -101,17 +105,41 @@ export const DIALS = {
   // CONTINENT — carrier wave: decides land vs water, then a shaping curve maps it
   // to a base height (abyss → shelf edge → inland).
   CONTINENT: {
-    OCTAVES: { value: 6, doc: "carrier octaves; more = more island sizes / richer coasts" },
-    GAIN: { value: 0.7, doc: "amplitude falloff per octave; higher = rougher" },
-    LACUNARITY: { value: 2, doc: "wavelength shrink per octave" },
-    WAVELENGTH: { value: 2.45, doc: "larger = bigger, fewer continents" },
-    AMPLITUDE: { value: 0.835, doc: "higher = more decisive land/ocean split, sharper coasts" },
-    BASE_HEIGHT: { value: 0.495, doc: "[shelf-edge floor, inland] base height; lowered so mask-gated plains read green (ranges rise from it)" },
+    OCTAVES: {
+      value: 6,
+      doc: "carrier octaves; more = more island sizes / richer coasts",
+    },
+    GAIN: {
+      value: 0.7,
+      doc: "amplitude falloff per octave; higher = rougher",
+    },
+    LACUNARITY: {
+      value: 2,
+      doc: "wavelength shrink per octave",
+    },
+    WAVELENGTH: {
+      value: 2.45,
+      doc: "larger = bigger, fewer continents",
+    },
+    AMPLITUDE: {
+      value: 0.835,
+      doc: "higher = more decisive land/ocean split, sharper coasts",
+    },
+    BASE_HEIGHT: {
+      value: 0.495,
+      doc: "[shelf-edge floor, inland]",
+    },
     // NB: land height is capped to just above OCEAN.SEA_LEVEL in ElevationCalculator, so the
     // CONTINENT + COAST surface alone stays green and only the MOUNTAIN wave makes mountains — one
     // variable (SEA_LEVEL) drives both the coastline and that cap. No separate ceiling dial.
-    WARP: { value: 0.3313, doc: "domain-warp strength: higher = more organic, wandering coasts" },
-    ELEVATION_CONTRAST: { value: 0.6728, doc: "fixed elevation contrast applied before colouring; higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones" },
+    WARP: {
+      value: 0.3313,
+      doc: "higher = more organic, wandering coasts",
+    },
+    ELEVATION_CONTRAST: {
+      value: 0.6728,
+      doc: "higher = more extreme highs/lows → more mountains + deeper ocean, fewer mid zones",
+    },
   },
 
   // OCEAN — the deep-water relief wave: broad and gentle (abyssal swells) so open
@@ -119,13 +147,34 @@ export const DIALS = {
   // damping knob: low = glassy, higher = rolling swells. Blends into COAST across
   // the shelf, so coast jaggedness only shows up near land.
   OCEAN: {
-    SEA_LEVEL: { value: 0.47, doc: "elevation below it renders as ocean, above it as land" },
-    OCTAVES: { value: 1, doc: "detail layers; more = finer, costlier" },
-    GAIN: { value: 0.7, doc: "amplitude falloff per octave; higher = rougher" },
-    LACUNARITY: { value: 2, doc: "wavelength shrink per octave" },
-    WAVELENGTH: { value: 0.6131, doc: "broad — large, gentle seabed features" },
-    AMPLITUDE: { value: 0.3371, doc: "gentle — keep well below COAST so open water stays smooth" },
-    SHELF: { value: [0.474, 0.694] as Range, doc: "[ocean edge, full inland] continentalness band; wider = gentler coasts" },
+    SEA_LEVEL: {
+      value: 0.47,
+      doc: "elevation below it renders as ocean, above it as land",
+    },
+    OCTAVES: {
+      value: 1,
+      doc: "detail layers; more = finer, costlier",
+    },
+    GAIN: {
+      value: 0.7,
+      doc: "amplitude falloff per octave; higher = rougher",
+    },
+    LACUNARITY: {
+      value: 2,
+      doc: "wavelength shrink per octave",
+    },
+    WAVELENGTH: {
+      value: 0.6131,
+      doc: "broad — large, gentle seabed features",
+    },
+    AMPLITUDE: {
+      value: 0.3371,
+      doc: "gentle — keep well below COAST so open water stays smooth",
+    },
+    SHELF: {
+      value: [0.474, 0.694] as Range,
+      doc: "wider = gentler coasts"
+    },
   },
 
   // Relief riding on the carrier, as two waves blended by the inland ramp: a fine
@@ -133,11 +182,26 @@ export const DIALS = {
   // wavelengths keeps coasts detailed even when the interior uses big, broad
   // mountains (and when zoomed in / at high res).
   COAST: {
-    OCTAVES: { value: 4.5, doc: "detail layers; more = finer, costlier" },
-    GAIN: { value: 0.7, doc: "amplitude falloff per octave; higher = rougher" },
-    LACUNARITY: { value: 2, doc: "wavelength shrink per octave" },
-    WAVELENGTH: { value: 0.2653, doc: "fine — nearshore detail; smaller = finer coast" },
-    AMPLITUDE: { value: 0.2745, doc: "relief near shore → jaggedness, bays, nearshore islets" },
+    OCTAVES: {
+      value: 4.5,
+      doc: "detail layers; more = finer, costlier",
+    },
+    GAIN: {
+      value: 0.7,
+      doc: "amplitude falloff per octave; higher = rougher",
+    },
+    LACUNARITY: {
+      value: 2,
+      doc: "wavelength shrink per octave",
+    },
+    WAVELENGTH: {
+      value: 0.2653,
+      doc: "fine — nearshore detail; smaller = finer coast",
+    },
+    AMPLITUDE: {
+      value: 0.2745,
+      doc: "relief near shore → jaggedness, bays, nearshore islets",
+    },
   },
 
   // TECTONIC — mountain PLACEMENT via fake plate tectonics (replaces the old noise region mask).
@@ -145,38 +209,104 @@ export const DIALS = {
   // boundary — this is what makes CHAINS instead of round blobs. Only the additive mountain term is
   // placed here; land/water shape is untouched (ocean is gated out by continentalness upstream).
   TECTONIC: {
-    PLATE_COUNT: { value: 22, doc: "number of drifting plates → how many / how long the ranges (more = more, shorter)" },
-    RANGE_WIDTH: { value: 0.33, doc: "full angular width (radians) of the mountain belt straddling a boundary" },
-    SINUOSITY: { value: 0.19, doc: "how much ranges meander off their straight plate-boundary arcs (0 = dead straight)" },
-    CONVERGENCE_THRESHOLD: { value: 0.04, doc: "min collision strength to raise a range; higher = fewer, only the hardest collisions" },
-    VARIATION: { value: 0.73, doc: "along-strike height variation — swells, pinches, gaps along a range (0 = uniform ribbon, 1 = full gaps)" },
-    COAST_BIAS: { value: 0.08, doc: "fade interior ranges to favor coastal ones; 1 = coast-only, 0 = even across all land" },
+    PLATE_COUNT: {
+      value: 22,
+      doc: "number of drifting plates → how many / how long the ranges (more = more, shorter)",
+    },
+    RANGE_WIDTH: {
+      value: 0.33,
+      doc: "full angular width (radians) of the mountain belt straddling a boundary",
+    },
+    SINUOSITY: {
+      value: 0.19,
+      doc: "how much ranges meander off their straight plate-boundary arcs (0 = dead straight)",
+    },
+    CONVERGENCE_THRESHOLD: {
+      value: 0.04,
+      doc: "min collision strength to raise a range; higher = fewer, only the hardest collisions",
+    },
+    VARIATION: {
+      value: 0.73,
+      doc: "along-strike height variation — swells, pinches, gaps along a range (0 = uniform ribbon, 1 = full gaps)",
+    },
+    COAST_BIAS: {
+      value: 0.08,
+      doc: "fade interior ranges to favor coastal ones; 1 = coast-only, 0 = even across all land",
+    },
   },
 
   // A range = sharp ridged PEAKS on a broad SWELL. The swell's HEIGHT comes from the plate
   // collision itself (the TECTONIC uplift), so harder/closer convergence lifts a taller range;
   // RIDGE_AMPLITUDE is the overall height and SWELL_FRACTION splits it between body and crests.
   MOUNTAIN: {
-    OCTAVES: { value: 4.5, doc: "detail layers on the ridged peaks; more = finer, costlier" },
-    GAIN: { value: 0.84, doc: "amplitude falloff per octave; higher = rougher" },
-    LACUNARITY: { value: 1.95, doc: "wavelength shrink per octave" },
-    RIDGE_WAVELENGTH: { value: 0.055, doc: "spacing of the ridged peaks; SMALLER = MORE peaks packed into a range" },
-    RIDGE_AMPLITUDE: { value: 0.72, doc: "overall range height — the collision-driven swell + the crests riding on it" },
-    SWELL_FRACTION: { value: 0.68, doc: "body vs crest: broad-swell height as a fraction of the crest rise; higher = more plateau/body, lower = spikier crests + deeper valleys" },
+    OCTAVES: {
+      value: 4.5,
+      doc: "detail layers on the ridged peaks; more = finer, costlier",
+    },
+    GAIN: {
+      value: 0.84,
+      doc: "amplitude falloff per octave; higher = rougher",
+    },
+    LACUNARITY: {
+      value: 1.95,
+      doc: "wavelength shrink per octave",
+    },
+    RIDGE_WAVELENGTH: {
+      value: 0.055,
+      doc: "spacing of the ridged peaks; SMALLER = MORE peaks packed into a range",
+    },
+    RIDGE_AMPLITUDE: {
+      value: 0.72,
+      doc: "overall range height — the collision-driven swell + the crests riding on it",
+    },
+    SWELL_FRACTION: {
+      value: 0.68,
+      doc: "body vs crest: broad-swell height as a fraction of the crest rise; higher = more plateau/body, lower = spikier crests + deeper valleys",
+    },
   },
 
   // MOISTURE — drives wet/dry biome coloring.
   MOISTURE: {
-    OCTAVES: { value: 4.5, doc: "detail layers; more = finer, costlier" },
-    GAIN: { value: 0.41, doc: "amplitude falloff per octave; higher = rougher" },
-    LACUNARITY: { value: 2.8, doc: "wavelength shrink per octave" },
-    WAVELENGTH: { value: 1.55, doc: "larger = bigger climate zones" },
-    AMPLITUDE: { value: 0.85, doc: "higher = stronger wet/dry swings" },
-    CONTRAST: { value: 0.02, doc: "higher = sharper wet/dry boundaries" },
-    WATER_PROXIMITY_EFFECT: { value: 0.29, doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline" },
-    DESERT_STEEPNESS: { value: 1.3, doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland" },
-    WATER_SIZE_OCTAVES: { value: 1, doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'. Fewer = only large bodies (oceans) project humidity far inland; toward CONTINENT.OCTAVES (6) = size barely matters" },
-    RAINFALL: { value: 0.65, doc: "per-seed wet/dry bias applied at render time (not a wave); higher = wetter" },
+    OCTAVES: {
+      value: 4.5,
+      doc: "detail layers; more = finer, costlier",
+    },
+    GAIN: {
+      value: 0.41,
+      doc: "amplitude falloff per octave; higher = rougher",
+    },
+    LACUNARITY: {
+      value: 2.8,
+      doc: "wavelength shrink per octave",
+    },
+    WAVELENGTH: {
+      value: 1.55,
+      doc: "larger = bigger climate zones",
+    },
+    AMPLITUDE: {
+      value: 0.85,
+      doc: "higher = stronger wet/dry swings",
+    },
+    CONTRAST: {
+      value: 0.02,
+      doc: "higher = sharper wet/dry boundaries",
+    },
+    WATER_PROXIMITY_EFFECT: {
+      value: 0.29,
+      doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline",
+    },
+    DESERT_STEEPNESS: {
+      value: 1.3,
+      doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland",
+    },
+    WATER_SIZE_OCTAVES: {
+      value: 1,
+      doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'"
+    },
+    RAINFALL: {
+      value: 0.65,
+      doc: "higher = wetter",
+    },
   },
 
   // ICE — polar snow caps on LAND (open water never ices). Four levers: COVERAGE (how far toward
@@ -184,10 +314,22 @@ export const DIALS = {
   // the cap fills vs leaving low land poking through as holes), and BLEND (how softly the cap edge
   // fades into the surrounding land).
   ICE: {
-    COVERAGE: { value: 0.04, doc: "fraction of each hemisphere (in |sin lat|) the cap reaches; higher = bigger caps" },
-    WOBBLE: { value: 0.07, doc: "how far the snow line wanders → ragged, lopsided edge (0 = clean circle)" },
-    FILL: { value: 1.13, doc: "how completely the cap fills; higher = fewer holes (ices lower land too)" },
-    BLEND: { value: 0.085, doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer" },
+    COVERAGE: {
+      value: 0.04,
+      doc: "fraction of each hemisphere (in |sin lat|) the cap reaches; higher = bigger caps",
+    },
+    WOBBLE: {
+      value: 0.07,
+      doc: "how far the snow line wanders → ragged, lopsided edge (0 = clean circle)",
+    },
+    FILL: {
+      value: 1.13,
+      doc: "how completely the cap fills; higher = fewer holes (ices lower land too)",
+    },
+    BLEND: {
+      value: 0.085,
+      doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer",
+    },
   },
 };
 
@@ -386,7 +528,9 @@ export type TerrainParams = {
 
 // The plain-value shape of a descriptor group: each leaf's `.value` (number or Range) — the form
 // generation consumes, never the descriptors themselves.
-type DialValues<G> = { [K in keyof G]: G[K] extends { value: infer V } ? V : never };
+type DialValues<G> = { [K in keyof G]: G[K] extends {
+  value: infer V
+} ? V : never };
 function dialValues<G extends Record<string, DialLeaf>>(group: G): DialValues<G> {
   const out: Record<string, number | Range> = {};
   for (const k in group) {
@@ -419,16 +563,16 @@ export const LAYERS: Layer[] = [
   {
     key: "mountains",
     label: "mountains",
-    doc: "ridged peaks and their ground swell; off ⇒ the CONTINENT shape is untouched (all-green continents)",
+    doc: "ridged peaks and their ground swell",
   },
   {
     key: "climate",
     label: "climate",
-    doc: "wet/dry moisture variation and maritime humidity; off ⇒ flat moisture, colour driven by elevation alone",
+    doc: "wet/dry moisture variation and maritime humidity",
   },
   {
     key: "ice",
     label: "ice caps",
-    doc: "polar snow caps on land; off ⇒ no ice anywhere",
+    doc: "polar snow caps on land",
   },
 ];
