@@ -400,14 +400,14 @@ export const DIALS = {
   // Tunables for the political layer (mirrors the DIALS convention; live-editable).
   COUNTRY: {
     NUM_COUNTRIES: {
-      value: 20,
+      value: 40,
       min: 2,
       max: 80,
       step: 1,
       doc: "how many countries to place (one seed each, always on land)",
     },
     COUNTRY_DISTRIBUTION: {
-      value: 0.6,
+      value: 0.5,
       min: 0,
       max: 1,
       step: 0.01,

@@ -1,4 +1,4 @@
-import { randomChoice, weightedRandomChoice, type RNG } from "../../common/random";
+import { randomChoice, type RNG } from "../../common/random";
 
 export type Government = { type: string; densityFactor: number };
 
@@ -23,155 +23,263 @@ enum Structure {
   Minor = "minor",
 }
 
-enum Character {
+enum Society {
   Scholastic = "scholastic",
   Industrial = "industrial",
   Agrarian = "agrarian",
   Maritime = "maritime",
 }
 
+enum Trait {
+  Expansionist = "expansionist",
+  Isolationist = "isolationist",
+  Stable = "stable",
+  Fragmented = "fragmented",
+  Traditional = "traditional",
+  Revolutionary = "revolutionary",
+}
+
+enum ModifierType {
+  Constitutional = "constitutional",
+  Ideological = "ideological",
+  Cultural = "cultural",
+  Economic = "economic",
+  Religious = "religious",
+  Military = "military",
+  Prestige = "prestige",
+  Status = "status",
+}
+
 type Tags = {
   authority?: Authority[];
   structure?: Structure[];
-  character?: Character[];
+  society?: Society[];
+  trait?: Trait[];
 };
 
 type Core = {
   word: string;
-  density: number;
   tags: Tags;
 };
 
 type Modifier = {
   word: string;
+  type: ModifierType;
   tags: Tags;
   exclude?: Tags;
 };
 
 const CORES: Core[] = [
-  { word: "republic", density: 1.2, tags: { authority: [Authority.Civic] } },
-  {
-    word: "federation",
-    density: 0.95,
-    tags: { authority: [Authority.Civic], structure: [Structure.Federal] },
-  },
+  { word: "republic", tags: { authority: [Authority.Civic] } },
+  { word: "federation", tags: { authority: [Authority.Civic], structure: [Structure.Federal] } },
   {
     word: "confederacy",
-    density: 0.85,
-    tags: { authority: [Authority.Civic], structure: [Structure.Federal, Structure.Local] },
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
+      trait: [Trait.Fragmented],
+    },
   },
-  {
-    word: "union",
-    density: 1.0,
-    tags: { authority: [Authority.Civic], structure: [Structure.Federal] },
-  },
+  { word: "union", tags: { authority: [Authority.Civic], structure: [Structure.Federal] } },
   {
     word: "commonwealth",
-    density: 1.1,
     tags: { authority: [Authority.Civic, Authority.Commercial] },
   },
   {
     word: "league",
-    density: 0.9,
-    tags: { authority: [Authority.Civic, Authority.Commercial], structure: [Structure.Federal] },
+    tags: {
+      authority: [Authority.Civic, Authority.Commercial],
+      structure: [Structure.Federal],
+    },
   },
   {
     word: "commune",
-    density: 1.15,
     tags: { authority: [Authority.Civic], structure: [Structure.Local] },
   },
   {
     word: "city-state",
-    density: 1.45,
-    tags: { authority: [Authority.Civic], structure: [Structure.Local, Structure.Urban] },
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Local, Structure.Urban, Structure.Minor],
+    },
+  },
+  {
+    word: "assembly",
+    tags: { authority: [Authority.Civic], structure: [Structure.Local] },
+  },
+  {
+    word: "council",
+    tags: { authority: [Authority.Civic, Authority.Elite], structure: [Structure.Local] },
+  },
+  {
+    word: "compact",
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
+      trait: [Trait.Stable],
+    },
+  },
+  {
+    word: "freehold",
+    tags: { authority: [Authority.Civic], structure: [Structure.Local, Structure.Minor] },
   },
 
   {
     word: "empire",
-    density: 0.95,
-    tags: { authority: [Authority.Imperial, Authority.Monarchic, Authority.Militaristic] },
+    tags: {
+      authority: [Authority.Imperial, Authority.Monarchic, Authority.Militaristic],
+      trait: [Trait.Expansionist],
+    },
   },
-  { word: "kingdom", density: 1.0, tags: { authority: [Authority.Monarchic] } },
+  {
+    word: "kingdom",
+    tags: { authority: [Authority.Monarchic], trait: [Trait.Traditional] },
+  },
+  {
+    word: "realm",
+    tags: { authority: [Authority.Monarchic], trait: [Trait.Traditional] },
+  },
   {
     word: "duchy",
-    density: 0.9,
     tags: { authority: [Authority.Monarchic], structure: [Structure.Minor] },
   },
   {
     word: "principality",
-    density: 0.9,
     tags: { authority: [Authority.Monarchic], structure: [Structure.Minor] },
   },
   {
+    word: "archduchy",
+    tags: { authority: [Authority.Monarchic], structure: [Structure.Minor] },
+  },
+  {
+    word: "electorate",
+    tags: { authority: [Authority.Monarchic, Authority.Elite], structure: [Structure.Minor] },
+  },
+  {
     word: "sultanate",
-    density: 0.8,
     tags: { authority: [Authority.Monarchic, Authority.Religious] },
   },
   {
     word: "khanate",
-    density: 0.7,
     tags: {
       authority: [Authority.Monarchic, Authority.Militaristic],
       structure: [Structure.Nomadic],
+      trait: [Trait.Expansionist],
     },
   },
 
-  { word: "theocracy", density: 1.0, tags: { authority: [Authority.Religious] } },
+  { word: "theocracy", tags: { authority: [Authority.Religious] } },
   {
     word: "magisterium",
-    density: 1.05,
     tags: {
       authority: [Authority.Religious, Authority.Bureaucratic],
-      character: [Character.Scholastic],
+      society: [Society.Scholastic],
     },
   },
   {
     word: "order",
-    density: 0.95,
     tags: { authority: [Authority.Religious, Authority.Militaristic] },
+  },
+  {
+    word: "patriarchate",
+    tags: { authority: [Authority.Religious, Authority.Monarchic] },
+  },
+  {
+    word: "see",
+    tags: { authority: [Authority.Religious], structure: [Structure.Local, Structure.Minor] },
+  },
+  {
+    word: "synod",
+    tags: { authority: [Authority.Religious, Authority.Bureaucratic] },
+  },
+  {
+    word: "covenant",
+    tags: { authority: [Authority.Religious, Authority.Civic] },
   },
 
   {
     word: "technocracy",
-    density: 1.25,
-    tags: { authority: [Authority.Technical, Authority.Bureaucratic] },
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic],
+      society: [Society.Industrial, Society.Scholastic],
+      trait: [Trait.Stable],
+    },
   },
   {
     word: "directorate",
-    density: 1.1,
     tags: { authority: [Authority.Bureaucratic, Authority.Elite] },
   },
   {
+    word: "commission",
+    tags: { authority: [Authority.Bureaucratic, Authority.Technical] },
+  },
+  {
+    word: "authority",
+    tags: { authority: [Authority.Bureaucratic], structure: [Structure.Urban] },
+  },
+  {
+    word: "administration",
+    tags: { authority: [Authority.Bureaucratic], structure: [Structure.Dependent] },
+  },
+  {
+    word: "collective",
+    tags: {
+      authority: [Authority.Civic, Authority.Technical],
+      trait: [Trait.Revolutionary],
+    },
+  },
+
+  {
     word: "syndicate",
-    density: 1.3,
-    tags: { authority: [Authority.Commercial, Authority.Elite] },
+    tags: { authority: [Authority.Commercial, Authority.Elite], structure: [Structure.Urban] },
   },
   {
     word: "consortium",
-    density: 1.25,
-    tags: { authority: [Authority.Commercial, Authority.Elite] },
+    tags: { authority: [Authority.Commercial, Authority.Elite], structure: [Structure.Urban] },
   },
   {
     word: "oligarchy",
-    density: 1.15,
     tags: { authority: [Authority.Elite, Authority.Bureaucratic] },
+  },
+  {
+    word: "exchange",
+    tags: { authority: [Authority.Commercial], structure: [Structure.Urban] },
+  },
+  {
+    word: "charter",
+    tags: { authority: [Authority.Commercial, Authority.Civic] },
+  },
+  {
+    word: "trade league",
+    tags: {
+      authority: [Authority.Commercial, Authority.Civic],
+      structure: [Structure.Federal],
+      society: [Society.Maritime],
+    },
   },
 
   {
     word: "protectorate",
-    density: 0.85,
     tags: { structure: [Structure.Dependent] },
   },
   {
     word: "dominion",
-    density: 0.85,
-    tags: { authority: [Authority.Imperial], structure: [Structure.Dependent] },
+    tags: {
+      authority: [Authority.Imperial],
+      structure: [Structure.Dependent],
+    },
   },
   {
     word: "satrapy",
-    density: 0.8,
     tags: {
       authority: [Authority.Imperial, Authority.Bureaucratic],
+      structure: [Structure.Dependent],
+    },
+  },
+  {
+    word: "march",
+    tags: {
+      authority: [Authority.Monarchic, Authority.Militaristic],
       structure: [Structure.Dependent],
     },
   },
@@ -180,186 +288,287 @@ const CORES: Core[] = [
 const MODIFIERS: Modifier[] = [
   {
     word: "sovereign",
+    type: ModifierType.Status,
     tags: {
-      authority: [
-        Authority.Civic,
-        Authority.Monarchic,
-        Authority.Imperial,
-        Authority.Religious,
-        Authority.Commercial,
-      ],
-      structure: [Structure.Federal, Structure.Local, Structure.Minor],
+      authority: [Authority.Civic, Authority.Monarchic, Authority.Imperial, Authority.Religious],
     },
     exclude: { structure: [Structure.Dependent] },
   },
   {
-    word: "unified",
-    tags: {
-      authority: [Authority.Civic, Authority.Imperial, Authority.Monarchic, Authority.Bureaucratic],
-      structure: [Structure.Federal],
-    },
+    word: "independent",
+    type: ModifierType.Status,
+    tags: { authority: [Authority.Civic, Authority.Commercial], structure: [Structure.Local] },
+    exclude: { structure: [Structure.Dependent] },
+  },
+  {
+    word: "autonomous",
+    type: ModifierType.Status,
+    tags: { structure: [Structure.Local, Structure.Dependent, Structure.Minor] },
   },
   {
     word: "provisional",
+    type: ModifierType.Status,
     tags: {
       authority: [Authority.Civic, Authority.Militaristic],
       structure: [Structure.Federal, Structure.Local, Structure.Dependent],
+      trait: [Trait.Revolutionary],
     },
-  },
-  {
-    word: "eternal",
-    tags: {
-      authority: [Authority.Imperial, Authority.Religious, Authority.Monarchic, Authority.Militaristic],
-    },
-    exclude: { authority: [Authority.Civic, Authority.Commercial] },
   },
   {
     word: "restored",
+    type: ModifierType.Status,
     tags: {
       authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious, Authority.Civic],
+      trait: [Trait.Traditional],
     },
   },
   {
     word: "fallen",
+    type: ModifierType.Status,
     tags: {
-      authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious, Authority.Militaristic],
+      authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious],
       structure: [Structure.Dependent],
     },
   },
 
   {
     word: "federal",
+    type: ModifierType.Constitutional,
     tags: { structure: [Structure.Federal] },
   },
   {
     word: "democratic",
+    type: ModifierType.Constitutional,
     tags: { authority: [Authority.Civic], structure: [Structure.Federal, Structure.Local] },
   },
   {
     word: "people's",
-    tags: { authority: [Authority.Civic], structure: [Structure.Federal, Structure.Local] },
-  },
-  {
-    word: "constitutional",
+    type: ModifierType.Ideological,
     tags: {
-      authority: [Authority.Civic, Authority.Monarchic],
-      structure: [Structure.Federal],
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
+      trait: [Trait.Revolutionary],
     },
   },
   {
+    word: "constitutional",
+    type: ModifierType.Constitutional,
+    tags: { authority: [Authority.Civic, Authority.Monarchic] },
+  },
+  {
     word: "free",
+    type: ModifierType.Ideological,
     tags: {
       authority: [Authority.Civic, Authority.Commercial],
       structure: [Structure.Local, Structure.Minor],
     },
+    exclude: { structure: [Structure.Dependent] },
+  },
+  {
+    word: "reformed",
+    type: ModifierType.Ideological,
+    tags: { authority: [Authority.Civic, Authority.Religious], trait: [Trait.Revolutionary] },
   },
 
   {
     word: "grand",
+    type: ModifierType.Prestige,
     tags: { authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious] },
   },
   {
+    word: "great",
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Civic, Authority.Monarchic, Authority.Imperial] },
+  },
+  {
+    word: "high",
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Monarchic, Authority.Religious, Authority.Elite] },
+  },
+  {
+    word: "royal",
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Monarchic] },
+  },
+  {
     word: "imperial",
-    tags: { authority: [Authority.Imperial, Authority.Monarchic], structure: [Structure.Dependent] },
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Imperial, Authority.Monarchic] },
     exclude: { authority: [Authority.Civic], structure: [Structure.Local] },
+  },
+  {
+    word: "eternal",
+    type: ModifierType.Prestige,
+    tags: {
+      authority: [Authority.Imperial, Authority.Religious, Authority.Monarchic],
+      trait: [Trait.Traditional],
+    },
+    exclude: { authority: [Authority.Civic, Authority.Commercial] },
+  },
+  {
+    word: "ancient",
+    type: ModifierType.Prestige,
+    tags: {
+      authority: [Authority.Monarchic, Authority.Religious, Authority.Civic],
+      trait: [Trait.Traditional],
+    },
+  },
+  {
+    word: "serene",
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Civic, Authority.Monarchic, Authority.Elite] },
+  },
+  {
+    word: "unconquered",
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Militaristic, Authority.Imperial, Authority.Monarchic] },
   },
 
   {
     word: "holy",
+    type: ModifierType.Religious,
     tags: {
       authority: [Authority.Religious, Authority.Monarchic, Authority.Imperial, Authority.Militaristic],
     },
   },
   {
     word: "sacred",
+    type: ModifierType.Religious,
     tags: {
       authority: [Authority.Religious, Authority.Monarchic],
-      character: [Character.Scholastic],
+      society: [Society.Scholastic],
     },
   },
   {
     word: "apostolic",
+    type: ModifierType.Religious,
     tags: { authority: [Authority.Religious] },
   },
   {
-    word: "theocratic",
-    tags: { authority: [Authority.Religious] },
+    word: "orthodox",
+    type: ModifierType.Religious,
+    tags: { authority: [Authority.Religious], trait: [Trait.Traditional] },
   },
 
   {
     word: "mercantile",
+    type: ModifierType.Economic,
     tags: {
       authority: [Authority.Commercial, Authority.Civic],
       structure: [Structure.Urban],
-      character: [Character.Maritime],
+      society: [Society.Maritime],
+    },
+  },
+  {
+    word: "guilded",
+    type: ModifierType.Economic,
+    tags: {
+      authority: [Authority.Commercial, Authority.Elite],
+      structure: [Structure.Urban],
     },
   },
   {
     word: "industrial",
+    type: ModifierType.Economic,
     tags: {
       authority: [Authority.Technical, Authority.Bureaucratic, Authority.Commercial],
       structure: [Structure.Urban],
-      character: [Character.Industrial],
+      society: [Society.Industrial],
     },
   },
   {
     word: "agrarian",
+    type: ModifierType.Economic,
     tags: {
       authority: [Authority.Civic, Authority.Monarchic],
       structure: [Structure.Local],
-      character: [Character.Agrarian],
+      society: [Society.Agrarian],
     },
   },
-  // {
-  //   word: "maritime",
-  //   tags: {
-  //     authority: [Authority.Commercial, Authority.Civic, Authority.Imperial],
-  //     character: [Character.Maritime],
-  //   },
-  // },
+
+  {
+    word: "maritime",
+    type: ModifierType.Cultural,
+    tags: {
+      authority: [Authority.Commercial, Authority.Civic, Authority.Imperial],
+      society: [Society.Maritime],
+    },
+  },
   {
     word: "pastoral",
+    type: ModifierType.Cultural,
     tags: {
       structure: [Structure.Nomadic, Structure.Local, Structure.Minor],
-      character: [Character.Agrarian],
+      society: [Society.Agrarian],
     },
   },
   {
     word: "nomadic",
+    type: ModifierType.Cultural,
     tags: { structure: [Structure.Nomadic] },
   },
-
   {
-    word: "technocratic",
+    word: "frontier",
+    type: ModifierType.Cultural,
     tags: {
-      authority: [Authority.Technical, Authority.Bureaucratic],
-      character: [Character.Scholastic],
-    },
-  },
-  {
-    word: "stratocratic",
-    tags: { authority: [Authority.Militaristic, Authority.Bureaucratic] },
-  },
-  {
-    word: "militant",
-    tags: { authority: [Authority.Militaristic, Authority.Religious, Authority.Imperial] },
-  },
-
-  {
-    word: "arcane",
-    tags: {
-      authority: [Authority.Religious, Authority.Technical],
-      character: [Character.Scholastic],
+      structure: [Structure.Local, Structure.Dependent, Structure.Minor],
+      trait: [Trait.Fragmented],
     },
   },
   {
     word: "scholastic",
+    type: ModifierType.Cultural,
     tags: {
-      authority: [Authority.Religious, Authority.Bureaucratic],
-      character: [Character.Scholastic],
+      authority: [Authority.Religious, Authority.Bureaucratic, Authority.Technical],
+      society: [Society.Scholastic],
     },
   },
+  {
+    word: "arcane",
+    type: ModifierType.Cultural,
+    tags: {
+      authority: [Authority.Religious, Authority.Technical],
+      society: [Society.Scholastic],
+    },
+  },
+  {
+    word: "enlightened",
+    type: ModifierType.Cultural,
+    tags: {
+      authority: [Authority.Civic, Authority.Technical, Authority.Elite],
+      society: [Society.Scholastic],
+    },
+  },
+
+  {
+    word: "technocratic",
+    type: ModifierType.Ideological,
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic],
+      society: [Society.Scholastic],
+    },
+  },
+  {
+    word: "rational",
+    type: ModifierType.Ideological,
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic, Authority.Civic],
+      society: [Society.Scholastic],
+    },
+  },
+  {
+    word: "stratocratic",
+    type: ModifierType.Military,
+    tags: { authority: [Authority.Militaristic, Authority.Bureaucratic] },
+  },
+  {
+    word: "militant",
+    type: ModifierType.Military,
+    tags: { authority: [Authority.Militaristic, Authority.Religious, Authority.Imperial] },
+  },
 ];
+
+const MAX_MODIFIERS = 2;
 
 function hasOverlap<T>(a: T[] | undefined, b: T[] | undefined): boolean {
   if (!a || !b) return false;
@@ -375,7 +584,8 @@ function matchesTags(core: Tags, modifier: Tags): boolean {
   return (
     matchesAxis(core.authority, modifier.authority) ||
     matchesAxis(core.structure, modifier.structure) ||
-    matchesAxis(core.character, modifier.character)
+    matchesAxis(core.society, modifier.society) ||
+    matchesAxis(core.trait, modifier.trait)
   );
 }
 
@@ -385,53 +595,87 @@ function isExcluded(core: Tags, exclude: Tags | undefined): boolean {
   return (
     hasOverlap(core.authority, exclude.authority) ||
     hasOverlap(core.structure, exclude.structure) ||
-    hasOverlap(core.character, exclude.character)
+    hasOverlap(core.society, exclude.society) ||
+    hasOverlap(core.trait, exclude.trait)
   );
+}
+
+function hasTag<T>(values: T[] | undefined, value: T): boolean {
+  return values?.includes(value) ?? false;
 }
 
 function compatibleModifiers(core: Core): Modifier[] {
   return MODIFIERS.filter((modifier) => {
-    if (isExcluded(core.tags, modifier.exclude)) {
-      return false;
-    }
-
+    if (isExcluded(core.tags, modifier.exclude)) return false;
     return matchesTags(core.tags, modifier.tags);
   });
+}
+
+function deriveDensityFactor(tags: Tags): number {
+  let density = 1;
+
+  if (hasTag(tags.structure, Structure.Urban)) density += 0.35;
+  if (hasTag(tags.structure, Structure.Local)) density += 0.1;
+  if (hasTag(tags.structure, Structure.Federal)) density -= 0.05;
+  if (hasTag(tags.structure, Structure.Dependent)) density -= 0.1;
+  if (hasTag(tags.structure, Structure.Nomadic)) density -= 0.3;
+  if (hasTag(tags.structure, Structure.Minor)) density -= 0.05;
+
+  if (hasTag(tags.authority, Authority.Bureaucratic)) density += 0.1;
+  if (hasTag(tags.authority, Authority.Commercial)) density += 0.15;
+  if (hasTag(tags.authority, Authority.Technical)) density += 0.15;
+  if (hasTag(tags.authority, Authority.Imperial)) density -= 0.05;
+
+  if (hasTag(tags.society, Society.Industrial)) density += 0.2;
+  if (hasTag(tags.society, Society.Maritime)) density += 0.1;
+  if (hasTag(tags.society, Society.Agrarian)) density -= 0.1;
+
+  if (hasTag(tags.trait, Trait.Fragmented)) density -= 0.05;
+  if (hasTag(tags.trait, Trait.Expansionist)) density -= 0.05;
+
+  return Math.max(0.6, Math.min(1.5, density));
 }
 
 function titleCase(words: string): string {
   return words.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function pickModifiers(core: Core, rng: RNG): Modifier[] {
+  const pool = compatibleModifiers(core);
+  const picked: Modifier[] = [];
+  const usedTypes = new Set<ModifierType>();
+
+  while (picked.length < MAX_MODIFIERS && pool.length > 0) {
+    const index = Math.floor(rng() * pool.length);
+    const modifier = pool.splice(index, 1)[0];
+
+    if (usedTypes.has(modifier.type)) continue;
+
+    usedTypes.add(modifier.type);
+    picked.push(modifier);
+  }
+
+  return picked;
+}
+
 /**
- * Compose a government type from 2–3 parts.
+ * Compose a government type from a core form plus 0–2 compatible modifiers.
  *
  * Examples:
- * - federal republic
- * - holy kingdom
- * - mercantile city-state
- * - sacred apostolic order
+ * - Federal Republic
+ * - Holy Kingdom
+ * - Mercantile City-State
+ * - Sacred Apostolic Order
+ * - Enlightened Technocracy
  *
- * The core form provides the main population-density signal. Modifiers apply
- * small multiplicative nudges.
+ * Density is derived from the core's tags. The tags are the source of truth.
  */
 export function generateGovernment(rng: RNG): Government {
   const core = randomChoice(CORES, rng);
-  const parts = 3;
-
-  const pool = [...compatibleModifiers(core)];
-  const modifiers: string[] = [];
-
-  let densityFactor = core.density;
-
-  for (let i = 0; i < parts - 1 && pool.length > 0; i++) {
-    const picked = pool.splice(Math.floor(rng() * pool.length), 1)[0];
-
-    modifiers.push(picked.word);
-  }
+  const modifiers = pickModifiers(core, rng);
 
   return {
-    type: titleCase([...modifiers, core.word].join(" ")),
-    densityFactor,
+    type: titleCase([...modifiers.map((modifier) => modifier.word), core.word].join(" ")),
+    densityFactor: deriveDensityFactor(core.tags),
   };
 }
