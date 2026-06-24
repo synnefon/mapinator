@@ -360,19 +360,21 @@ input[type="checkbox"] {
   border: 2px solid var(--menuText);
   border-radius: 4px;
   cursor: pointer;
-  background-color: var(--bg);
+  background-color: var(--menuBg);
 }
 
 input[type="checkbox"]:active {
   background-color: var(--highlight);
+  box-shadow: 0 0 0 2px var(--highlight) inset;
 }
 
 input[type="checkbox"]:checked {
   background-color: var(--highlight);
+  box-shadow: 0 0 0 2.5px var(--menuBg) inset, 0 0 0 5px var(--highlight) inset;
 }
 
 input[type="checkbox"]:indeterminate {
-  background-color: var(--bg);
+  background-color: var(--menuBg);
   /* border-color: var(--highlight); */
   position: relative;
 }
@@ -615,8 +617,34 @@ select[multiple] optgroup {
   text-decoration: underline;
 }
 
-/* Country info popup (opened by clicking a country name). */
-.country-popup {
+/* City markers: interactive dots over the globe. Tier sets the dot size + the zoom level it appears at
+   (big/capitals first, then medium, then small); capitals get a ring. Click opens a population popup
+   (which reuses the .info-popup styling below). */
+.city-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(245, 235, 215, 0.95);
+  border: 1px solid rgba(20, 0, 0, 0.85);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 6; /* above country names (5) so the dots stay clickable */
+}
+.city-marker.big { width: 11px; height: 11px; }
+.city-marker.medium { width: 8px; height: 8px; }
+.city-marker.small { width: 6px; height: 6px; }
+.city-marker.capital {
+  background: rgba(255, 70, 70, 0.97);
+  border-color: rgba(40, 0, 0, 0.9);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 3px rgba(0, 0, 0, 0.7);
+}
+.city-marker:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+/* Shared info popup (opened by clicking a country name or a city marker; see InfoPopup). */
+.info-popup {
   position: fixed;
   display: none;
   z-index: 20;
@@ -634,21 +662,22 @@ select[multiple] optgroup {
   line-height: 1.5;
   text-transform: lowercase;
 }
-.country-popup-title {
+.info-popup-title {
   margin: 0 0 6px;
   font-size: 16px;
+  padding-right: 1.3em; /* reserve room for the × so a long title never runs under it */
 }
 /* 2-col grid: key column sizes to the widest label, values left-align in their own column. */
-.country-popup-body {
+.info-popup-body {
   display: grid;
   grid-template-columns: max-content 1fr;
   column-gap: 0.6em;
   opacity: 0.9;
 }
-.country-popup-val {
+.info-popup-val {
   white-space: nowrap;
 }
-.country-popup-close {
+.info-popup-close {
   position: absolute;
   top: 4px;
   right: 8px;
@@ -660,7 +689,10 @@ select[multiple] optgroup {
   cursor: pointer;
   opacity: 0.7;
 }
-.country-popup-close:hover {
+/* Highlight the × glyph only — never its background (override the generic button:hover fill). */
+.info-popup-close:hover {
+  background: none;
+  color: var(--highlight);
   opacity: 1;
 }
 

@@ -12,7 +12,9 @@ import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 import { createCompassNeedle } from "./renderer/compassNeedle";
 import { GlobeController } from "./renderer/GlobeController";
 import { createLodPipeline, type GenRequest } from "./renderer/LodPipeline";
+import { CityMarkers } from "./CityMarkers";
 import { CountryLabels } from "./CountryLabels";
+import { InfoPopup } from "./InfoPopup";
 import { drawCountries } from "./renderer/countryLayer";
 import { drawFeatureLabels } from "./renderer/featureLabels";
 import { drawPlateArrows } from "./renderer/plateArrows";
@@ -128,6 +130,8 @@ document.addEventListener("DOMContentLoaded", () => {
       key !== "viewPlates" &&
       key !== "viewLabels" &&
       key !== "viewCountries" &&
+      key !== "viewCities" &&
+      key !== "viewCountryColors" &&
       sliderKeys.has(key)
     ) {
       // viewPlates/viewLabels are render-only view flags, not numeric sliders — skip them here (their
@@ -228,12 +232,17 @@ document.addEventListener("DOMContentLoaded", () => {
   // Interactive country labels (DOM) + the hover state that drives the territory highlight.
   let hoveredCountry: number | null = null;
   let labelResult: MapFeatures | null = null; // the result the DOM labels were last built from
+  // One shared info popup for both countries and cities; it follows its anchor + self-closes (InfoPopup).
+  const infoPopup = new InfoPopup();
   const countryLabels = new CountryLabels(canvas.parentElement as HTMLElement, {
     onHover: (index) => {
       hoveredCountry = index;
       drawCountryOverlay(); // repaint just the overlay — no full-globe redraw needed
     },
+    popup: infoPopup,
   });
+  // Interactive city markers (DOM dots over the globe), revealed by zoom tier; default on.
+  const cityMarkers = new CityMarkers(canvas.parentElement as HTMLElement, infoPopup);
 
   // Redraw the country overlay (hovered territory highlight + dotted borders) from the cached BASE
   // result, always at base-mesh resolution; the live zoom only re-projects it. Deliberately coarse at
@@ -243,21 +252,27 @@ document.addEventListener("DOMContentLoaded", () => {
   function drawCountryOverlay(): void {
     const baseMap = pipeline.base();
     const entry = baseMap ? featureCache.get(baseMap) : undefined;
-    if (!baseMap || !entry || !(appState.settings.viewCountries ?? false)) {
+    const showCountries = appState.settings.viewCountries ?? false;
+    const showColors = appState.settings.viewCountryColors ?? false;
+    if (!baseMap || !entry || (!showCountries && !showColors)) {
       countryCanvas.getContext("2d")?.clearRect(0, 0, countryCanvas.width, countryCanvas.height);
       return;
     }
     const highlight =
-      hoveredCountry !== null
+      showCountries && hoveredCountry !== null
         ? { map: baseMap, countryOf: entry.result.countryOf, index: hoveredCountry }
         : null;
+    const fill = showColors
+      ? { map: baseMap, countryOf: entry.result.countryOf, colorClass: entry.result.countryColors }
+      : null;
     drawCountries(
       countryCanvas,
-      entry.result.borders,
+      showCountries ? entry.result.borders : new Float32Array(0),
       highlight,
       appState.orientation,
       appState.settings.zoom,
-      globeRenderer.horizontalOffsetFraction()
+      globeRenderer.horizontalOffsetFraction(),
+      fill
     );
   }
 
@@ -308,9 +323,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const viewLevel = pipeline.view().level;
     const showLabels = appState.settings.viewLabels ?? false;
     const showCountries = appState.settings.viewCountries ?? false;
+    const showCities = appState.settings.viewCities ?? false;
+    const showCountryColors = appState.settings.viewCountryColors ?? false;
     const clear = (c: HTMLCanvasElement) =>
       c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
-    if (showLabels || showCountries) {
+    if (showLabels || showCountries || showCities || showCountryColors) {
       const seaLevel = OCEAN.SEA_LEVEL.value;
       let entry = featureCache.get(baseMap);
       if (!entry || entry.seaLevel !== seaLevel || entry.language !== appState.language) {
@@ -333,6 +350,7 @@ document.addEventListener("DOMContentLoaded", () => {
         labelResult = entry.result;
         hoveredCountry = null;
         countryLabels.setCountries(entry.result.countries);
+        cityMarkers.setCities(entry.result.cities);
       }
       const offset = globeRenderer.horizontalOffsetFraction();
       if (showLabels) {
@@ -345,18 +363,39 @@ document.addEventListener("DOMContentLoaded", () => {
           viewLevel
         );
       } else clear(labelCanvas);
+      // Country overlay (choropleth fill + borders + hover highlight) self-gates on the two toggles.
+      drawCountryOverlay();
       if (showCountries) {
-        drawCountryOverlay();
         countryLabels.setVisible(true);
         countryLabels.update(canvas, entry.result.countries, appState.orientation, appState.settings.zoom, offset);
       } else {
-        clear(countryCanvas);
         countryLabels.setVisible(false);
+      }
+      if (showCities) {
+        cityMarkers.setVisible(true);
+        cityMarkers.update(canvas, entry.result.cities, appState.orientation, appState.settings.zoom, offset, viewLevel);
+      } else {
+        cityMarkers.setVisible(false);
       }
     } else {
       clear(labelCanvas);
       clear(countryCanvas);
       countryLabels.setVisible(false);
+      cityMarkers.setVisible(false);
+    }
+    // The shared popup follows its anchor + closes itself when that anchor leaves view (behind the limb,
+    // below its reveal level, or when its layer is off). Driven every frame so a layer toggle dismisses it.
+    const popupSrc = infoPopup.source();
+    if (popupSrc) {
+      const layerVisible = popupSrc === "city" ? showCities : showCountries;
+      infoPopup.update(
+        canvas,
+        appState.orientation,
+        appState.settings.zoom,
+        globeRenderer.horizontalOffsetFraction(),
+        viewLevel,
+        layerVisible
+      );
     }
   }
 

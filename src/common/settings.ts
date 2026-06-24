@@ -7,10 +7,10 @@ export type Range = [number, number];
  *  bounds. One descriptor is the single source for the value (generation snapshot), the panel
  *  tooltip (DIAL_DOCS), the slider travel (min/max/step, else derived), and the /tune rewrite. */
 export type Dial = {
-  value: number; doc: string; min?: number; max?: number; step?: number
+  value: number; doc: string; min?: number; max?: number; step?: number; hidden?: boolean
 };
 export type DialRange = {
-  value: Range; doc: string; min?: number; max?: number; step?: number
+  value: Range; doc: string; min?: number; max?: number; step?: number; hidden?: boolean
 };
 
 export interface MapSettings {
@@ -20,6 +20,8 @@ export interface MapSettings {
   viewPlates?: boolean; // render overlay: colour cells by tectonic plate instead of biome (no regen). Optional so the dev harnesses (sweep/explorer) can omit it → no overlay.
   viewLabels?: boolean; // render overlay: draw generated names for the map's features (seas, continents, …). Optional like viewPlates.
   viewCountries?: boolean; // render overlay: dotted red country borders + country names. Optional like viewPlates.
+  viewCities?: boolean; // render overlay: clickable city markers (capitals + towns), sized + zoom-gated by tier. Optional like viewPlates.
+  viewCountryColors?: boolean; // render overlay: 4-colour choropleth tinting each country (15% opacity). Optional like viewPlates.
 }
 
 // Settings whose value is a number — the keys the numeric sliders + URL parsing drive (excludes
@@ -32,7 +34,7 @@ export type NumericSettingKey = {
  *  single source of truth for a layer's default state, read by the panel (sort + reset) AND by the
  *  derived runtime defaults below. A FEATURE flips a generation switch (FEATURES; regen on change);
  *  a VIEW flips a render-overlay MapSettings flag (re-render only). */
-export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries";
+export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries" | "viewCities" | "viewCountryColors";
 export type Layer =
   | { kind: "feature"; key: keyof Features; label: string; doc: string; defaultOn: boolean }
   | { kind: "view"; key: ViewLayerKey; label: string; doc: string; defaultOn: boolean };
@@ -76,6 +78,20 @@ export const LAYERS: Layer[] = [
     label: "countries",
     doc: "display country data",
     defaultOn: true,
+  },
+  {
+    kind: "view",
+    key: "viewCities",
+    label: "cities",
+    doc: "display city markers (click for population)",
+    defaultOn: true,
+  },
+  {
+    kind: "view",
+    key: "viewCountryColors",
+    label: "country colors",
+    doc: "tint each country a distinct colour (4-colour map)",
+    defaultOn: false,
   },
   {
     kind: "view",
@@ -192,6 +208,7 @@ export const DIALS = {
     },
     WATER_COST: {
       value: 6,
+      hidden: true,
       min: 1,
       max: 25,
       step: 0.5,
@@ -199,15 +216,27 @@ export const DIALS = {
     },
     WARP_FREQ: {
       value: 4,
+      hidden: true,
       doc: "domain-warp frequency for border wiggle",
     },
     WARP_AMP: {
       value: 1,
+      hidden: true,
       doc: "domain-warp strength — higher = more organic, wandering borders",
     },
     BORDER_HOPS: {
       value: 20,
+      hidden: true,
       doc: "how far a water body looks out (over water) for its largest bordering country",
+    },
+  },
+  CITY: {
+    URBAN_FRACTION: {
+      value: 0.1,
+      min: 0,
+      max: 0.5,
+      step: 0.01,
+      doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10)",
     },
   },
 
@@ -446,6 +475,7 @@ export const DIALS = {
 // SAME object refs DIALS holds, mutated in place by applyTuning (so every reader stays live).
 export const {
   COUNTRY,
+  CITY,
   CONTINENT,
   OCEAN,
   COAST,
@@ -540,12 +570,15 @@ function toField(path: string, leaf: DialLeaf, key: string): TuningField {
 
 // Walk DIALS into the grouped slider schema the panel renders. Section title = humanized key;
 // every leaf becomes a field (in declaration order).
-export const TUNING_SCHEMA: TuningGroup[] = Object.entries(GROUPS).map(
-  ([key, target]) => ({
+export const TUNING_SCHEMA: TuningGroup[] = Object.entries(GROUPS)
+  .map(([key, target]) => ({
     title: humanize(key),
-    fields: Object.entries(target).map(([k, leaf]) => toField(`${key}.${k}`, leaf, k)),
-  })
-);
+    // `hidden` dials keep their value and stay live-readable, but never show as sliders.
+    fields: Object.entries(target)
+      .filter(([, leaf]) => !leaf.hidden)
+      .map(([k, leaf]) => toField(`${key}.${k}`, leaf, k)),
+  }))
+  .filter((group) => group.fields.length > 0);
 
 // Dotted path → hover doc, walked straight off the descriptors. Replaces the old ?raw comment
 // parse in AdvancedSettings — the dial's `doc` field is now the single source for its tooltip.

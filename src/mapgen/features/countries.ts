@@ -402,3 +402,40 @@ export function countryBorderSegments(map: GlobeMap, countryOf: Int32Array): Flo
   }
   return new Float32Array(out);
 }
+
+/**
+ * Greedy four-colouring of the country adjacency graph: neighbouring countries get different colour
+ * classes (0–3) so a choropleth fill never abuts itself. Countries are coloured highest-degree first
+ * (Welsh–Powell), each taking the lowest class no neighbour uses; the four-colour theorem says a planar
+ * map needs ≤4, and the rare greedy overflow falls back to class 0. Returns a class per country index.
+ */
+export function fourColorCountries(
+  countryOf: Int32Array,
+  adjacency: number[][],
+  countryCount: number
+): Int32Array {
+  const neighbors: Set<number>[] = Array.from({ length: countryCount }, () => new Set<number>());
+  for (let i = 0; i < countryOf.length; i++) {
+    const ci = countryOf[i];
+    if (ci < 0) continue;
+    for (const nb of adjacency[i]) {
+      const cj = countryOf[nb];
+      if (cj >= 0 && cj !== ci) {
+        neighbors[ci].add(cj);
+        neighbors[cj].add(ci);
+      }
+    }
+  }
+  const order = Array.from({ length: countryCount }, (_v, k) => k).sort(
+    (a, b) => neighbors[b].size - neighbors[a].size
+  );
+  const color = new Int32Array(countryCount).fill(-1);
+  for (const c of order) {
+    const used = new Set<number>();
+    for (const nb of neighbors[c]) if (color[nb] >= 0) used.add(color[nb]);
+    let chosen = 0;
+    while (chosen < 4 && used.has(chosen)) chosen++;
+    color[c] = chosen < 4 ? chosen : 0; // ≤4 suffices for a planar map; fall back if greedy overflows
+  }
+  return color;
+}

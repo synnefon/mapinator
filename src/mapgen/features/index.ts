@@ -4,9 +4,11 @@ import type { GlobeMap } from "../../common/map";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
 import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
+import { assignCities, type City } from "./cities";
 import {
   assignCountries,
   countryBorderSegments,
+  fourColorCountries,
   largestBorderingCountry,
 } from "./countries";
 import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
@@ -14,6 +16,7 @@ import { nameFeature } from "./name";
 import { subdivideOcean } from "./ocean";
 import { detectTerrainFeatures } from "./terrain";
 
+export type { City, CityTier } from "./cities";
 export { CLASSIFY, type FeatureKind } from "./classify";
 export { OCEAN_NAMING } from "./ocean";
 
@@ -42,8 +45,10 @@ export type CountryInfo = {
 export type MapFeatures = {
   features: MapFeature[];
   countries: CountryInfo[];
+  cities: City[]; // city markers — tier + zoom-gated, with interactive population popups
   borders: Float32Array; // flat [x0,y0,z0, x1,y1,z1, …] unit-sphere border segment pairs
   countryOf: Int32Array; // per cell: country index (matches CountryInfo.index), or -1 for ocean
+  countryColors: Int32Array; // per country index: a 0–3 colour class for the choropleth fill (4-colouring)
 };
 
 const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
@@ -82,6 +87,8 @@ export function computeMapFeatures(
     namer
   );
   const { countryOf, countries } = countryData;
+  const cities = assignCities(map, seaLevel, adjacency, countryOf, countries, mapSeed, namer);
+  const countryColors = fourColorCountries(countryOf, adjacency, countries.length);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of
   // its largest bordering country. Both fall back to the map language.
@@ -162,7 +169,9 @@ export function computeMapFeatures(
       anchor: siteVec(map, c.anchorCell),
       extent: c.extent,
     })),
+    cities,
     borders: countryBorderSegments(map, countryOf),
     countryOf,
+    countryColors,
   };
 }
