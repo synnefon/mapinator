@@ -4,13 +4,21 @@ import type { City } from "./mapgen/features";
 import { globeRadiusPx } from "./renderer/GlobeRenderer";
 
 // City markers are interactive DOM dots layered over the globe (so hover/click come for free),
-// reprojected each frame with the same projection as the canvas overlays. A dot's tier sets its size
-// and the zoom level it appears at; clicking opens the shared InfoPopup with the city's population.
+// reprojected each frame with the same projection as the canvas overlays. A dot's tier sets the zoom
+// level it appears at and its population sets its size; clicking opens the shared InfoPopup.
 const MIN_FRONT_Z = 0.04; // hide markers at/behind the visible limb (matches the other overlays)
 
+// Dot diameter encodes population: dot AREA ∝ population ⇒ diameter ∝ √population, clamped to a legible
+// range. Calibrated so a ~5k town (MIN_CITY_POP) reads small and a ≳250k metropolis hits the ceiling.
+const MIN_DOT_PX = 5;
+const MAX_DOT_PX = 20;
+const DOT_POP_SCALE = 0.03; // px per √person
+const dotDiameter = (population: number): number =>
+  Math.max(MIN_DOT_PX, Math.min(MAX_DOT_PX, MIN_DOT_PX + DOT_POP_SCALE * Math.sqrt(population)));
+
 /**
- * Manages the interactive city-marker layer: a positioned dot `<div>` per city (tier → CSS size class;
- * click → the shared info popup). Reprojected + zoom-gated each frame.
+ * Manages the interactive city-marker layer: a positioned dot `<div>` per city (population → dot size,
+ * tier → reveal zoom; click → the shared info popup). Reprojected + zoom-gated each frame.
  */
 export class CityMarkers {
   private readonly frame: HTMLElement;
@@ -30,6 +38,9 @@ export class CityMarkers {
     for (const city of cities) {
       const dot = document.createElement("div");
       dot.className = `city-marker ${city.tier}${city.isCapital ? " capital" : ""}`;
+      // Size by population (overrides the tier's CSS size); the tier class still drives the capital ring.
+      const d = dotDiameter(city.population);
+      dot.style.width = dot.style.height = `${d}px`;
       dot.style.display = "none";
       dot.addEventListener("click", (e) => {
         e.stopPropagation();

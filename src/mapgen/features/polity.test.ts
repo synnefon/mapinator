@@ -23,7 +23,7 @@ describe("generateGovernment", () => {
 });
 
 describe("estimatePopulation", () => {
-  const gov = { type: "republic", densityFactor: 1 };
+  const gov = { type: "republic", densityFactor: 1, govType: { word: "republic", tags: {} } };
   const ctx = (areaKm2: number, latitudeDeg = 40) => ({ areaKm2, latitudeDeg, government: gov, climate: 1, jitter: 0.5 });
 
   it("scales with area, all else equal", () => {
@@ -37,7 +37,7 @@ describe("estimatePopulation", () => {
 
   it("scales with the government's density factor", () => {
     const pop = (densityFactor: number) =>
-      estimatePopulation({ areaKm2: 1e6, latitudeDeg: 40, government: { type: "x", densityFactor }, climate: 1, jitter: 0.5 });
+      estimatePopulation({ areaKm2: 1e6, latitudeDeg: 40, government: { type: "x", densityFactor, govType: { word: "x", tags: {} } }, climate: 1, jitter: 0.5 });
     expect(pop(1.3)).toBeGreaterThan(pop(0.7));
   });
 

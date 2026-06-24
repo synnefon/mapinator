@@ -186,14 +186,14 @@ export const DIALS = {
   // Tunables for the political layer (mirrors the DIALS convention; live-editable).
   COUNTRY: {
     NUM_COUNTRIES: {
-      value: 50,
+      value: 56,
       min: 2,
       max: 80,
       step: 1,
       doc: "how many countries to place (one seed each, always on land)",
     },
     COUNTRY_CLUSTERING: {
-      value: 0.7,
+      value: 0.74,
       min: 0,
       max: 1,
       step: 0.01,
@@ -234,9 +234,9 @@ export const DIALS = {
     URBAN_FRACTION: {
       value: 0.1,
       min: 0,
-      max: 0.5,
-      step: 0.01,
-      doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10)",
+      max: 1,
+      step: 0.05,
+      doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10); higher = more and larger cities",
     },
   },
 

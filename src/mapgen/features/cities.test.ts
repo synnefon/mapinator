@@ -112,6 +112,29 @@ describe("assignCities", () => {
     }
   });
 
+  it("dialing up urban fraction yields more (and larger) cities", () => {
+    // Map + countries are independent of CITY.URBAN_FRACTION (cities read the live dial), so build once.
+    const map = new MapGenerator(SEED, PARAMS).generateMap(SETTINGS);
+    const adjacency = buildAdjacency(map);
+    const { countryOf, countries } = assignCountries(
+      map, seaLevel, adjacency, SEED, MAP_LANG, POOL, new NameGenerator("c")
+    );
+    const at = (frac: number) => {
+      const prev = CITY.URBAN_FRACTION.value;
+      CITY.URBAN_FRACTION.value = frac;
+      try {
+        const cities = assignCities(map, seaLevel, adjacency, countryOf, countries, SEED, new NameGenerator("c"));
+        return { count: cities.length, urban: cities.reduce((s, c) => s + c.population, 0) };
+      } finally {
+        CITY.URBAN_FRACTION.value = prev;
+      }
+    };
+    const low = at(0.05);
+    const high = at(0.4);
+    expect(high.count).toBeGreaterThan(low.count); // more cities
+    expect(high.urban).toBeGreaterThan(low.urban); // and a larger total urban population
+  });
+
   it("is deterministic for a fixed seed", () => {
     const a = build().cities;
     const b = build().cities;

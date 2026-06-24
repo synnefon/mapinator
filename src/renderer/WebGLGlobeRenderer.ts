@@ -1,7 +1,7 @@
 import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { CONTINENT, LOD, type MapSettings, type TerrainParams } from "../common/settings";
+import { CONTINENT, LOD, type MapSettings, OCEAN, type TerrainParams } from "../common/settings";
 import { GpuField } from "../mapgen/gpu/GpuField";
 import type { PlateData } from "../mapgen/gpu/plateData";
 import { computeCellColors, type ChoroplethTint } from "./BiomeColor";
@@ -147,9 +147,11 @@ in float vLimb;
 in vec3 vWorldDir;
 uniform float uAmbient;
 uniform float uElevationContrast;
+uniform float uSeaLevel;      // clip the choropleth tint to the patch's own (fine) coastline
 uniform sampler2D uColorLut;  // [contrasted-elevation, moisture] → biome rgb (bakes colorAt)
 uniform vec3 uIceColor;
 uniform sampler2D uCountryTex;
+uniform vec2 uCountryTexel; // gather step (≈ a couple texels) for the coastal tint dilation
 uniform float uChoropleth;
 out vec4 fragColor;
 // util.ts:applyContrast — raw elevation → contrasted, the LUT's elevation axis.
@@ -165,8 +167,30 @@ void main() {
   vec3 col = mix(biome, uIceColor, ice);
   vec3 dir = normalize(vWorldDir);
   vec2 uv = vec2(atan(dir.z, dir.x) * 0.15915494 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) * 0.31830989 + 0.5);
-  vec4 cc = texture(uCountryTex, uv);
-  col = mix(col, cc.rgb, cc.a * uChoropleth);
+  if (uChoropleth > 0.5) {
+    vec4 cc = texture(uCountryTex, uv);
+    if (elev >= uSeaLevel) {
+      // Fine-LAND: tint with the nearest COUNTRY hue. The choropleth is baked at coarse base-cell
+      // resolution, so where THIS patch's fine coast overhangs the coarse one the texel is the
+      // darkened-sea treatment (≈black) — dilate past it by taking the brightest hue in a small
+      // neighbourhood (country hues are bright, the sea is black) so the tint reaches the fine shore.
+      vec3 hue = cc.rgb;
+      float bright = dot(cc.rgb, vec3(1.0));
+      if (bright < 0.5) {
+        for (int dx = -1; dx <= 1; dx++) {
+          for (int dy = -1; dy <= 1; dy++) {
+            vec3 s = texture(uCountryTex, uv + vec2(float(dx), float(dy)) * uCountryTexel).rgb;
+            float b = dot(s, vec3(1.0));
+            if (b > bright) { bright = b; hue = s; }
+          }
+        }
+      }
+      if (bright > 0.5) col = mix(col, hue, 0.5); // LAND_BLEND
+    } else {
+      // Fine-WATER: the choropleth's darkened sea (so the tint stops at the sharp coastline).
+      col = mix(col, cc.rgb, cc.a);
+    }
+  }
   float limb = uAmbient + (1.0 - uAmbient) * clamp(vLimb, 0.0, 1.0);
   fragColor = vec4(col * limb * shade, 1.0);
 }`;
@@ -219,11 +243,13 @@ type PatchProgram = {
   uOffsetX: WebGLUniformLocation;
   uAmbient: WebGLUniformLocation;
   uElevationContrast: WebGLUniformLocation;
+  uSeaLevel: WebGLUniformLocation;
   uField: WebGLUniformLocation;
   uFieldWidth: WebGLUniformLocation;
   uColorLut: WebGLUniformLocation;
   uIceColor: WebGLUniformLocation;
   uCountryTex: WebGLUniformLocation;
+  uCountryTexel: WebGLUniformLocation;
   uChoropleth: WebGLUniformLocation;
 };
 
@@ -461,6 +487,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.uniform1f(p.uOffsetX, 2 * LOD.GLOBE_OFFSET_FRACTION);
     gl.uniform1f(p.uAmbient, AMBIENT);
     gl.uniform1f(p.uElevationContrast, CONTINENT.ELEVATION_CONTRAST.value);
+    gl.uniform1f(p.uSeaLevel, OCEAN.SEA_LEVEL.value);
     gl.uniform1i(p.uFieldWidth, field.width);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, geom.posBuf);
@@ -483,6 +510,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, (choropleth && st.countryTex) ? st.countryTex : st.colorLutTex);
     gl.uniform1i(p.uCountryTex, 2);
+    gl.uniform2f(p.uCountryTexel, 2 / COUNTRY_TEX_W, 2 / COUNTRY_TEX_H); // ~2-texel dilation reach
     gl.uniform1f(p.uChoropleth, choropleth && st.countryTex ? 1.0 : 0.0);
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geom.idxBuf);
@@ -513,11 +541,13 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       uOffsetX: uni("uOffsetX"),
       uAmbient: uni("uAmbient"),
       uElevationContrast: uni("uElevationContrast"),
+      uSeaLevel: uni("uSeaLevel"),
       uField: uni("uField"),
       uFieldWidth: uni("uFieldWidth"),
       uColorLut: uni("uColorLut"),
       uIceColor: uni("uIceColor"),
       uCountryTex: uni("uCountryTex"),
+      uCountryTexel: uni("uCountryTexel"),
       uChoropleth: uni("uChoropleth"),
     };
   }

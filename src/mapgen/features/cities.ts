@@ -29,7 +29,10 @@ const MIN_CITY_POP = 5_000;
 const TIER_MIN_LEVEL: Record<CityTier, number> = { big: 1, medium: 2, small: 3 };
 
 const MAX_CITIES_PER_COUNTRY = 16;
-const CITY_COUNT_SCALE = 250_000; // city count ≈ √(country population / scale); larger ⇒ fewer cities
+const CITY_COUNT_SCALE = 250_000; // city count ≈ √(urban population / scale); larger ⇒ fewer cities
+// The urban fraction the count scale is calibrated at: at this fraction the count matches the original
+// √(country population / scale), so the default map is unchanged while raising URBAN_FRACTION adds cities.
+const URBAN_FRACTION_REF = 0.1;
 const MAX_PLACEMENT_TRIES = 5; // distinct sites a city slot tries before giving up (too-high ground)
 // The capital is one of the largest few cities, with these odds by size rank (biggest first).
 const CAPITAL_RANK_WEIGHTS = [0.5, 0.25, 0.125, 0.125];
@@ -86,10 +89,13 @@ export function assignCities(
     const rng = makeRNG(`${mapSeed}|cities|${country.index}`);
 
     const urbanPop = urbanFraction * country.population;
+    // City COUNT scales with the URBAN population (not just total), so dialing URBAN_FRACTION up grows
+    // both the number of cities AND (via urbanPop's rank-size split in placeCities) their size.
+    // Dividing by URBAN_FRACTION_REF keeps the default fraction at the original √(population/scale) count.
     const nCities = Math.min(
       MAX_CITIES_PER_COUNTRY,
       cells.length,
-      Math.max(1, Math.round(Math.sqrt(country.population / CITY_COUNT_SCALE)))
+      Math.max(1, Math.round(Math.sqrt(urbanPop / (CITY_COUNT_SCALE * URBAN_FRACTION_REF))))
     );
     // `placed` is size-ordered (largest first). A slot with no low-enough site after MAX_PLACEMENT_TRIES
     // is dropped, so a country with nowhere habitable simply gets no city.
