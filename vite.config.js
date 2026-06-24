@@ -27,14 +27,16 @@ const tuneWizard = () => ({
     const settingsPath = resolve(server.config.root, "src/common/settings.ts");
     const htmlPath = resolve(server.config.root, "explorer.html");
     const sweepHtmlPath = resolve(server.config.root, "sweep.html");
+    const gpuSpikeHtmlPath = resolve(server.config.root, "gpu-spike.html");
 
     server.middlewares.use(async (req, res, next) => {
       const route = routeOf(req.url);
-      // /sweep — dev-only Mountain × Mountain Range image grid. No disk writes, so no loopback guard.
-      if (route === "/sweep") {
+      // /sweep + /gpu-spike — dev-only read-only harnesses (no disk writes → no loopback guard).
+      if (route === "/sweep" || route === "/gpu-spike") {
+        const path = route === "/sweep" ? sweepHtmlPath : gpuSpikeHtmlPath;
         const html = await server.transformIndexHtml(
           req.originalUrl ?? req.url,
-          readFileSync(sweepHtmlPath, "utf8")
+          readFileSync(path, "utf8")
         );
         res.setHeader("Content-Type", "text/html");
         res.end(html);
