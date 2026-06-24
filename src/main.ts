@@ -18,7 +18,9 @@ import { InfoPopup } from "./InfoPopup";
 import { drawCountries } from "./renderer/countryLayer";
 import { drawFeatureLabels } from "./renderer/featureLabels";
 import { drawPlateArrows } from "./renderer/plateArrows";
-import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
+import { createGlobeRenderer, WebGLGlobeRenderer, type GpuFieldInputs } from "./renderer/WebGLGlobeRenderer";
+import { buildPermTextureData } from "./mapgen/gpu/permTable";
+import { buildPlateData } from "./mapgen/gpu/plateData";
 import { sliderDefs, UIManager } from "./UIManager";
 
 // --- Setup & State ---
@@ -91,6 +93,22 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const globeRenderer = createGlobeRenderer();
+  // GPU detail-patch path: when the renderer is WebGL2 with a float render target, detail patches are
+  // generated MESH-ONLY (no CPU noise) and the renderer computes their field on the GPU + samples it
+  // (no readback). The base globe + saves stay CPU (canonical). gpuFieldInputs carries the per-seed
+  // perm/plate the GPU field needs; it's rebuilt whenever the seed or dials change.
+  const webglRenderer = globeRenderer instanceof WebGLGlobeRenderer ? globeRenderer : null;
+  const gpuPatches = webglRenderer !== null && WebGLGlobeRenderer.canRenderGpuPatches();
+  let gpuFieldInputs: GpuFieldInputs | null = null;
+  const rebuildGpuFieldInputs = (): void => {
+    if (!gpuPatches) return;
+    const params = snapshotParams();
+    gpuFieldInputs = {
+      params,
+      perm: buildPermTextureData(appState.mapName),
+      plate: buildPlateData(appState.mapName, params),
+    };
+  };
   // The live view orientation (world→view quaternion), driven by the orbit controls, lives on
   // appState (so it rides along in snapshot/restore) — see appState.orientation.
   // rAF handle for the north-align animation (see orientNorth); any user view change
@@ -210,6 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }),
     onReady: scheduleRender,
     maxInFlight: pool.size, // up to one concurrent generate per worker
+    detailGeometryOnly: gpuPatches, // GPU path: detail rungs are mesh-only; the renderer computes fields
   });
 
   const reseedWorker = (seed: string) => {
@@ -218,6 +237,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // dials, post-applyTuning), broadcast to EVERY worker. Per-worker postMessage ordering keeps it
     // ahead of that worker's first generate.
     pool.configure({ seed, params: snapshotParams() });
+    rebuildGpuFieldInputs(); // GPU patch field uses the same seed + dials as the worker
   };
 
   // Seed every worker before the first generate (per-worker postMessage ordering keeps it first).
@@ -334,8 +354,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // globe under the patch.
     globeRenderer.draw(canvas, baseMap, appState.settings, appState.orientation, true, overlay?.cap, choropleth);
     if (overlay) {
-      // Pass the same tint so the detail patch samples the country texture too (follows at any zoom).
-      globeRenderer.draw(canvas, overlay, appState.settings, appState.orientation, false, undefined, choropleth);
+      // GPU path ON: the patch is mesh-only (no CPU fields), so the renderer MUST compute its field on
+      // the GPU + sample it (no readback). The probe (canRenderGpuPatches) guarantees the shaders
+      // compile, so this won't fail; if it ever does, skip the patch rather than CPU-draw garbage.
+      // GPU path OFF: the patch carries CPU fields → the normal CPU draw. Tint follows at any zoom.
+      if (gpuPatches) {
+        if (gpuFieldInputs) {
+          webglRenderer!.drawPatchGpu(canvas, overlay, gpuFieldInputs, appState.settings, appState.orientation, choropleth);
+        }
+      } else {
+        globeRenderer.draw(canvas, overlay, appState.settings, appState.orientation, false, undefined, choropleth);
+      }
     }
     // Plate-motion arrows: a 2D overlay, drawn only with the plate view on (geometry is sampled in
     // the worker; here we just project it to match the active renderer's offset). Otherwise wipe it.
@@ -461,6 +490,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Generation dials + features → worker as a params snapshot (no seed change). snapshotParams()
     // reads the dials applyTuning just wrote, plus the live FEATURES.
     pool.configure({ params: snapshotParams() });
+    rebuildGpuFieldInputs(); // dials changed → rebuild the GPU patch field inputs (plate set, params)
     pipeline.reset();
     ensureMap();
   }

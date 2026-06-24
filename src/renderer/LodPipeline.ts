@@ -63,6 +63,7 @@ export type GenRequest = {
   center: Vec3;
   halfAngle: number; // ≥ π ⇒ the whole globe (rung 0); smaller ⇒ a detail cap
   points: number;
+  geometryOnly?: boolean; // detail rungs only, GPU path: mesh without per-cell fields (GPU samples them)
 };
 
 /** The current view's LOD rung, derived from zoom + orientation. level 0 = whole globe. */
@@ -92,6 +93,9 @@ export type LodDeps = {
   onReady: () => void;
   /** Max generate jobs in flight at once — the worker-pool size. Defaults to 1 (serial). */
   maxInFlight?: number;
+  /** GPU path: when true, detail rungs (level ≥1) are generated mesh-only (no CPU field sampling) and
+   *  the renderer computes their fields on the GPU. The globe (rung 0) is always full. Default false. */
+  detailGeometryOnly?: boolean;
 };
 
 export type LodPipeline = {
@@ -112,6 +116,7 @@ export type LodPipeline = {
 export function createLodPipeline(deps: LodDeps): LodPipeline {
   const { postGenerate, getView, onReady } = deps;
   const maxInFlight = Math.max(1, deps.maxInFlight ?? 1); // worker-pool size; 1 = serial (default)
+  const detailGeometryOnly = deps.detailGeometryOnly ?? false;
   const LOD_LEVELS: LodLevel[] = buildLodLevels();
 
   // Bumped on every seed/tuning change; results tagged with a stale epoch are dropped so an
@@ -287,6 +292,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
         center: spec.center,
         halfAngle: spec.halfAngle,
         points: spec.points,
+        geometryOnly: job.level >= 1 && detailGeometryOnly,
       }).then((map) => {
         lodActive.delete(job.key);
         if (epoch === seedEpoch) {

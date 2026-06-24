@@ -1,10 +1,16 @@
 import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { LOD, type MapSettings } from "../common/settings";
+import { CONTINENT, LOD, type MapSettings, type TerrainParams } from "../common/settings";
+import { GpuField } from "../mapgen/gpu/GpuField";
+import type { PlateData } from "../mapgen/gpu/plateData";
 import { computeCellColors, type ChoroplethTint } from "./BiomeColor";
+import { buildColorLut, COLOR_LUT_SIZE, iceColorRgb } from "./colorLut";
 import { bakeCountryTexture, COUNTRY_TEX_H, COUNTRY_TEX_W } from "./countryTexture";
 import { GlobeRenderer, globeRadiusPx } from "./GlobeRenderer";
+
+/** Per-seed inputs the GPU patch path needs to compute the field (built main-side from the seed). */
+export type GpuFieldInputs = { params: TerrainParams; perm: Float32Array; plate: PlateData };
 
 /** The spherical cap occluded by an overlaid patch (accepted for interface parity;
  * the WebGL path resolves overlap with the depth buffer instead — see `draw`). */
@@ -103,6 +109,68 @@ void main() {
   fragColor = vec4(base * shade * vTerrain, 1.0);
 }`;
 
+// --- GPU detail-patch path (no readback): the field is computed on this context into a texture
+// (GpuField), and these shaders sample it per cell + a baked colour LUT, so no per-cell colour/shade
+// is uploaded and the worker never runs the CPU noise. Used only for mesh-only detail patches.
+const PATCH_VERT_SRC = `#version 300 es
+precision highp float;
+precision highp int;
+layout(location = 0) in vec3 aPos;       // unit-sphere ring vertex
+layout(location = 1) in uint aCellIndex; // which cell this vertex belongs to (→ field texel)
+uniform vec4 uQuat;
+uniform vec2 uViewport;
+uniform float uRadius;
+uniform float uDepthBias;
+uniform float uOffsetX;
+uniform highp sampler2D uField; // RGBA32F per-cell field: (elevation, moisture, ice, shade)
+uniform int uFieldWidth;
+flat out vec4 vField;           // per-cell, so flat (no interpolation across the cell)
+out float vLimb;                // view-space z → limb darkening
+out vec3 vWorldDir;             // un-rotated direction → country choropleth sample
+vec3 qrot(vec4 q, vec3 v) { vec3 t = 2.0 * cross(q.xyz, v); return v + q.w * t + cross(q.xyz, t); }
+void main() {
+  vec3 r = qrot(uQuat, aPos);
+  float ndcX = 2.0 * uRadius * r.x / uViewport.x + uOffsetX;
+  float ndcY = 2.0 * uRadius * r.y / uViewport.y;
+  float ndcZ = -r.z * ${Z_SQUASH.toFixed(3)} - uDepthBias;
+  gl_Position = vec4(ndcX, ndcY, ndcZ, 1.0);
+  int idx = int(aCellIndex);
+  vField = texelFetch(uField, ivec2(idx % uFieldWidth, idx / uFieldWidth), 0);
+  vLimb = r.z;
+  vWorldDir = aPos;
+}`;
+
+const PATCH_FRAG_SRC = `#version 300 es
+precision highp float;
+flat in vec4 vField;
+in float vLimb;
+in vec3 vWorldDir;
+uniform float uAmbient;
+uniform float uElevationContrast;
+uniform sampler2D uColorLut;  // [contrasted-elevation, moisture] → biome rgb (bakes colorAt)
+uniform vec3 uIceColor;
+uniform sampler2D uCountryTex;
+uniform float uChoropleth;
+out vec4 fragColor;
+// util.ts:applyContrast — raw elevation → contrasted, the LUT's elevation axis.
+float applyContrast(float v, float contrast) {
+  float t = clamp(contrast, 0.0, 1.0);
+  float u = 2.0 * v - 1.0;
+  float e = t <= 0.5 ? mix(3.0, 1.0, t / 0.5) : mix(1.0, 0.2, (t - 0.5) / 0.5);
+  return clamp((sign(u) * pow(abs(u), e) + 1.0) * 0.5, 0.0, 1.0);
+}
+void main() {
+  float elev = vField.r, moist = vField.g, ice = vField.b, shade = vField.a;
+  vec3 biome = texture(uColorLut, vec2(applyContrast(elev, uElevationContrast), moist)).rgb;
+  vec3 col = mix(biome, uIceColor, ice);
+  vec3 dir = normalize(vWorldDir);
+  vec2 uv = vec2(atan(dir.z, dir.x) * 0.15915494 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) * 0.31830989 + 0.5);
+  vec4 cc = texture(uCountryTex, uv);
+  col = mix(col, cc.rgb, cc.a * uChoropleth);
+  float limb = uAmbient + (1.0 - uAmbient) * clamp(vLimb, 0.0, 1.0);
+  fragColor = vec4(col * limb * shade, 1.0);
+}`;
+
 type GeomEntry = {
   // Positions ARE the map's ring vertices, uploaded as-is (no fan expansion); idxBuf fans
   // each cell ring. Colour is a per-vertex palette INDEX (u16) resolved against palTex.
@@ -134,7 +202,35 @@ type GLState = {
   // Per-map GPU buffers, LRU-evicted by total bytes so GPU memory stays bounded.
   geom: Map<GlobeMap, GeomEntry>;
   geomBytes: number;
+  // GPU detail-patch path (lazy: `undefined` = not tried yet, `null` = unavailable on this device).
+  patch?: PatchProgram | null;
+  gpuField?: GpuField | null;
+  colorLutTex: WebGLTexture | null;
+  colorLutKey: string | null;
+  patchGeom: Map<GlobeMap, PatchGeomEntry>; // pos + fan idx + per-vertex cell index, LRU by count
 };
+
+type PatchProgram = {
+  program: WebGLProgram;
+  uQuat: WebGLUniformLocation;
+  uViewport: WebGLUniformLocation;
+  uRadius: WebGLUniformLocation;
+  uDepthBias: WebGLUniformLocation;
+  uOffsetX: WebGLUniformLocation;
+  uAmbient: WebGLUniformLocation;
+  uElevationContrast: WebGLUniformLocation;
+  uField: WebGLUniformLocation;
+  uFieldWidth: WebGLUniformLocation;
+  uColorLut: WebGLUniformLocation;
+  uIceColor: WebGLUniformLocation;
+  uCountryTex: WebGLUniformLocation;
+  uChoropleth: WebGLUniformLocation;
+};
+
+type PatchGeomEntry = { posBuf: WebGLBuffer; idxBuf: WebGLBuffer; cellIdxBuf: WebGLBuffer; indexCount: number };
+
+// Detail patches are transient (re-derived on zoom) and large, so keep only a few resident.
+const PATCH_GEOM_CACHE_CAP = 4;
 
 /**
  * WebGL2 globe renderer: the static cell mesh lives in GPU buffers; each frame is a
@@ -160,6 +256,23 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       const gl = document.createElement("canvas").getContext("webgl2");
       if (!gl) return false;
       gl.deleteProgram(linkProgram(gl, VERT_SRC, FRAG_SRC));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Whether the GPU detail-patch path is usable here: WebGL2 + a float render target (probed by
+   *  actually constructing a GpuField on a throwaway canvas). Decided up front so generation knows
+   *  whether to build detail rungs mesh-only (no CPU field sampling). */
+  static canRenderGpuPatches(): boolean {
+    try {
+      const gl = document.createElement("canvas").getContext("webgl2");
+      if (!gl) return false;
+      const field = GpuField.create(gl); // float render target + the field shader
+      if (!field) return false;
+      field.dispose();
+      gl.deleteProgram(linkProgram(gl, PATCH_VERT_SRC, PATCH_FRAG_SRC)); // and the patch program compiles
       return true;
     } catch {
       return false;
@@ -288,9 +401,155 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       countryKey: null,
       geom: new Map(),
       geomBytes: 0,
+      colorLutTex: null,
+      colorLutKey: null,
+      patchGeom: new Map(),
     };
     this.states.set(canvas, state);
     return state;
+  }
+
+  /**
+   * Draw a mesh-only detail patch by computing its field on the GPU (no readback) and sampling it +
+   * a baked colour LUT in the shader — so the worker never ran the CPU noise and nothing round-trips.
+   * Returns false if the GPU field path is unavailable here (no WebGL2 float RT), so the caller falls
+   * back to the normal CPU `draw`. Drawn as an overlay (no clear, biased toward the camera).
+   */
+  public drawPatchGpu(
+    canvas: HTMLCanvasElement,
+    map: GlobeMap,
+    inputs: GpuFieldInputs,
+    settings: MapSettings,
+    orientation: Quat,
+    choropleth?: ChoroplethTint
+  ): boolean {
+    const st = this.getState(canvas);
+    const { gl } = st;
+    if (st.gpuField === undefined) st.gpuField = GpuField.create(gl);
+    if (!st.gpuField || !st.gpuField.fits(map.cellCount)) return false;
+    if (st.patch === undefined) st.patch = this.buildPatchProgram(gl);
+    if (!st.patch) return false;
+
+    const geom = this.getPatchGeom(st, map);
+    if (geom.indexCount === 0) return false;
+
+    // Colour LUT (bakes colorAt for this theme + rainfall); rebuilt only when those change.
+    const lutKey = `${settings.theme}|${map.rainfall}`;
+    if (st.colorLutKey !== lutKey || !st.colorLutTex) {
+      const data = buildColorLut(settings.theme, map.rainfall);
+      st.colorLutTex ??= gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, st.colorLutTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, COLOR_LUT_SIZE, COLOR_LUT_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      st.colorLutKey = lutKey;
+    }
+
+    // Compute the field into a GPU texture (no readback). Restores DEPTH_TEST for our draw.
+    const field = st.gpuField.renderToTexture(map.sites, inputs.params, inputs.perm, inputs.plate);
+
+    const p = st.patch;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.enable(gl.DEPTH_TEST);
+    gl.useProgram(p.program);
+    gl.uniform4f(p.uQuat, orientation.x, orientation.y, orientation.z, orientation.w);
+    gl.uniform2f(p.uViewport, canvas.width, canvas.height);
+    gl.uniform1f(p.uRadius, globeRadiusPx(canvas, settings.zoom));
+    gl.uniform1f(p.uDepthBias, PATCH_DEPTH_BIAS); // overlay: bias toward the camera over the base
+    gl.uniform1f(p.uOffsetX, 2 * LOD.GLOBE_OFFSET_FRACTION);
+    gl.uniform1f(p.uAmbient, AMBIENT);
+    gl.uniform1f(p.uElevationContrast, CONTINENT.ELEVATION_CONTRAST.value);
+    gl.uniform1i(p.uFieldWidth, field.width);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, geom.posBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, geom.cellIdxBuf);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_INT, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, field.texture);
+    gl.uniform1i(p.uField, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, st.colorLutTex);
+    gl.uniform1i(p.uColorLut, 1);
+    const [ir, ig, ib] = iceColorRgb(settings.theme);
+    gl.uniform3f(p.uIceColor, ir, ig, ib);
+
+    // Country choropleth: reuse the texture the base pass baked this frame (it draws first).
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, (choropleth && st.countryTex) ? st.countryTex : st.colorLutTex);
+    gl.uniform1i(p.uCountryTex, 2);
+    gl.uniform1f(p.uChoropleth, choropleth && st.countryTex ? 1.0 : 0.0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, geom.idxBuf);
+    gl.drawElements(gl.TRIANGLES, geom.indexCount, gl.UNSIGNED_INT, 0);
+    return true;
+  }
+
+  // Compile the patch program (returns null on failure → caller falls back to the CPU path).
+  private buildPatchProgram(gl: WebGL2RenderingContext): PatchProgram | null {
+    let program: WebGLProgram;
+    try {
+      program = linkProgram(gl, PATCH_VERT_SRC, PATCH_FRAG_SRC);
+    } catch (e) {
+      console.error("patch program failed:", e);
+      return null;
+    }
+    const uni = (name: string): WebGLUniformLocation => {
+      const loc = gl.getUniformLocation(program, name);
+      if (!loc) throw new Error(`missing patch uniform ${name}`);
+      return loc;
+    };
+    return {
+      program,
+      uQuat: uni("uQuat"),
+      uViewport: uni("uViewport"),
+      uRadius: uni("uRadius"),
+      uDepthBias: uni("uDepthBias"),
+      uOffsetX: uni("uOffsetX"),
+      uAmbient: uni("uAmbient"),
+      uElevationContrast: uni("uElevationContrast"),
+      uField: uni("uField"),
+      uFieldWidth: uni("uFieldWidth"),
+      uColorLut: uni("uColorLut"),
+      uIceColor: uni("uIceColor"),
+      uCountryTex: uni("uCountryTex"),
+      uChoropleth: uni("uChoropleth"),
+    };
+  }
+
+  // Geometry for a GPU patch: positions (ring verts) + fan indices + per-vertex cell index. No colour
+  // buffers (the shader colours from the field texture). Small count-based LRU (patches are transient).
+  private getPatchGeom(st: GLState, map: GlobeMap): PatchGeomEntry {
+    const { gl } = st;
+    const existing = st.patchGeom.get(map);
+    if (existing) {
+      st.patchGeom.delete(map);
+      st.patchGeom.set(map, existing);
+      return existing;
+    }
+    const { indices, indexCount } = buildIndices(map);
+    const entry: PatchGeomEntry = {
+      posBuf: makeBuffer(gl, gl.ARRAY_BUFFER, map.ringVerts),
+      idxBuf: makeBuffer(gl, gl.ELEMENT_ARRAY_BUFFER, indices),
+      cellIdxBuf: makeBuffer(gl, gl.ARRAY_BUFFER, buildCellIndices(map)),
+      indexCount,
+    };
+    st.patchGeom.set(map, entry);
+    while (st.patchGeom.size > PATCH_GEOM_CACHE_CAP) {
+      const oldest = st.patchGeom.keys().next().value;
+      if (oldest === undefined || oldest === map) break;
+      const e = st.patchGeom.get(oldest)!;
+      gl.deleteBuffer(e.posBuf);
+      gl.deleteBuffer(e.idxBuf);
+      gl.deleteBuffer(e.cellIdxBuf);
+      st.patchGeom.delete(oldest);
+    }
+    return entry;
   }
 
   /**
@@ -401,6 +660,17 @@ function buildColorIndices(map: GlobeMap, colorIdx: Int32Array): Uint16Array {
   for (let i = 0; i < cellCount; i++) {
     const ci = colorIdx[i];
     for (let v = ringOffsets[i]; v < ringOffsets[i + 1]; v++) out[v] = ci;
+  }
+  return out;
+}
+
+/** One u32 cell index per ring vertex (every vertex of a cell carries the cell's index), in
+ *  ring-vertex order — the GPU patch shader uses it to fetch the cell's field texel. */
+function buildCellIndices(map: GlobeMap): Uint32Array {
+  const { ringOffsets, cellCount } = map;
+  const out = new Uint32Array(map.ringVerts.length / 3);
+  for (let i = 0; i < cellCount; i++) {
+    for (let v = ringOffsets[i]; v < ringOffsets[i + 1]; v++) out[v] = i;
   }
   return out;
 }

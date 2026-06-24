@@ -15,6 +15,7 @@ type WorkerRequest =
       center: Vec3;
       halfAngle: number;
       points: number;
+      geometryOnly?: boolean; // mesh only (no per-cell field sampling) — the GPU computes fields
     };
 
 // `self` is typed as Window under the DOM lib; cast to Worker for the dedicated-
@@ -40,7 +41,7 @@ ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
   }
   if (!gen) return; // a generate arrived before any config — shouldn't happen
 
-  const map = gen.generate(req.center, req.halfAngle, req.points);
+  const map = gen.generate(req.center, req.halfAngle, req.points, undefined, req.geometryOnly);
 
   // The typed arrays are freshly built per call, so transfer their buffers
   // zero-copy — the worker keeps no reference once posted.

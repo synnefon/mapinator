@@ -85,16 +85,19 @@ export class MapGenerator {
     center: Vec3,
     halfAngle: number,
     points: number,
-    continentalnessOverride?: number
+    continentalnessOverride?: number,
+    geometryOnly = false
   ): GlobeMap {
     // Whole globe: the full mesh (cached by level). Nothing globe-wide is (re)built here — rung 0
-    // is exactly "coarse mesh + per-cell fields," no heavier than any other rung.
+    // is exactly "coarse mesh + per-cell fields," no heavier than any other rung. The globe is the
+    // canonical CPU field (feature detection + saves depend on it), so it is never geometryOnly.
     if (halfAngle >= Math.PI) {
       const mesh = this.getMesh(points);
-      return this.packMesh(mesh, points, continentalnessOverride);
+      return this.packMesh(mesh, points, continentalnessOverride, undefined, false);
     }
     // Detail cap at a finer subdivision than the global mesh. Cells outside the inset cap, and
-    // incomplete-ring boundary cells, are dropped inside the mesher.
+    // incomplete-ring boundary cells, are dropped inside the mesher. `geometryOnly` skips the per-cell
+    // field sampling — the GPU path computes those fields on the renderer's context (no CPU noise).
     const keepHalfAngle = halfAngle * MESH.LOCAL_KEEP_FRACTION;
     const mesh = goldbergCapMesh(center, keepHalfAngle, goldbergCapLevel(points));
     // Cap (inset) the renderer uses to skip global base cells hidden by this patch.
@@ -104,7 +107,7 @@ export class MapGenerator {
         Math.max(0, keepHalfAngle - (MESH.OCCLUSION_MARGIN_DEG * Math.PI) / 180)
       ),
     };
-    return this.packMesh(mesh, mesh.length, continentalnessOverride, cap);
+    return this.packMesh(mesh, mesh.length, continentalnessOverride, cap, geometryOnly);
   }
 
   /** Whole-globe map at a resolution's point count — thin adapter over `generate` for the /sweep +
@@ -138,7 +141,8 @@ export class MapGenerator {
     cells: MeshCell[],
     pointCount: number,
     continentalnessOverride: number | undefined,
-    cap?: { center: Vec3; cosKeep: number }
+    cap?: { center: Vec3; cosKeep: number },
+    geometryOnly = false
   ): GlobeMap {
     const n = cells.length;
     let totalVerts = 0;
@@ -175,12 +179,15 @@ export class MapGenerator {
         if (d2 > maxChord2) maxChord2 = d2;
         vo++;
       }
-      const cell = this.elevationCalc.sampleCell(site, continentalnessOverride);
-      elevation[i] = cell.elevation;
-      moisture[i] = cell.moisture;
-      ice[i] = cell.ice;
-      shade[i] = cell.shade;
-      plate[i] = cell.plate;
+      // geometryOnly: leave the field arrays zeroed — the GPU computes them on the renderer's context.
+      if (!geometryOnly) {
+        const cell = this.elevationCalc.sampleCell(site, continentalnessOverride);
+        elevation[i] = cell.elevation;
+        moisture[i] = cell.moisture;
+        ice[i] = cell.ice;
+        shade[i] = cell.shade;
+        plate[i] = cell.plate;
+      }
     }
     ringOffsets[n] = vo;
 

@@ -89,15 +89,67 @@ export class GpuField {
 
   /**
    * Compute the full field for `sites` (length n*3, xyz per cell) under `params`, using the seed's
-   * permutation table `perm` (512×4) and plate set `plate`. Returns the n-length channels + timing.
+   * permutation table `perm` (512×4) and plate set `plate`, then READ IT BACK. For validation /
+   * benchmarking; the renderer uses renderToTexture (no readback). Returns the channels + timing.
    */
   compute(sites: Float32Array, params: TerrainParams, perm: Float32Array, plate: PlateData): GpuFieldResult {
+    const gl = this.gl;
+    const { width, height, count, upload, render } = this.render(sites, params, perm, plate);
+
+    const t2 = now();
+    const dst = this.dstBuf!;
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
+    const elevation = new Float32Array(count);
+    const moisture = new Float32Array(count);
+    const ice = new Float32Array(count);
+    const shade = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      elevation[i] = dst[4 * i];
+      moisture[i] = dst[4 * i + 1];
+      ice[i] = dst[4 * i + 2];
+      shade[i] = dst[4 * i + 3];
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const readback = now() - t2;
+
+    return {
+      fields: { elevation, moisture, ice, shade },
+      width,
+      height,
+      timing: { upload, render, readback, total: upload + render + readback },
+    };
+  }
+
+  /**
+   * Compute the full field and LEAVE IT on the GPU as a texture (no readback) — the renderer's path.
+   * Returns the RGBA32F field texture (texel = one cell's [elevation, moisture, ice, shade]) plus the
+   * texture width and cell count, so the draw shader can map a cell index → texel. The texture is
+   * owned by this GpuField (valid until the next render/dispose); the caller must use it before then.
+   */
+  renderToTexture(
+    sites: Float32Array,
+    params: TerrainParams,
+    perm: Float32Array,
+    plate: PlateData
+  ): { texture: WebGLTexture; width: number; count: number } {
+    const { width, count } = this.render(sites, params, perm, plate);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    return { texture: this.outTex!, width, count };
+  }
+
+  // Shared upload + render into this.outTex (the FBO colour attachment). Saves/restores DEPTH_TEST so
+  // it composes with a renderer that keeps depth testing on for its globe draws. Leaves the FBO bound.
+  private render(
+    sites: Float32Array,
+    params: TerrainParams,
+    perm: Float32Array,
+    plate: PlateData
+  ): { width: number; height: number; count: number; upload: number; render: number } {
     const gl = this.gl;
     const n = (sites.length / 3) | 0;
     const { width, height, fits } = fieldTextureDims(n, this.maxTex);
     if (!fits) throw new Error(`GpuField: ${n} cells exceed a ${this.maxTex}-wide strip (tiling not implemented)`);
 
-    // --- upload: sites (RGBA32F), perm table, and plate seeds/poles ---
     const t0 = now();
     this.ensureTextures(width, height);
     this.uploadPerm(perm);
@@ -112,7 +164,8 @@ export class GpuField {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, src);
     const t1 = now();
 
-    // --- render: one fragment per cell runs the full field; gl.finish() forces GPU completion ---
+    const depthWasOn = gl.getParameter(gl.DEPTH_TEST) as boolean;
+    gl.disable(gl.DEPTH_TEST); // the field is a flat pass to a depthless FBO
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
     gl.viewport(0, 0, width, height);
     gl.useProgram(this.program);
@@ -126,30 +179,9 @@ export class GpuField {
     this.setUniforms(params, plate.count, width, n);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.finish();
-    const t2 = now();
-
-    // --- readback: pull RGBA32F back, unpack the 4 channels ---
-    const dst = this.dstBuf!;
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
-    const elevation = new Float32Array(n);
-    const moisture = new Float32Array(n);
-    const ice = new Float32Array(n);
-    const shade = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      elevation[i] = dst[4 * i];
-      moisture[i] = dst[4 * i + 1];
-      ice[i] = dst[4 * i + 2];
-      shade[i] = dst[4 * i + 3];
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const t3 = now();
-
-    return {
-      fields: { elevation, moisture, ice, shade },
-      width,
-      height,
-      timing: { upload: t1 - t0, render: t2 - t1, readback: t3 - t2, total: t3 - t0 },
-    };
+    gl.bindVertexArray(null);
+    if (depthWasOn) gl.enable(gl.DEPTH_TEST);
+    return { width, height, count: n, upload: t1 - t0, render: now() - t1 };
   }
 
   dispose(): void {

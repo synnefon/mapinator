@@ -3,7 +3,7 @@
 | | |
 | :---- | :---- |
 | Author | Claude (paired with Connor) |
-| Status | Work item 1 (GPU spike): **COMPLETE**. Full per-cell field (elevation+mountains, moisture, ice, shade) now ported to GLSL + seeded to MATCH the CPU (validated, RMS ~1e-6); see "Findings". Remaining: render-path integration (no-readback patch shader + LOD wiring). Work item 2 (choropleth re-grow): NOT STARTED — next. |
+| Status | Work item 1 (GPU spike): **COMPLETE + SHIPPED**. Full per-cell field ported to GLSL + seeded to MATCH the CPU (RMS ~1e-6), AND wired live: detail patches generate mesh-only (no CPU noise) and render by sampling a GPU field texture + colour LUT (no readback), CPU canonical for the base globe + saves. Verified in-app (globe intact; zoomed patch renders correct, globe-consistent terrain; GPU path confirmed active). Work item 2 (choropleth re-grow): NOT STARTED — next. |
 | Scope | Two independent follow-ups: (1) a spike on moving terrain generation to the GPU; (2) sharpening the country choropleth as you zoom, via border re-grow. |
 
 Two independent work items — do them in either order.
@@ -122,16 +122,24 @@ the readback round-trip:
    patch↔globe consistency is already solved by the exact-noise port; the open issue is only float32
    variation *across* GPUs, which is invisible while the CPU globe stays canonical.)
 
-### Remaining work to ship the accelerator
+### Shipped: the no-readback accelerator (all wired + verified in-app)
 
-Generation is DONE on the GPU and validated. What's left is the live render-path integration:
+1. ~~Generate the detail patch's field on the GPU.~~ **DONE** — `GpuField` (full RGBA field).
+2. ~~Field stays a GPU texture the patch shader samples (no readback), `BiomeColor` → colour LUT.~~
+   **DONE** — `WebGLGlobeRenderer.drawPatchGpu` + a second program: per-vertex cell index → sample the
+   field texture (`GpuField.renderToTexture`) → `applyContrast` → colour LUT (`colorLut.ts`, bakes
+   `colorAt`) → ice mix → shade × limb × choropleth. The base globe's `draw` path is untouched.
+3. ~~Wire into `LodPipeline` + CPU fallback.~~ **DONE** — detail rungs request `geometryOnly`
+   (`MapGenerator.packMesh` skips `sampleCell`) when `WebGLGlobeRenderer.canRenderGpuPatches()`; the
+   base globe (rung 0) stays full CPU (canonical → feature detection + saves). No float-RT device →
+   `gpuPatches` is false → detail rungs keep CPU fields + the normal `draw` (graceful fallback).
+4. ~~Port the MOUNTAIN/TECTONIC term to GLSL.~~ **DONE** — `plateData.ts` + tectonic GLSL match `Tectonics`.
 
-1. ~~Generate the detail patch's field on the GPU.~~ **DONE** — `GpuField` computes the full RGBA field.
-2. Keep the field as a **GPU texture the patch shader samples** (no readback), moving `BiomeColor` into
-   the shader via a baked colour LUT (contrasted-elevation × moisture → rgb). Touches `WebGLGlobeRenderer`.
-3. Wire into `LodPipeline` with a **CPU fallback** (no WebGL2 / `EXT_color_buffer_float`), keeping the
-   CPU canonical for the base globe + saves. Worker builds the patch mesh; main runs the GPU field pass.
-4. ~~Port the MOUNTAIN/TECTONIC term to GLSL.~~ **DONE** — `plateData.ts` + the tectonic GLSL match `Tectonics`.
+**In-app verification** (headless Chrome, Apple M5 Pro/Metal): globe renders unchanged; zooming in
+produces a mesh-only patch that the GPU path renders as correct, globe-consistent terrain (ocean
+depth, coastline, mountains, ice, labels); `gpuPatches` confirmed true; no console/shader errors.
+Net effect: detail-patch generation no longer runs the CPU noise (the ~12 s/11M cost) and nothing
+round-trips — the field is computed on the GPU and sampled in place.
 
 ### Files (prototype + harness)
 
@@ -144,15 +152,22 @@ Generation is DONE on the GPU and validated. What's left is the live render-path
   line-for-line, + the sites-texture→render→RGBA(elevation,moisture,ice,shade) program.
 - `src/mapgen/gpu/plateData.ts` (+ `.test.ts`) — builds the seed's plate seeds + Euler poles to match
   `Tectonics` (uploaded so the GPU's mountains land where the CPU's do); test pins it to `Tectonics.seeds()`.
-- `src/mapgen/gpu/GpuField.ts` — the WebGL2 sampler (upload sites + perm + plates → render → readback the 4 fields).
+- `src/mapgen/gpu/GpuField.ts` — the WebGL2 sampler: `compute` (readback, for the harness) +
+  `renderToTexture` (no readback, for the renderer).
 - `src/mapgen/gpu/cpuField.ts` — the real `ElevationCalculator.sampleCell` computing the same fields (baseline).
 - `src/mapgen/gpu/gpuProbeWorker.ts` — the worker WebGL2 probe (Step 1).
 - `src/mapgen/gpu/gpuFieldLayout.ts` (+ `.test.ts`) — pure output-texture-dimensions helper (unit-tested).
 - `src/gpu-spike.ts` + `gpu-spike.html` — the `/gpu-spike` harness (route added in `vite.config.js`).
 
-> Everything above is self-contained: the live generation pipeline (worker pool, `MapGenerator`,
-> `ElevationCalculator`) is still **unchanged** — the GPU field is validated off to the side in the
-> harness. The render-path integration (Remaining work #2–#3) is what touches the live code.
+Live-path integration (the shipped accelerator):
+
+- `src/renderer/colorLut.ts` (+ `.test.ts`) — bakes `colorAt` into the colour LUT the patch shader samples.
+- `src/renderer/WebGLGlobeRenderer.ts` — adds `drawPatchGpu` + the patch program + `canRenderGpuPatches`
+  (the base `draw` path is unchanged).
+- `src/mapgen/MapGenerator.ts` + `src/mapgen/mapWorker.ts` — `geometryOnly` (skip `sampleCell` for GPU patches).
+- `src/renderer/LodPipeline.ts` — `detailGeometryOnly` threads `geometryOnly` to detail rungs only.
+- `src/main.ts` — detects `gpuPatches`, builds per-seed `GpuFieldInputs` (perm + plates), routes detail
+  patches to `drawPatchGpu` (CPU `draw` fallback when off).
 
 ## Current architecture (read these first)
 
