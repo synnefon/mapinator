@@ -70,7 +70,7 @@ function makeDialTooltip(): (el: HTMLElement, doc: string) => void {
 export function setupAdvancedPanel(opts: {
   appState: AppState;
   onChange: () => void; // raw regen trigger; debounced here for slider drags
-  onViewChange: () => void; // re-render only (no regen) — for view overlays like "view plates"
+  onViewChange: () => void; // re-render only (no regen) — for view overlays like "tectonic plates"
 }): AdvancedHandle {
   const { appState, onChange, onViewChange } = opts;
   const panel = document.getElementById("advancedPanel");
@@ -309,7 +309,7 @@ export function setupAdvancedPanel(opts: {
   {
     const details = document.createElement("details");
     details.className = "adv-group";
-    details.open = false;
+    details.open = true;
 
     const summary = document.createElement("summary");
     const title = document.createElement("span");
@@ -343,7 +343,9 @@ export function setupAdvancedPanel(opts: {
     const rows = ordered.map((layer) => {
       const row = document.createElement("label");
       row.className = "adv-row adv-toggle";
-      if (layer.doc) showDoc(row, layer.doc);
+      if (layer.doc) {
+        showDoc(row, layer.doc);
+      }
       const box = document.createElement("input");
       box.type = "checkbox";
       const sync = () => void (box.checked = layerIsOn(layer));
@@ -381,7 +383,8 @@ export function setupAdvancedPanel(opts: {
     });
 
     details.append(fields);
-    panel.append(details);
+    // Sit above the static theme group (the panel's only pre-existing child); dial groups append after.
+    panel.prepend(details);
   }
 
   for (const group of TUNING_SCHEMA) {

@@ -45,7 +45,7 @@ export class MapGenerator {
   private noise3D: NoiseFunction3D;
   private elevationCalc: ElevationCalculator;
   private meshCache = new Map<number, MeshCell[]>();
-  // Plate-motion arrows for the "view plates" overlay — seed-level, so sampled once and reused by
+  // Plate-motion arrows for the "tectonic plates" overlay — seed-level, so sampled once and reused by
   // every rung (cleared on configure). null until first needed.
   private arrowData: { positions: Float32Array; directions: Float32Array } | null = null;
 

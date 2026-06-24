@@ -9,8 +9,8 @@ import type { FeatureKind } from "./classify";
 const TEMPLATES: Record<FeatureKind, readonly string[]> = {
   OCEAN: ["the {X} ocean"],
   SEA: ["{X} sea", "sea of {X}"],
+  BAY: ["the bay of {X}", "{X} bay", "bay of {X}"],
   LAKE: ["lake {X}", "{X} lake"],
-  CONTINENT: ["{X}"], // continents wear their bare proper name
   ISLAND: ["{X} island", "isle of {X}", "{X} isle"],
   MOUNTAINS: ["the {X} mountains", "{X} mountains", "{X} range"],
   DESERT: ["the {X} desert", "{X} desert", "{X} wastes"],

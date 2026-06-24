@@ -161,7 +161,7 @@ export function computeCellColors(map: GlobeMap, theme: Theme, viewPlates: boole
 }
 
 /** ================================================
- *  Tectonic-plate overlay (the "view plates" toggle)
+ *  Tectonic-plate overlay (the "tectonic plates" toggle)
  *  ================================================ */
 // A stable, distinct colour per plate id: golden-angle hue rotation so neighbouring ids land on
 // well-separated hues.

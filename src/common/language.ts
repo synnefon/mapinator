@@ -11,11 +11,11 @@ export const Languages = [
   "ROMANCE",
   "GERMANIC",
   "TURKISH",
-  "BANTU_LIKE",
+  "BANTU",
   "AFRICAN_WEST",
   "AFRICAN_HORN",
-  "CN",
-  "JP",
+  "CHINESE",
+  "JAPANESE",
   "POLYNESIAN",
   "MONGOLIC",
   "GREEK",
@@ -50,6 +50,11 @@ export const Languages = [
 ] as const;
 
 export type Language = (typeof Languages)[number];
+
+/** Human-readable form of a language id for display, e.g. "DEEP_SPEECH" → "deep speech". */
+export function languageName(lang: Language): string {
+  return lang.toLowerCase().replace(/_/g, " ");
+}
 
 type LanguageConfig = {
   onsets: string[];
@@ -1291,7 +1296,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
     clusterLinker: "a",
     vowelLinker: "y",
   },
-  BANTU_LIKE: {
+  BANTU: {
     onsets: [
       "ba",
       "ka",
@@ -1442,7 +1447,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
     clusterLinker: "e",
     vowelLinker: "n",
   },
-  CN: {
+  CHINESE: {
     onsets: [
       "b",
       "p",
@@ -1559,7 +1564,7 @@ export const languageConfigs: { [k: string]: LanguageConfig } = {
     clusterLinker: "e",
     vowelLinker: "n",
   },
-  JP: {
+  JAPANESE: {
     onsets: [
       "k",
       "s",

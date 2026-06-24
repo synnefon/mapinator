@@ -85,7 +85,7 @@ export class ElevationCalculator {
     return this.tectonics.plateAt(site.x, site.y, site.z);
   }
 
-  /** Plate-motion arrows (leading-edge samples) for the "view plates" overlay (see
+  /** Plate-motion arrows (leading-edge samples) for the "tectonic plates" overlay (see
    *  Tectonics.boundaryArrows). */
   public boundaryArrows(): { positions: Float32Array; directions: Float32Array } {
     return this.tectonics.boundaryArrows();

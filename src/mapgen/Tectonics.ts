@@ -24,7 +24,7 @@ const WARP_OFFSET_X = 8.3;
 const WARP_OFFSET_Y = 27.1;
 const WARP_OFFSET_Z = 53.9;
 
-// Plate-motion arrow sampling (the "view plates" overlay) — a viz layer, so its own knobs.
+// Plate-motion arrow sampling (the "tectonic plates" overlay) — a viz layer, so its own knobs.
 const ARROW_SAMPLES = 2400; // even fibonacci probes; the leading-edge subset become arrows
 const ARROW_BAND = 0.05; // keep probes within this geodesic distance (rad) of a plate boundary
 const ARROW_MIN_SPEED = 1e-3; // skip where |ω×p| ≈ 0 (a plate's Euler pole — no defined direction)
@@ -146,7 +146,7 @@ export class Tectonics {
   }
 
   /**
-   * Sample plate-motion arrows along the LEADING edges of plates, for the "view plates" overlay.
+   * Sample plate-motion arrows along the LEADING edges of plates, for the "tectonic plates" overlay.
    * Even fibonacci probes over the sphere, kept where they (a) hug a plate boundary and (b) the
    * owning plate is ADVANCING across it (velocity · outward-normal > 0 — the front of the plate's
    * drift, not its trailing edge). Returns flat [x,y,z,…] tail positions + unit tangent directions

@@ -80,13 +80,18 @@ describe("classifyMinor", () => {
     classifyMinor(comp(cls, Array.from({ length: n }, (_, i) => i + 10)), total);
 
   it("classifies lakes + land by size, assigns reveal tiers, and drops specks", () => {
-    const total = 10000; // MIN=6, LARGE_MINOR≥80, CONTINENT≥400
-    expect(run("water", 100, total)).toMatchObject({ kind: "LAKE", minLevel: 1 }); // large lake
-    expect(run("water", 50, total)).toMatchObject({ kind: "LAKE", minLevel: 2 }); // small lake
-    expect(run("land", 1500, total)).toMatchObject({ kind: "CONTINENT", minLevel: 0 });
+    const total = 10000; // island MIN=6, continent≥400; lake floor=2, lake tiers @ 80/30/12 cells
+    // lakes: more of them, size-graded so smaller ones reveal at deeper zoom
+    expect(run("water", 100, total)).toMatchObject({ kind: "LAKE", minLevel: 1 });
+    expect(run("water", 50, total)).toMatchObject({ kind: "LAKE", minLevel: 2 });
+    expect(run("water", 20, total)).toMatchObject({ kind: "LAKE", minLevel: 3 });
+    expect(run("water", 5, total)).toMatchObject({ kind: "LAKE", minLevel: 4 });
+    expect(run("water", 1, total)).toBeNull(); // below the lake floor
+    // land: islands by size; continents unlabelled
+    expect(run("land", 1500, total)).toBeNull(); // continent-sized land is not labelled
     expect(run("land", 90, total)).toMatchObject({ kind: "ISLAND", minLevel: 1 }); // large island
     expect(run("land", 20, total)).toMatchObject({ kind: "ISLAND", minLevel: 2 }); // small island
-    expect(run("water", 3, total)).toBeNull(); // below the noise floor → skipped
+    expect(run("land", 3, total)).toBeNull(); // below the island floor
   });
 
   it("seeds the name from the smallest member index (repCell)", () => {

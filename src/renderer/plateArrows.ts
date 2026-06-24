@@ -1,7 +1,7 @@
 import { Quat } from "../common/3DMath";
 import { globeRadiusPx } from "./GlobeRenderer";
 
-// The arrows are a "view plates" annotation drawn on a 2D overlay canvas layered over the globe
+// The arrows are a "tectonic plates" annotation drawn on a 2D overlay canvas layered over the globe
 // (the WebGL map canvas can't share a 2D context). The arrow GEOMETRY — tail positions + tangent
 // directions along plate boundaries — is sampled in the worker (see Tectonics.boundaryArrows), so
 // it matches the warped boundaries the overlay colours; here we only project + draw it.

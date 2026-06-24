@@ -583,6 +583,87 @@ select[multiple] optgroup {
   z-index: 4;
 }
 
+/* Country borders + the hover territory highlight: a transparent overlay, same band as the others. */
+#countries {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Country names: interactive DOM labels over the globe — red, a touch larger than feature labels,
+   hover highlights the territory (drawn on #countries) and click opens the info popup. */
+.country-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  color: rgba(205, 30, 30, 0.98);
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-weight: 700;
+  text-transform: lowercase;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  text-shadow: 0 0 3px rgba(20, 0, 0, 0.75), 0 0 2px rgba(20, 0, 0, 0.75);
+  z-index: 5;
+}
+.country-label:hover {
+  text-decoration: underline;
+}
+
+/* Country info popup (opened by clicking a country name). */
+.country-popup {
+  position: fixed;
+  display: none;
+  z-index: 20;
+  /* Size to the longest row so values never wrap onto a new line; min-width keeps short popups tidy. */
+  width: max-content;
+  min-width: 180px;
+  padding: 12px 16px;
+  background: var(--bg, #1e1e1e);
+  color: var(--text, #eee);
+  border: 1px solid var(--highlightText, #888);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  text-transform: lowercase;
+}
+.country-popup-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+/* 2-col grid: key column sizes to the widest label, values left-align in their own column. */
+.country-popup-body {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.6em;
+  opacity: 0.9;
+}
+.country-popup-val {
+  white-space: nowrap;
+}
+.country-popup-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.country-popup-close:hover {
+  opacity: 1;
+}
+
 /* North re-orient: floated over the canvas corner. Transparent until hovered (the
    generic button:hover rule then gives it the highlight fill). */
 .map-overlay-btn {

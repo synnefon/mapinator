@@ -5,7 +5,8 @@ import type { GlobeMap } from "../../common/map";
 // by a hair between cells — quantise to a grid before matching so shared corners hash equal.
 const QUANT = 1e5; // round unit-sphere coords to ~1e-5 before hashing
 
-const vKey = (x: number, y: number, z: number): string =>
+/** A ring vertex's hash key — shared corners between cells (computed independently) quantise equal. */
+export const vertexKey = (x: number, y: number, z: number): string =>
   `${Math.round(x * QUANT)}|${Math.round(y * QUANT)}|${Math.round(z * QUANT)}`;
 
 /**
@@ -21,7 +22,7 @@ export function buildAdjacency(map: GlobeMap): number[][] {
   for (let i = 0; i < cellCount; i++) {
     const seen = new Set<string>(); // a closed ring can repeat its first corner — count each once
     for (let v = ringOffsets[i]; v < ringOffsets[i + 1]; v++) {
-      const k = vKey(ringVerts[3 * v], ringVerts[3 * v + 1], ringVerts[3 * v + 2]);
+      const k = vertexKey(ringVerts[3 * v], ringVerts[3 * v + 1], ringVerts[3 * v + 2]);
       if (seen.has(k)) continue;
       seen.add(k);
       const list = vertexCells.get(k);

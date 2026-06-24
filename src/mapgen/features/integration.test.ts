@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Language } from "../../common/language";
 import { OCEAN, snapshotParams, type MapSettings } from "../../common/settings";
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
@@ -11,9 +12,13 @@ import { computeMapFeatures, type MapFeature } from "./index";
 const PARAMS = snapshotParams();
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
 const SEED = "feature-validity-seed";
+const POOL: Language[] = ["GREEK", "LATIN", "NORSE", "TAMIL"];
 const buildMap = () => new MapGenerator(SEED, PARAMS).generateMap(SETTINGS);
 const seaLevel = OCEAN.SEA_LEVEL.value;
-const isWaterKind = (k: MapFeature["kind"]) => k === "OCEAN" || k === "SEA" || k === "LAKE";
+const run = (map: ReturnType<typeof buildMap>) =>
+  computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"), POOL);
+const isWaterKind = (k: MapFeature["kind"]) =>
+  k === "OCEAN" || k === "SEA" || k === "BAY" || k === "LAKE";
 
 // Nearest cell to a point on the sphere (an anchor is a member site, so this recovers that cell).
 function nearestCell(map: ReturnType<typeof buildMap>, p: { x: number; y: number; z: number }): number {
@@ -60,16 +65,14 @@ describe("feature pipeline on a real globe", () => {
   });
 
   it("gives the connected ocean several names (open oceans + marginal seas)", () => {
-    const map = buildMap();
-    const features = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));
+    const { features } = run(buildMap());
     const oceanic = features.filter((f) => f.kind === "OCEAN" || f.kind === "SEA");
     expect(oceanic.length).toBeGreaterThanOrEqual(2); // multiple labels across the one water body
     expect(features.some((f) => f.kind === "OCEAN")).toBe(true);
   });
 
   it("labels sizable land terrain (mountains / deserts / forests) at tier 1+", () => {
-    const map = buildMap();
-    const features = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));
+    const { features } = run(buildMap());
     const terrain = features.filter(
       (f) => f.kind === "MOUNTAINS" || f.kind === "DESERT" || f.kind === "FOREST"
     );
@@ -79,19 +82,33 @@ describe("feature pipeline on a real globe", () => {
 
   it("anchors each feature on terrain of its own kind (the lake-on-a-mountain bug)", () => {
     const map = buildMap();
-    const features = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));
-    for (const f of features) {
+    for (const f of run(map).features) {
       const anchorIsWater = map.elevation[nearestCell(map, f.anchor)] < seaLevel;
       expect(anchorIsWater).toBe(isWaterKind(f.kind)); // water labels sit in water, land on land
     }
   });
 
-  it("names every feature, deterministically", () => {
+  it("partitions the land into countries with drawable borders + facts", () => {
+    const { countries, borders } = run(buildMap());
+    expect(countries.length).toBeGreaterThan(0);
+    expect(countries.every((c) => c.name.trim().length > 0)).toBe(true);
+    expect(countries.every((c) => c.government.trim().length > 0)).toBe(true);
+    expect(countries.every((c) => c.population > 0)).toBe(true);
+    expect(borders.length).toBeGreaterThan(0);
+    expect(borders.length % 6).toBe(0); // flat [x0,y0,z0, x1,y1,z1, …] segment pairs
+  });
+
+  it("computes features + countries deterministically", () => {
     const map = buildMap();
-    const a = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));
-    const b = computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"));
-    expect(a.length).toBeGreaterThan(0);
-    expect(a.every((f) => f.name.trim().length > 0)).toBe(true);
-    expect(a.map((f) => `${f.kind}:${f.name}`)).toStrictEqual(b.map((f) => `${f.kind}:${f.name}`));
+    const a = run(map);
+    const b = run(map);
+    expect(a.features.length).toBeGreaterThan(0);
+    expect(a.features.every((f) => f.name.trim().length > 0)).toBe(true);
+    expect(a.features.map((f) => `${f.kind}:${f.name}`)).toStrictEqual(
+      b.features.map((f) => `${f.kind}:${f.name}`)
+    );
+    expect(a.countries.map((c) => `${c.name}:${c.government}:${c.population}`)).toStrictEqual(
+      b.countries.map((c) => `${c.name}:${c.government}:${c.population}`)
+    );
   });
 });

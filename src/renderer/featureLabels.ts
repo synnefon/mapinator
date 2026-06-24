@@ -2,7 +2,7 @@ import { Quat } from "../common/3DMath";
 import type { MapFeature } from "../mapgen/features";
 import { globeRadiusPx } from "./GlobeRenderer";
 
-// A "view labels" annotation drawn on a 2D overlay canvas layered over the globe (the WebGL map
+// A "geographic labels" annotation drawn on a 2D overlay canvas layered over the globe (the WebGL map
 // canvas can't share a 2D context) — same pattern as plateArrows. Anchors are projected each frame;
 // the feature set itself is computed once per (map, sea level, language) on the main thread.
 const MIN_FRONT_Z = 0.04; // cull labels at/behind the visible limb (matches plateArrows)
@@ -19,7 +19,7 @@ const CORE = "rgba(255,255,255,0.96)";
  * Draw feature name labels onto the 2D overlay, projected to match the globe (orthographic, same
  * apparent radius + horizontal offset as the active renderer). EVERY feature whose reveal tier the
  * current zoom level has reached is labelled — no overlap or on-screen-size culling — so all eligible
- * lakes, islands, seas, continents, and oceans get a name. Clears first, so an empty list wipes it.
+ * lakes, islands, seas, and oceans get a name. Clears first, so an empty list wipes it.
  */
 export function drawFeatureLabels(
   canvas: HTMLCanvasElement,

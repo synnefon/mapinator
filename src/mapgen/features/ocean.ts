@@ -3,17 +3,19 @@ import { coastDistances } from "./detect";
 
 export type OceanRegion = {
   anchorCell: number;
-  kind: "OCEAN" | "SEA";
+  kind: "OCEAN" | "SEA" | "BAY";
   extent: number; // angular radius (rad) for font sizing — open oceans read bigger than marginal seas
 };
 
 // Tunables (mirrors the settings DIALS convention) for how the one connected water body is named.
+// By distance from the nearest coast: open OCEAN ≥ OCEAN_MIN, marginal SEA ≥ SEA_MIN, coastal BAY ≥
+// BAY_MIN; anything shallower is dropped (right on the shore). More names overall → more seas + bays.
 export const OCEAN_NAMING = {
-  CELLS_PER_NAME: 2500, // ~one ocean/sea label per this many connected-water cells
-  MAX_NAMES: 14, // cap on labels for a single connected body
-  OCEAN_MIN_COAST_HOPS: 6, // an anchor at least this far from any coast is open OCEAN, else marginal SEA
-  SEA_MIN_COAST_HOPS: 3, // a SEA must be at least this far from shore — smaller anchors are coastal
-  //                        nooks, not named seas (the deepest anchor is always kept regardless)
+  CELLS_PER_NAME: 1500, // ~one ocean/sea/bay label per this many connected-water cells
+  MAX_NAMES: 26, // cap on labels for a single connected body
+  OCEAN_MIN_COAST_HOPS: 6, // ≥ this far from any coast → open OCEAN
+  SEA_MIN_COAST_HOPS: 3, // ≥ this (and < OCEAN_MIN) → marginal SEA
+  BAY_MIN_COAST_HOPS: 0, // ≥ this (and < SEA_MIN) → coastal BAY (so shoreline anchors name bays, not dropped)
   MIN_EXTENT: 0.03, // rad: smallest label reach
   MAX_EXTENT: 0.32, // rad: largest label reach (keeps even a vast ocean's font in range)
 };
@@ -83,10 +85,15 @@ export function subdivideOcean(
   const regions: OceanRegion[] = [];
   anchors.forEach((anchorCell, i) => {
     const hops = coast.get(anchorCell) as number;
-    // A sea must be a real basin, not a coastal nook — drop anchors too close to shore. The deepest
-    // anchor (i === 0, the pole of inaccessibility) is always kept so the body has at least one label.
-    if (i > 0 && hops < OCEAN_NAMING.SEA_MIN_COAST_HOPS) return;
-    const kind = hops >= OCEAN_NAMING.OCEAN_MIN_COAST_HOPS ? "OCEAN" : "SEA";
+    // Distance from shore → kind: open OCEAN, marginal SEA, coastal BAY. Anchors shallower than a
+    // bay are dropped; the deepest anchor (i === 0, pole of inaccessibility) is always kept.
+    if (i > 0 && hops < OCEAN_NAMING.BAY_MIN_COAST_HOPS) return;
+    const kind: OceanRegion["kind"] =
+      hops >= OCEAN_NAMING.OCEAN_MIN_COAST_HOPS
+        ? "OCEAN"
+        : hops >= OCEAN_NAMING.SEA_MIN_COAST_HOPS
+          ? "SEA"
+          : "BAY";
     const extent = Math.max(
       OCEAN_NAMING.MIN_EXTENT,
       Math.min(OCEAN_NAMING.MAX_EXTENT, hops * cellAngle) // openness drives label size

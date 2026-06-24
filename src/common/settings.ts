@@ -19,6 +19,7 @@ export interface MapSettings {
   theme: Theme;
   viewPlates?: boolean; // render overlay: colour cells by tectonic plate instead of biome (no regen). Optional so the dev harnesses (sweep/explorer) can omit it → no overlay.
   viewLabels?: boolean; // render overlay: draw generated names for the map's features (seas, continents, …). Optional like viewPlates.
+  viewCountries?: boolean; // render overlay: dotted red country borders + country names. Optional like viewPlates.
 }
 
 // Settings whose value is a number — the keys the numeric sliders + URL parsing drive (excludes
@@ -27,12 +28,74 @@ export type NumericSettingKey = {
   [K in keyof MapSettings]-?: MapSettings[K] extends number ? K : never;
 }[keyof MapSettings];
 
+/** One toggle in the Layers panel. All metadata is colocated here, including `defaultOn` — the
+ *  single source of truth for a layer's default state, read by the panel (sort + reset) AND by the
+ *  derived runtime defaults below. A FEATURE flips a generation switch (FEATURES; regen on change);
+ *  a VIEW flips a render-overlay MapSettings flag (re-render only). */
+export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries";
+export type Layer =
+  | { kind: "feature"; key: keyof Features; label: string; doc: string; defaultOn: boolean }
+  | { kind: "view"; key: ViewLayerKey; label: string; doc: string; defaultOn: boolean };
+
+/** A layer's default on/off — straight from its colocated `defaultOn`. */
+export const layerDefault = (layer: Layer): boolean => layer.defaultOn;
+
+// Source order is logical (features, then view overlays); the panel re-sorts by default (off last).
+export const LAYERS: Layer[] = [
+  {
+    kind: "feature",
+    key: "mountains",
+    label: "mountains",
+    doc: "ridged peaks and their ground swell",
+    defaultOn: true,
+  },
+  {
+    kind: "feature",
+    key: "climate",
+    label: "climate",
+    doc: "wet/dry moisture variation and maritime humidity",
+    defaultOn: true,
+  },
+  {
+    kind: "feature",
+    key: "ice",
+    label: "ice caps",
+    doc: "polar snow caps on land",
+    defaultOn: true,
+  },
+  { 
+    kind: "view", 
+    key: "viewLabels", 
+    label: "geographic labels", 
+    doc: "display names for the map's geographic features", 
+    defaultOn: true,
+  },
+  { 
+    kind: "view", 
+    key: "viewCountries", 
+    label: "countries", 
+    doc: "display country data", 
+    defaultOn: true,
+  },
+  { 
+    kind: "view", 
+    key: "viewPlates", 
+    label: "tectonic plates", 
+    doc: "display the tectonic plates used to generate mountain ranges", 
+    defaultOn: false,
+  },
+];
+
+// View-overlay flag defaults, derived from LAYERS so `defaultOn` is the single source.
+const VIEW_LAYER_DEFAULTS = Object.fromEntries(
+  LAYERS.filter((l) => l.kind === "view").map((l) => [l.key, l.defaultOn])
+) as Partial<MapSettings>;
+
 export const MAP_DEFAULTS: MapSettings = {
   resolution: 1,
   zoom: 0,
   theme: "lush",
-  viewPlates: false,
-  viewLabels: true,
+  ...VIEW_LAYER_DEFAULTS,
 };
 
 // Single source of truth for the setting key lists (derived from MAP_DEFAULTS).
@@ -333,6 +396,43 @@ export const DIALS = {
       doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer",
     },
   },
+
+  // Tunables for the political layer (mirrors the DIALS convention; live-editable).
+  COUNTRY: {
+    NUM_COUNTRIES: {
+      value: 20,
+      min: 2,
+      max: 80,
+      step: 1,
+      doc: "how many countries to place (one seed each, always on land)",
+    },
+    COUNTRY_DISTRIBUTION: {
+      value: 0.6,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      doc: "how the seeds start out spread: 1 = evenly spaced, 0 = clumped together",
+    },
+    WATER_COST: {
+      value: 6,
+      min: 1,
+      max: 25,
+      step: 0.5,
+      doc: "how much harder a border crosses water than land (1 = no harder; higher = countries hug their own landmass)",
+    },
+    WARP_FREQ: {
+      value: 1.7,
+      doc: "domain-warp frequency for border wiggle",
+    },
+    WARP_AMP: {
+      value: 0.11,
+      doc: "domain-warp strength — higher = more organic, wandering borders",
+    },
+    BORDER_HOPS: {
+      value: 20,
+      doc: "how far a water body looks out (over water) for its largest bordering country",
+    },
+  },
 };
 
 // Familiar aliases so generation code keeps importing CONTINENT, OCEAN, … directly — the
@@ -345,6 +445,7 @@ export const {
   MOUNTAIN,
   MOISTURE,
   ICE,
+  COUNTRY,
 } = DIALS;
 
 // Mesh / LOD infrastructure (not terrain shape).
@@ -504,7 +605,9 @@ export function applyTuning(overrides: TuningOverrides): void {
 export type Features = { mountains: boolean; climate: boolean; ice: boolean };
 
 /** All features on — the normal planet. */
-export const FEATURE_DEFAULTS: Features = { mountains: true, climate: true, ice: true };
+export const FEATURE_DEFAULTS: Features = Object.fromEntries(
+  LAYERS.filter((l) => l.kind === "feature").map((l) => [l.key, l.defaultOn])
+) as Features;
 
 /** Live feature switches, read at generation time. Mutated in place; reset via FEATURE_DEFAULTS. */
 export const FEATURES: Features = { ...FEATURE_DEFAULTS };
@@ -558,34 +661,5 @@ export function snapshotParams(): TerrainParams {
   };
 }
 
-/** One toggle in the Layers panel. All toggle metadata lives here so the definitions are colocated.
- *  A FEATURE flips a generation switch (FEATURES; needs a regen on change); a VIEW flips a render
- *  overlay (a MapSettings flag; re-renders only, no regen). */
-export type ViewLayerKey = "viewPlates" | "viewLabels";
-export type Layer =
-  | { kind: "feature"; key: keyof Features; label: string; doc: string }
-  | { kind: "view"; key: ViewLayerKey; label: string; doc: string };
-
-/** A layer's default on/off — features from FEATURE_DEFAULTS, views from MAP_DEFAULTS. The Layers
- *  panel orders by this so any layer defaulting to OFF sinks to the bottom. */
-export const layerDefault = (layer: Layer): boolean =>
-  layer.kind === "feature" ? FEATURE_DEFAULTS[layer.key] : (MAP_DEFAULTS[layer.key] ?? false);
-
-// Source order is logical (features, then view overlays); the panel re-sorts by default (off last).
-export const LAYERS: Layer[] = [
-  { kind: "feature", key: "mountains", label: "mountains", doc: "ridged peaks and their ground swell" },
-  { kind: "feature", key: "climate", label: "climate", doc: "wet/dry moisture variation and maritime humidity" },
-  { kind: "feature", key: "ice", label: "ice caps", doc: "polar snow caps on land" },
-  {
-    kind: "view",
-    key: "viewLabels",
-    label: "view labels",
-    doc: "draw generated names for the map's features (seas, continents, …) — a view overlay; doesn't change terrain",
-  },
-  {
-    kind: "view",
-    key: "viewPlates",
-    label: "view plates",
-    doc: "colour cells by tectonic plate instead of biome — a view overlay; doesn't change terrain",
-  },
-];
+// (Layer definitions live above MAP_DEFAULTS now — `defaultOn` there is the single source that the
+//  derived FEATURE_DEFAULTS + MAP_DEFAULTS view flags read.)

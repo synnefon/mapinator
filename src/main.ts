@@ -5,13 +5,15 @@ import type { GlobeMap } from "./common/map";
 import { Languages, type Language } from "./common/language";
 import { applyTuning, LOD, OCEAN, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
-import { computeMapFeatures, type MapFeature } from "./mapgen/features";
+import { computeMapFeatures, type MapFeatures } from "./mapgen/features";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { recommendedWorkerCount, WorkerPool } from "./mapgen/WorkerPool";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 import { createCompassNeedle } from "./renderer/compassNeedle";
 import { GlobeController } from "./renderer/GlobeController";
 import { createLodPipeline, type GenRequest } from "./renderer/LodPipeline";
+import { CountryLabels } from "./CountryLabels";
+import { drawCountries } from "./renderer/countryLayer";
 import { drawFeatureLabels } from "./renderer/featureLabels";
 import { drawPlateArrows } from "./renderer/plateArrows";
 import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
@@ -104,6 +106,7 @@ document.addEventListener("DOMContentLoaded", () => {
     map: canvas,
     plateArrows: arrowCanvas,
     featureLabels: labelCanvas,
+    countries: countryCanvas,
     northBtn,
   } = ui.getAllElements();
 
@@ -121,7 +124,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (key === "theme") {
       applyThemeUIColors(appState.settings.theme);
       needle?.recolor();
-    } else if (key !== "viewPlates" && key !== "viewLabels" && sliderKeys.has(key)) {
+    } else if (
+      key !== "viewPlates" &&
+      key !== "viewLabels" &&
+      key !== "viewCountries" &&
+      sliderKeys.has(key)
+    ) {
       // viewPlates/viewLabels are render-only view flags, not numeric sliders — skip them here (their
       // toggles re-render directly); the !== checks narrow key to the numeric slider keys below.
       ui.updateSliderValue(key, appState.settings[key]);
@@ -164,6 +172,8 @@ document.addEventListener("DOMContentLoaded", () => {
       arrowCanvas.height = h;
       labelCanvas.width = w; // and the feature-label overlay
       labelCanvas.height = h;
+      countryCanvas.width = w; // and the country overlay
+      countryCanvas.height = h;
       return true;
     }
     return false;
@@ -212,8 +222,44 @@ document.addEventListener("DOMContentLoaded", () => {
   // Feature labels are computed once per (base map, sea level, language) and re-projected each
   // frame. Keyed on the base GlobeMap, so a new/regenerated map recomputes automatically; the
   // seaLevel/language guard catches a render-dial change that happened to reuse the same map object.
-  type FeatureCacheEntry = { seaLevel: number; language: Language; features: MapFeature[] };
+  type FeatureCacheEntry = { seaLevel: number; language: Language; result: MapFeatures };
   const featureCache = new WeakMap<GlobeMap, FeatureCacheEntry>();
+
+  // Interactive country labels (DOM) + the hover state that drives the territory highlight.
+  let hoveredCountry: number | null = null;
+  let labelResult: MapFeatures | null = null; // the result the DOM labels were last built from
+  const countryLabels = new CountryLabels(canvas.parentElement as HTMLElement, {
+    onHover: (index) => {
+      hoveredCountry = index;
+      drawCountryOverlay(); // repaint just the overlay — no full-globe redraw needed
+    },
+  });
+
+  // Redraw the country overlay (hovered territory highlight + dotted borders) from the cached BASE
+  // result, always at base-mesh resolution; the live zoom only re-projects it. Deliberately coarse at
+  // all zooms: a per-patch (up to millions of cells) classification either froze pan/zoom or hitched on
+  // first hover, so we keep the cheap, bounded base mesh. The fill is blocky and bleeds over sub-cell
+  // water when deeply zoomed — an accepted tradeoff for a smooth, free overlay.
+  function drawCountryOverlay(): void {
+    const baseMap = pipeline.base();
+    const entry = baseMap ? featureCache.get(baseMap) : undefined;
+    if (!baseMap || !entry || !(appState.settings.viewCountries ?? false)) {
+      countryCanvas.getContext("2d")?.clearRect(0, 0, countryCanvas.width, countryCanvas.height);
+      return;
+    }
+    const highlight =
+      hoveredCountry !== null
+        ? { map: baseMap, countryOf: entry.result.countryOf, index: hoveredCountry }
+        : null;
+    drawCountries(
+      countryCanvas,
+      entry.result.borders,
+      highlight,
+      appState.orientation,
+      appState.settings.zoom,
+      globeRenderer.horizontalOffsetFraction()
+    );
+  }
 
   function render() {
     // Spin the 3D compass needle to point along north's direction in view space (x right,
@@ -254,39 +300,63 @@ document.addEventListener("DOMContentLoaded", () => {
       arrowCanvas.getContext("2d")?.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
     }
 
-    // Feature name labels: a 2D overlay like the arrows, projected to match the globe. The feature
-    // set is computed once per (base map, sea level, language) and cached; here we just re-project.
-    // The toggle is a master switch (default ON): off → no labels ever. When on, the reveal tier
-    // ramps with the level: 0 = continents + oceans (shown on the whole-globe view, drawn small),
-    // 1 = seas + large lakes/islands, 2 = everything else.
+    // Geographic labels + the country layer share one computed feature set (countries drive naming),
+    // computed once per (base map, sea level, language) and cached; here we just re-project. Labels
+    // are a master switch (default ON): off → no labels. Geographic-label reveal tier ramps with the
+    // level: 0 = oceans + seas (whole-globe view, small), 1 = large lakes/islands, 2 = the rest. The
+    // countries layer (default OFF) draws dotted-red borders + red country names.
     const viewLevel = pipeline.view().level;
-    if (appState.settings.viewLabels ?? false) {
+    const showLabels = appState.settings.viewLabels ?? false;
+    const showCountries = appState.settings.viewCountries ?? false;
+    const clear = (c: HTMLCanvasElement) =>
+      c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+    if (showLabels || showCountries) {
       const seaLevel = OCEAN.SEA_LEVEL.value;
       let entry = featureCache.get(baseMap);
       if (!entry || entry.seaLevel !== seaLevel || entry.language !== appState.language) {
         entry = {
           seaLevel,
           language: appState.language,
-          features: computeMapFeatures(
+          result: computeMapFeatures(
             baseMap,
             seaLevel,
             appState.language,
             appState.mapName,
-            featureNamer
+            featureNamer,
+            appState.selectedLanguages
           ),
         };
         featureCache.set(baseMap, entry);
       }
-      drawFeatureLabels(
-        labelCanvas,
-        entry.features,
-        appState.orientation,
-        appState.settings.zoom,
-        globeRenderer.horizontalOffsetFraction(),
-        viewLevel
-      );
+      // Rebuild the interactive country labels when the underlying result changes (new map / dials).
+      if (entry.result !== labelResult) {
+        labelResult = entry.result;
+        hoveredCountry = null;
+        countryLabels.setCountries(entry.result.countries);
+      }
+      const offset = globeRenderer.horizontalOffsetFraction();
+      if (showLabels) {
+        drawFeatureLabels(
+          labelCanvas,
+          entry.result.features,
+          appState.orientation,
+          appState.settings.zoom,
+          offset,
+          viewLevel
+        );
+      } else clear(labelCanvas);
+      if (showCountries) {
+        drawCountryOverlay();
+        countryLabels.setVisible(true);
+        countryLabels.update(canvas, entry.result.countries, appState.orientation, appState.settings.zoom, offset);
+      } else {
+        clear(countryCanvas);
+        countryLabels.setVisible(false);
+      }
     } else {
-      labelCanvas.getContext("2d")?.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+      clear(labelCanvas);
+      clear(countryCanvas);
+      countryLabels.setVisible(false);
     }
   }
 
