@@ -21,7 +21,7 @@ export interface MapSettings {
   viewLabels?: boolean; // render overlay: draw generated names for the map's features (seas, continents, …). Optional like viewPlates.
   viewCountries?: boolean; // render overlay: dotted red country borders + country names. Optional like viewPlates.
   viewCities?: boolean; // render overlay: clickable city markers (capitals + towns), sized + zoom-gated by tier. Optional like viewPlates.
-  viewCountryColors?: boolean; // render overlay: 4-colour choropleth tinting each country (15% opacity). Optional like viewPlates.
+  viewCountryColors?: boolean; // render overlay: 4-colour choropleth tinting each country (50% opacity). Optional like viewPlates.
 }
 
 // Settings whose value is a number — the keys the numeric sliders + URL parsing drive (excludes
@@ -75,22 +75,22 @@ export const LAYERS: Layer[] = [
   {
     kind: "view",
     key: "viewCountries",
-    label: "countries",
-    doc: "display country data",
-    defaultOn: true,
+    label: "country names",
+    doc: "display country borders and names",
+    defaultOn: false,
+  },
+  {
+    kind: "view",
+    key: "viewCountryColors",
+    label: "country choropleth",
+    doc: "tint each country a distinct colour",
+    defaultOn: false,
   },
   {
     kind: "view",
     key: "viewCities",
     label: "cities",
-    doc: "display city markers (click for population)",
-    defaultOn: true,
-  },
-  {
-    kind: "view",
-    key: "viewCountryColors",
-    label: "country colors",
-    doc: "tint each country a distinct colour (4-colour map)",
+    doc: "display city markers",
     defaultOn: false,
   },
   {

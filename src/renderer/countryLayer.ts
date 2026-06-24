@@ -2,23 +2,26 @@ import { Quat } from "../common/3DMath";
 import type { GlobeMap } from "../common/map";
 import { globeRadiusPx } from "./GlobeRenderer";
 
-// The "countries" overlay on its own 2D canvas over the globe: an optional 4-colour choropleth (every
-// land cell tinted by its country, 15% opacity), the 25%-red territory fill for the hovered country, and
-// dotted red borders — drawn bottom-to-top in that order. Country NAMES are interactive DOM elements
-// (see CountryLabels), not drawn here. Projected each frame; the data is computed per map.
+// The "countries" overlay on its own 2D canvas over the globe: an optional 4-colour choropleth (each
+// land cell tinted by its country at 50% opacity, with the ocean darkened), the 25%-red territory fill
+// for the hovered country, and dotted red borders — drawn bottom-to-top in that order. Country NAMES are
+// interactive DOM elements (see CountryLabels), not drawn here. Projected each frame; computed per map.
 const MIN_FRONT_Z = 0.04; // cull borders at/behind the visible limb
 const DASH = [3, 4]; // dotted border pattern, px
 const BORDER = "rgba(190,25,25,0.95)";
 const BORDER_WIDTH = 1.6;
 const HIGHLIGHT = "rgba(205,30,30,0.25)"; // hovered country's land territory — 25% red
-// Four-colour choropleth palette at 15% opacity. Adjacent countries never share a class (see
-// fourColorCountries), so neighbours stay distinct even at low alpha.
+// Four-colour choropleth palette at 50% opacity. Adjacent countries never share a class (see
+// fourColorCountries), so neighbours stay distinct. Drawn on the overlay above the globe, so the tint
+// sits on top of the terrain — including the white ice caps.
 const FILL_COLORS = [
-  "rgba(220,70,70,0.15)",
-  "rgba(70,120,220,0.15)",
-  "rgba(80,180,90,0.15)",
-  "rgba(220,180,60,0.15)",
+  "rgba(220,70,70,0.5)",
+  "rgba(70,120,220,0.5)",
+  "rgba(80,180,90,0.5)",
+  "rgba(220,180,60,0.5)",
 ];
+// Choropleth ocean: a dark overlay over the (country-less) water so the coloured land reads as a map.
+const OCEAN_FILL = "rgba(0,0,0,0.6)";
 
 /** The country to highlight on hover — its land cells (read off `countryOf`) are filled. */
 export type CountryHighlight = { map: GlobeMap; countryOf: Int32Array; index: number };
@@ -46,17 +49,18 @@ export function drawCountries(
   const cx = W / 2;
   const cy = H / 2;
 
-  // --- choropleth: trace every front-facing land cell into one path per colour class, then 4 fills ---
+  // --- choropleth: every front-facing cell into a path — land by its 4-colour class, country-less water
+  //     into a dark ocean overlay — then fill the ocean first and the colour classes on top ---
   if (fill) {
     const { map, countryOf, colorClass } = fill;
     const { cellCount, sites, ringOffsets, ringVerts } = map;
     const paths = FILL_COLORS.map(() => new Path2D());
+    const oceanPath = new Path2D();
     for (let i = 0; i < cellCount; i++) {
-      const ci = countryOf[i];
-      if (ci < 0) continue; // ocean / uninhabited
       const s = Quat.rotate(orientation, { x: sites[3 * i], y: sites[3 * i + 1], z: sites[3 * i + 2] });
       if (s.z <= 0) continue; // back hemisphere
-      const path = paths[colorClass[ci]] ?? paths[0];
+      const ci = countryOf[i];
+      const path = ci < 0 ? oceanPath : (paths[colorClass[ci]] ?? paths[0]); // water (no country) → dark
       const start = ringOffsets[i];
       for (let v = start; v < ringOffsets[i + 1]; v++) {
         const r = Quat.rotate(orientation, {
@@ -71,6 +75,8 @@ export function drawCountries(
       }
       path.closePath();
     }
+    ctx.fillStyle = OCEAN_FILL;
+    ctx.fill(oceanPath);
     for (let c = 0; c < paths.length; c++) {
       ctx.fillStyle = FILL_COLORS[c];
       ctx.fill(paths[c]);
