@@ -131,9 +131,13 @@ export function assignCountries(
   // One seed per country — the raw count off the dial, clamped to the land available.
   const n = Math.min(land.length, Math.max(2, Math.round(COUNTRY.NUM_COUNTRIES.value)));
 
-  // --- seeds over land: COUNTRY_DISTRIBUTION slides from evenly spaced (farthest-point) to clumped ---
+  // --- seeds over land. Two knobs shape the constellation: CLUSTER_COUNT well-separated anchors go
+  // down first (farthest-point), then COUNTRY_CLUSTERING decides how the rest fall in — toward those
+  // anchors (clumped, 1) or evenly across the map (0). So clustering = clumpiness, cluster count =
+  // how many clumps. ---
   const seedRng = makeRNG(`${mapSeed}|country-seeds`);
-  const distribution = COUNTRY.COUNTRY_DISTRIBUTION.value; // 1 = even, 0 = clumped together
+  const clustering = COUNTRY.COUNTRY_CLUSTERING.value; // 1 = clumped toward the anchors, 0 = even
+  const clusterCount = Math.min(n, Math.max(1, Math.round(COUNTRY.CLUSTER_COUNT.value)));
   const firstIdx = Math.floor(seedRng() * land.length);
   const seeds: number[] = [land[firstIdx]];
   const placed = new Uint8Array(land.length);
@@ -150,26 +154,44 @@ export function assignCountries(
       if (d > nearestDot[i]) nearestDot[i] = d;
     }
   };
-  note(seeds[0]);
-  while (seeds.length < n) {
-    // Rank unplaced cells by nearestDot ascending: the front is FARTHEST from every seed (even spread),
-    // the back is closest (clumps). distribution picks where along that ranking the next seed comes from.
+  // Make the unplaced land cell at a given CLOSENESS percentile a seed (0 = farthest from every seed →
+  // spreads out, 1 = closest → clumps), then record it so later picks see it.
+  const placeSeed = (closenessPct: number): void => {
     const cand: number[] = [];
     for (let i = 0; i < land.length; i++) if (!placed[i]) cand.push(i);
     cand.sort((p, q) => nearestDot[p] - nearestDot[q]);
-    const idx = cand[Math.round((1 - distribution) * (cand.length - 1))];
+    const idx = cand[Math.round(closenessPct * (cand.length - 1))];
     placed[idx] = 1;
     seeds.push(land[idx]);
     note(land[idx]);
-  }
+  };
+  note(seeds[0]);
+  while (seeds.length < clusterCount) placeSeed(0); // cluster anchors: as far apart as possible
+  while (seeds.length < n) placeSeed(clustering); // the rest fall in per the clustering knob
 
-  // --- grow each country out from its seed (multi-source Dijkstra over the cell graph), water costing
-  // WATER_COST× a land step and a noise term wiggling the front. Water carries the wave but never keeps
-  // territory — only land cells are written into countryOf below. ---
+  // --- grow each country out from its seed (multi-source Dijkstra over the cell graph). The step cost
+  // is the distance between DOMAIN-WARPED cell positions: nudging every cell by a 3D-noise field
+  // stretches the metric, so the borders (equidistant fronts) wander organically — WARP_AMP sets how
+  // far they stray, WARP_FREQ the scale. Crossing WATER costs WATER_COST× extra, so the wave fills a
+  // landmass before spilling over the sea; water carries the wave (islands still get claimed across
+  // narrow straits) but never keeps territory — only land cells are written into countryOf below. ---
   const warp = createNoise3D(makeRNG(`${mapSeed}|country-warp`));
   const f = COUNTRY.WARP_FREQ.value;
   const a = COUNTRY.WARP_AMP.value;
   const waterCost = COUNTRY.WATER_COST.value;
+  // Each cell's warped position (decorrelated per axis), precomputed once. Stepping between these
+  // rather than the raw sites is what bends the borders.
+  const wpx = new Float64Array(cellCount);
+  const wpy = new Float64Array(cellCount);
+  const wpz = new Float64Array(cellCount);
+  for (let c = 0; c < cellCount; c++) {
+    const x = sites[3 * c];
+    const y = sites[3 * c + 1];
+    const z = sites[3 * c + 2];
+    wpx[c] = x + a * warp(x * f, y * f, z * f);
+    wpy[c] = y + a * warp(x * f + 31.4, y * f + 27.1, z * f + 11.7);
+    wpz[c] = z + a * warp(x * f - 19.3, y * f - 7.7, z * f + 44.2);
+  }
   const owner = new Int32Array(cellCount).fill(-1);
   const dist = new Float64Array(cellCount).fill(Infinity);
   const heap = new MinHeap(cellCount);
@@ -181,16 +203,11 @@ export function assignCountries(
   while (heap.size > 0) {
     const c = heap.pop();
     if (heap.poppedKey > dist[c]) continue; // stale entry — c already settled cheaper
-    const cx = sites[3 * c];
-    const cy = sites[3 * c + 1];
-    const cz = sites[3 * c + 2];
     for (const nb of adjacency[c]) {
-      const nx = sites[3 * nb];
-      const ny = sites[3 * nb + 1];
-      const nz = sites[3 * nb + 2];
-      const arc = Math.acos(Math.max(-1, Math.min(1, cx * nx + cy * ny + cz * nz)));
-      const wiggle = Math.max(0.05, 1 + a * warp(nx * f, ny * f, nz * f));
-      const step = arc * wiggle * (elevation[nb] < seaLevel ? waterCost : 1);
+      const dx = wpx[c] - wpx[nb];
+      const dy = wpy[c] - wpy[nb];
+      const dz = wpz[c] - wpz[nb];
+      const step = Math.sqrt(dx * dx + dy * dy + dz * dz) * (elevation[nb] < seaLevel ? waterCost : 1);
       const nd = dist[c] + step;
       if (nd < dist[nb]) {
         dist[nb] = nd;

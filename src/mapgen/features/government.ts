@@ -132,11 +132,14 @@ const CORES: Core[] = [
     },
   },
   {
-    word: "kingdom",
-    tags: { authority: [Authority.Monarchic], trait: [Trait.Traditional] },
+    word: "hegemony",
+    tags: {
+      authority: [Authority.Imperial, Authority.Elite],
+      trait: [Trait.Expansionist],
+    },
   },
   {
-    word: "realm",
+    word: "kingdom",
     tags: { authority: [Authority.Monarchic], trait: [Trait.Traditional] },
   },
   {
@@ -160,9 +163,21 @@ const CORES: Core[] = [
     tags: { authority: [Authority.Monarchic, Authority.Religious] },
   },
   {
+    word: "emirate",
+    tags: { authority: [Authority.Monarchic, Authority.Religious] },
+  },
+  {
     word: "khanate",
     tags: {
       authority: [Authority.Monarchic, Authority.Militaristic],
+      structure: [Structure.Nomadic],
+      trait: [Trait.Expansionist],
+    },
+  },
+  {
+    word: "horde",
+    tags: {
+      authority: [Authority.Militaristic],
       structure: [Structure.Nomadic],
       trait: [Trait.Expansionist],
     },
@@ -185,10 +200,6 @@ const CORES: Core[] = [
     tags: { authority: [Authority.Religious, Authority.Monarchic] },
   },
   {
-    word: "see",
-    tags: { authority: [Authority.Religious], structure: [Structure.Local, Structure.Minor] },
-  },
-  {
     word: "synod",
     tags: { authority: [Authority.Religious, Authority.Bureaucratic] },
   },
@@ -208,10 +219,6 @@ const CORES: Core[] = [
   {
     word: "directorate",
     tags: { authority: [Authority.Bureaucratic, Authority.Elite] },
-  },
-  {
-    word: "commission",
-    tags: { authority: [Authority.Bureaucratic, Authority.Technical] },
   },
   {
     word: "authority",
@@ -242,14 +249,6 @@ const CORES: Core[] = [
     tags: { authority: [Authority.Elite, Authority.Bureaucratic] },
   },
   {
-    word: "exchange",
-    tags: { authority: [Authority.Commercial], structure: [Structure.Urban] },
-  },
-  {
-    word: "charter",
-    tags: { authority: [Authority.Commercial, Authority.Civic] },
-  },
-  {
     word: "trade league",
     tags: {
       authority: [Authority.Commercial, Authority.Civic],
@@ -263,23 +262,9 @@ const CORES: Core[] = [
     tags: { structure: [Structure.Dependent] },
   },
   {
-    word: "dominion",
-    tags: {
-      authority: [Authority.Imperial],
-      structure: [Structure.Dependent],
-    },
-  },
-  {
     word: "satrapy",
     tags: {
       authority: [Authority.Imperial, Authority.Bureaucratic],
-      structure: [Structure.Dependent],
-    },
-  },
-  {
-    word: "march",
-    tags: {
-      authority: [Authority.Monarchic, Authority.Militaristic],
       structure: [Structure.Dependent],
     },
   },
@@ -314,22 +299,6 @@ const MODIFIERS: Modifier[] = [
       trait: [Trait.Revolutionary],
     },
   },
-  {
-    word: "restored",
-    type: ModifierType.Status,
-    tags: {
-      authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious, Authority.Civic],
-      trait: [Trait.Traditional],
-    },
-  },
-  {
-    word: "fallen",
-    type: ModifierType.Status,
-    tags: {
-      authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious],
-      structure: [Structure.Dependent],
-    },
-  },
 
   {
     word: "federal",
@@ -337,9 +306,23 @@ const MODIFIERS: Modifier[] = [
     tags: { structure: [Structure.Federal] },
   },
   {
+    word: "unified",
+    type: ModifierType.Constitutional,
+    tags: { structure: [Structure.Federal], trait: [Trait.Stable] },
+  },
+  {
     word: "democratic",
     type: ModifierType.Constitutional,
     tags: { authority: [Authority.Civic], structure: [Structure.Federal, Structure.Local] },
+  },
+  {
+    word: "egalitarian",
+    type: ModifierType.Ideological,
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
+    },
+    exclude: { authority: [Authority.Elite, Authority.Civic, Authority.Bureaucratic] },
   },
   {
     word: "people's",
@@ -369,16 +352,15 @@ const MODIFIERS: Modifier[] = [
     type: ModifierType.Ideological,
     tags: { authority: [Authority.Civic, Authority.Religious], trait: [Trait.Revolutionary] },
   },
-
-  {
-    word: "grand",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious] },
-  },
   {
     word: "great",
     type: ModifierType.Prestige,
     tags: { authority: [Authority.Civic, Authority.Monarchic, Authority.Imperial] },
+  },
+  {
+    word: "grand",
+    type: ModifierType.Prestige,
+    tags: { authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious] },
   },
   {
     word: "high",
@@ -397,33 +379,10 @@ const MODIFIERS: Modifier[] = [
     exclude: { authority: [Authority.Civic], structure: [Structure.Local] },
   },
   {
-    word: "eternal",
-    type: ModifierType.Prestige,
-    tags: {
-      authority: [Authority.Imperial, Authority.Religious, Authority.Monarchic],
-      trait: [Trait.Traditional],
-    },
-    exclude: { authority: [Authority.Civic, Authority.Commercial] },
-  },
-  {
-    word: "ancient",
-    type: ModifierType.Prestige,
-    tags: {
-      authority: [Authority.Monarchic, Authority.Religious, Authority.Civic],
-      trait: [Trait.Traditional],
-    },
-  },
-  {
     word: "serene",
     type: ModifierType.Prestige,
     tags: { authority: [Authority.Civic, Authority.Monarchic, Authority.Elite] },
   },
-  {
-    word: "unconquered",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Militaristic, Authority.Imperial, Authority.Monarchic] },
-  },
-
   {
     word: "holy",
     type: ModifierType.Religious,
@@ -438,11 +397,6 @@ const MODIFIERS: Modifier[] = [
       authority: [Authority.Religious, Authority.Monarchic],
       society: [Society.Scholastic],
     },
-  },
-  {
-    word: "apostolic",
-    type: ModifierType.Religious,
-    tags: { authority: [Authority.Religious] },
   },
   {
     word: "orthodox",
@@ -460,8 +414,8 @@ const MODIFIERS: Modifier[] = [
     },
   },
   {
-    word: "guilded",
-    type: ModifierType.Economic,
+    word: "corporatist",
+    type: ModifierType.Ideological,
     tags: {
       authority: [Authority.Commercial, Authority.Elite],
       structure: [Structure.Urban],
@@ -485,15 +439,6 @@ const MODIFIERS: Modifier[] = [
       society: [Society.Agrarian],
     },
   },
-
-  {
-    word: "maritime",
-    type: ModifierType.Cultural,
-    tags: {
-      authority: [Authority.Commercial, Authority.Civic, Authority.Imperial],
-      society: [Society.Maritime],
-    },
-  },
   {
     word: "pastoral",
     type: ModifierType.Cultural,
@@ -506,14 +451,6 @@ const MODIFIERS: Modifier[] = [
     word: "nomadic",
     type: ModifierType.Cultural,
     tags: { structure: [Structure.Nomadic] },
-  },
-  {
-    word: "frontier",
-    type: ModifierType.Cultural,
-    tags: {
-      structure: [Structure.Local, Structure.Dependent, Structure.Minor],
-      trait: [Trait.Fragmented],
-    },
   },
   {
     word: "scholastic",
@@ -568,8 +505,6 @@ const MODIFIERS: Modifier[] = [
   },
 ];
 
-const MAX_MODIFIERS = 2;
-
 function hasOverlap<T>(a: T[] | undefined, b: T[] | undefined): boolean {
   if (!a || !b) return false;
   return b.some((value) => a.includes(value));
@@ -611,6 +546,28 @@ function compatibleModifiers(core: Core): Modifier[] {
   });
 }
 
+function titleWordCount(core: Core, modifierCount: number): number {
+  return modifierCount + core.word.split(/\s+/).length;
+}
+
+function pickModifiers(core: Core, rng: RNG, count: number): Modifier[] {
+  const pool = compatibleModifiers(core);
+  const picked: Modifier[] = [];
+  const usedTypes = new Set<ModifierType>();
+
+  while (picked.length < count && pool.length > 0) {
+    const index = Math.floor(rng() * pool.length);
+    const modifier = pool.splice(index, 1)[0];
+
+    if (usedTypes.has(modifier.type)) continue;
+
+    usedTypes.add(modifier.type);
+    picked.push(modifier);
+  }
+
+  return picked;
+}
+
 function deriveDensityFactor(tags: Tags): number {
   let density = 1;
 
@@ -640,39 +597,36 @@ function titleCase(words: string): string {
   return words.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function pickModifiers(core: Core, rng: RNG): Modifier[] {
-  const pool = compatibleModifiers(core);
-  const picked: Modifier[] = [];
-  const usedTypes = new Set<ModifierType>();
-
-  while (picked.length < MAX_MODIFIERS && pool.length > 0) {
-    const index = Math.floor(rng() * pool.length);
-    const modifier = pool.splice(index, 1)[0];
-
-    if (usedTypes.has(modifier.type)) continue;
-
-    usedTypes.add(modifier.type);
-    picked.push(modifier);
-  }
-
-  return picked;
-}
-
 /**
- * Compose a government type from a core form plus 0–2 compatible modifiers.
+ * Compose a 2- or 3-word government type from a core form plus compatible modifiers.
  *
  * Examples:
  * - Federal Republic
  * - Holy Kingdom
  * - Mercantile City-State
- * - Sacred Apostolic Order
  * - Enlightened Technocracy
  *
  * Density is derived from the core's tags. The tags are the source of truth.
  */
 export function generateGovernment(rng: RNG): Government {
-  const core = randomChoice(CORES, rng);
-  const modifiers = pickModifiers(core, rng);
+  const targetWords = rng() < 0.5 ? 2 : 3;
+
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const core = randomChoice(CORES, rng);
+    const modifierCount = targetWords - core.word.split(/\s+/).length;
+    if (modifierCount < 0 || modifierCount > 2) continue;
+
+    const modifiers = pickModifiers(core, rng, modifierCount);
+    if (titleWordCount(core, modifiers.length) !== targetWords) continue;
+
+    return {
+      type: titleCase([...modifiers.map((modifier) => modifier.word), core.word].join(" ")),
+      densityFactor: deriveDensityFactor(core.tags),
+    };
+  }
+
+  const core = CORES.find((entry) => entry.word.split(/\s+/).length === 1) ?? CORES[0];
+  const modifiers = pickModifiers(core, rng, 1);
 
   return {
     type: titleCase([...modifiers.map((modifier) => modifier.word), core.word].join(" ")),

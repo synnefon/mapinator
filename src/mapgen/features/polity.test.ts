@@ -4,19 +4,19 @@ import { generateGovernment } from "./government";
 import { climateHabitability, estimatePopulation, latitudeHabitability } from "./population";
 
 describe("generateGovernment", () => {
-  it("is deterministic and composes 1–3 words with a positive density factor", () => {
+  it("is deterministic and composes 2–3 word titles with a positive density factor", () => {
     const a = generateGovernment(makeRNG("seed-a"));
     const b = generateGovernment(makeRNG("seed-a"));
     expect(a).toStrictEqual(b);
     const words = a.type.split(" ");
-    expect(words.length).toBeGreaterThanOrEqual(1);
-    expect(words.length).toBeLessThanOrEqual(3);
+    expect(words.length === 2 || words.length === 3).toBe(true);
     expect(a.densityFactor).toBeGreaterThan(0);
   });
 
   it("never repeats a word within one name", () => {
     for (let i = 0; i < 60; i++) {
       const words = generateGovernment(makeRNG(`g${i}`)).type.split(" ");
+      expect(words.length === 2 || words.length === 3).toBe(true);
       expect(new Set(words).size).toBe(words.length);
     }
   });

@@ -63,25 +63,25 @@ export const LAYERS: Layer[] = [
     doc: "polar snow caps on land",
     defaultOn: true,
   },
-  { 
-    kind: "view", 
-    key: "viewLabels", 
-    label: "geographic labels", 
-    doc: "display names for the map's geographic features", 
+  {
+    kind: "view",
+    key: "viewLabels",
+    label: "geographic labels",
+    doc: "display names for the map's geographic features",
     defaultOn: true,
   },
-  { 
-    kind: "view", 
-    key: "viewCountries", 
-    label: "countries", 
-    doc: "display country data", 
+  {
+    kind: "view",
+    key: "viewCountries",
+    label: "countries",
+    doc: "display country data",
     defaultOn: true,
   },
-  { 
-    kind: "view", 
-    key: "viewPlates", 
-    label: "tectonic plates", 
-    doc: "display the tectonic plates used to generate mountain ranges", 
+  {
+    kind: "view",
+    key: "viewPlates",
+    label: "tectonic plates",
+    doc: "display the tectonic plates used to generate mountain ranges",
     defaultOn: false,
   },
 ];
@@ -166,6 +166,50 @@ export const DIALS = {
   // Every wave below owns its fbm "octave stack" — OCTAVES (detail layers; more = finer,
   // costlier), GAIN (amplitude falloff per octave; higher = rougher), LACUNARITY (wavelength
   // shrink per octave) — alongside its WAVELENGTH/AMPLITUDE, tuned per wave.
+
+  // Tunables for the political layer (mirrors the DIALS convention; live-editable).
+  COUNTRY: {
+    NUM_COUNTRIES: {
+      value: 50,
+      min: 2,
+      max: 80,
+      step: 1,
+      doc: "how many countries to place (one seed each, always on land)",
+    },
+    COUNTRY_CLUSTERING: {
+      value: 0.7,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      doc: "how clustered the countries are: 1 = tightly clustered, 0 = evenly spread",
+    },
+    CLUSTER_COUNT: {
+      value: 7,
+      min: 1,
+      max: 20,
+      step: 1,
+      doc: "when clumped, how many separate clusters the countries form",
+    },
+    WATER_COST: {
+      value: 6,
+      min: 1,
+      max: 25,
+      step: 0.5,
+      doc: "how much harder a border crosses water than land (1 = no harder; higher = countries hug their own landmass)",
+    },
+    WARP_FREQ: {
+      value: 4,
+      doc: "domain-warp frequency for border wiggle",
+    },
+    WARP_AMP: {
+      value: 1,
+      doc: "domain-warp strength — higher = more organic, wandering borders",
+    },
+    BORDER_HOPS: {
+      value: 20,
+      doc: "how far a water body looks out (over water) for its largest bordering country",
+    },
+  },
 
   // CONTINENT — carrier wave: decides land vs water, then a shaping curve maps it
   // to a base height (abyss → shelf edge → inland).
@@ -396,48 +440,12 @@ export const DIALS = {
       doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer",
     },
   },
-
-  // Tunables for the political layer (mirrors the DIALS convention; live-editable).
-  COUNTRY: {
-    NUM_COUNTRIES: {
-      value: 40,
-      min: 2,
-      max: 80,
-      step: 1,
-      doc: "how many countries to place (one seed each, always on land)",
-    },
-    COUNTRY_DISTRIBUTION: {
-      value: 0.5,
-      min: 0,
-      max: 1,
-      step: 0.01,
-      doc: "how the seeds start out spread: 1 = evenly spaced, 0 = clumped together",
-    },
-    WATER_COST: {
-      value: 6,
-      min: 1,
-      max: 25,
-      step: 0.5,
-      doc: "how much harder a border crosses water than land (1 = no harder; higher = countries hug their own landmass)",
-    },
-    WARP_FREQ: {
-      value: 1.7,
-      doc: "domain-warp frequency for border wiggle",
-    },
-    WARP_AMP: {
-      value: 0.11,
-      doc: "domain-warp strength — higher = more organic, wandering borders",
-    },
-    BORDER_HOPS: {
-      value: 20,
-      doc: "how far a water body looks out (over water) for its largest bordering country",
-    },
-  },
 };
 
 // Familiar aliases so generation code keeps importing CONTINENT, OCEAN, … directly — the
 // SAME object refs DIALS holds, mutated in place by applyTuning (so every reader stays live).
 export const {
+  COUNTRY,
   CONTINENT,
   OCEAN,
   COAST,
@@ -445,7 +453,6 @@ export const {
   MOUNTAIN,
   MOISTURE,
   ICE,
-  COUNTRY,
 } = DIALS;
 
 // Mesh / LOD infrastructure (not terrain shape).
