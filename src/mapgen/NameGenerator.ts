@@ -5,10 +5,12 @@ import {
   weightedRandomChoice,
   type RNG,
 } from "../common/random";
+import type { Government } from "./features/government";
 
 export interface CountryGenOptions {
   seed?: string | number;
   lang?: Language;
+  government?: Government;
 }
 
 // const NUMBERS = [...Array(100)].map((_, i) => i.toString());

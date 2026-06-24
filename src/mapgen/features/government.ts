@@ -1,6 +1,6 @@
 import { randomChoice, type RNG } from "../../common/random";
 
-export type Government = { type: string; densityFactor: number };
+export type Government = { type: string; densityFactor: number; govType: GovType };
 
 enum Authority {
   Civic = "civic",
@@ -32,7 +32,6 @@ enum Society {
 
 enum Trait {
   Expansionist = "expansionist",
-  Isolationist = "isolationist",
   Stable = "stable",
   Fragmented = "fragmented",
   Traditional = "traditional",
@@ -40,14 +39,14 @@ enum Trait {
 }
 
 enum ModifierType {
+  Status = "status",
+  Honorific = "honorific",
   Constitutional = "constitutional",
   Ideological = "ideological",
   Cultural = "cultural",
   Economic = "economic",
-  Religious = "religious",
   Military = "military",
-  Prestige = "prestige",
-  Status = "status",
+  Identity = "identity",
 }
 
 type Tags = {
@@ -57,7 +56,7 @@ type Tags = {
   trait?: Trait[];
 };
 
-type Core = {
+export type GovType = {
   word: string;
   tags: Tags;
 };
@@ -69,7 +68,7 @@ type Modifier = {
   exclude?: Tags;
 };
 
-const CORES: Core[] = [
+const GOV_TYPES: GovType[] = [
   { word: "republic", tags: { authority: [Authority.Civic] } },
   { word: "federation", tags: { authority: [Authority.Civic], structure: [Structure.Federal] } },
   {
@@ -270,40 +269,16 @@ const CORES: Core[] = [
   },
 ];
 
-const MODIFIERS: Modifier[] = [
-  {
-    word: "sovereign",
-    type: ModifierType.Status,
-    tags: {
-      authority: [Authority.Civic, Authority.Monarchic, Authority.Imperial, Authority.Religious],
-    },
-    exclude: { structure: [Structure.Dependent] },
-  },
-  {
-    word: "independent",
-    type: ModifierType.Status,
-    tags: { authority: [Authority.Civic, Authority.Commercial], structure: [Structure.Local] },
-    exclude: { structure: [Structure.Dependent] },
-  },
-  {
-    word: "autonomous",
-    type: ModifierType.Status,
-    tags: { structure: [Structure.Local, Structure.Dependent, Structure.Minor] },
-  },
-  {
-    word: "provisional",
-    type: ModifierType.Status,
-    tags: {
-      authority: [Authority.Civic, Authority.Militaristic],
-      structure: [Structure.Federal, Structure.Local, Structure.Dependent],
-      trait: [Trait.Revolutionary],
-    },
-  },
-
+const QUALIFIER_MODIFIERS: Modifier[] = [
   {
     word: "federal",
     type: ModifierType.Constitutional,
     tags: { structure: [Structure.Federal] },
+  },
+  {
+    word: "decentralized",
+    type: ModifierType.Constitutional,
+    tags: { structure: [Structure.Federal, Structure.Local] },
   },
   {
     word: "unified",
@@ -316,22 +291,9 @@ const MODIFIERS: Modifier[] = [
     tags: { authority: [Authority.Civic], structure: [Structure.Federal, Structure.Local] },
   },
   {
-    word: "egalitarian",
-    type: ModifierType.Ideological,
-    tags: {
-      authority: [Authority.Civic],
-      structure: [Structure.Federal, Structure.Local],
-    },
-    exclude: { authority: [Authority.Elite, Authority.Civic, Authority.Bureaucratic] },
-  },
-  {
-    word: "people's",
-    type: ModifierType.Ideological,
-    tags: {
-      authority: [Authority.Civic],
-      structure: [Structure.Federal, Structure.Local],
-      trait: [Trait.Revolutionary],
-    },
+    word: "parliamentary",
+    type: ModifierType.Constitutional,
+    tags: { authority: [Authority.Civic], structure: [Structure.Federal, Structure.Local] },
   },
   {
     word: "constitutional",
@@ -339,13 +301,13 @@ const MODIFIERS: Modifier[] = [
     tags: { authority: [Authority.Civic, Authority.Monarchic] },
   },
   {
-    word: "free",
+    word: "egalitarian",
     type: ModifierType.Ideological,
     tags: {
-      authority: [Authority.Civic, Authority.Commercial],
-      structure: [Structure.Local, Structure.Minor],
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
     },
-    exclude: { structure: [Structure.Dependent] },
+    exclude: { authority: [Authority.Elite, Authority.Bureaucratic] },
   },
   {
     word: "reformed",
@@ -353,57 +315,42 @@ const MODIFIERS: Modifier[] = [
     tags: { authority: [Authority.Civic, Authority.Religious], trait: [Trait.Revolutionary] },
   },
   {
-    word: "great",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Civic, Authority.Monarchic, Authority.Imperial] },
+    word: "revolutionary",
+    type: ModifierType.Ideological,
+    tags: { authority: [Authority.Civic], trait: [Trait.Revolutionary] },
   },
   {
-    word: "grand",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Monarchic, Authority.Imperial, Authority.Religious] },
-  },
-  {
-    word: "high",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Monarchic, Authority.Religious, Authority.Elite] },
-  },
-  {
-    word: "royal",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Monarchic] },
-  },
-  {
-    word: "imperial",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Imperial, Authority.Monarchic] },
-    exclude: { authority: [Authority.Civic], structure: [Structure.Local] },
-  },
-  {
-    word: "serene",
-    type: ModifierType.Prestige,
-    tags: { authority: [Authority.Civic, Authority.Monarchic, Authority.Elite] },
-  },
-  {
-    word: "holy",
-    type: ModifierType.Religious,
+    word: "collectivist",
+    type: ModifierType.Ideological,
     tags: {
-      authority: [Authority.Religious, Authority.Monarchic, Authority.Imperial, Authority.Militaristic],
+      authority: [Authority.Civic, Authority.Technical],
+      trait: [Trait.Revolutionary],
     },
   },
   {
-    word: "sacred",
-    type: ModifierType.Religious,
+    word: "corporatist",
+    type: ModifierType.Ideological,
     tags: {
-      authority: [Authority.Religious, Authority.Monarchic],
+      authority: [Authority.Commercial, Authority.Elite],
+      structure: [Structure.Urban],
+    },
+  },
+  {
+    word: "technocratic",
+    type: ModifierType.Ideological,
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic],
       society: [Society.Scholastic],
     },
   },
   {
-    word: "orthodox",
-    type: ModifierType.Religious,
-    tags: { authority: [Authority.Religious], trait: [Trait.Traditional] },
+    word: "rational",
+    type: ModifierType.Ideological,
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic, Authority.Civic],
+      society: [Society.Scholastic],
+    },
   },
-
   {
     word: "mercantile",
     type: ModifierType.Economic,
@@ -414,8 +361,8 @@ const MODIFIERS: Modifier[] = [
     },
   },
   {
-    word: "corporatist",
-    type: ModifierType.Ideological,
+    word: "guilded",
+    type: ModifierType.Economic,
     tags: {
       authority: [Authority.Commercial, Authority.Elite],
       structure: [Structure.Urban],
@@ -476,23 +423,6 @@ const MODIFIERS: Modifier[] = [
       society: [Society.Scholastic],
     },
   },
-
-  {
-    word: "technocratic",
-    type: ModifierType.Ideological,
-    tags: {
-      authority: [Authority.Technical, Authority.Bureaucratic],
-      society: [Society.Scholastic],
-    },
-  },
-  {
-    word: "rational",
-    type: ModifierType.Ideological,
-    tags: {
-      authority: [Authority.Technical, Authority.Bureaucratic, Authority.Civic],
-      society: [Society.Scholastic],
-    },
-  },
   {
     word: "stratocratic",
     type: ModifierType.Military,
@@ -505,33 +435,241 @@ const MODIFIERS: Modifier[] = [
   },
 ];
 
+const IDENTITY_MODIFIERS: Modifier[] = [
+  {
+    word: "people's",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
+      trait: [Trait.Revolutionary],
+    },
+  },
+  {
+    word: "popular",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Federal, Structure.Local],
+    },
+  },
+  {
+    word: "citizen's",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Local, Structure.Federal],
+    },
+  },
+  {
+    word: "united",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic],
+      structure: [Structure.Federal],
+    },
+  },
+  {
+    word: "national",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic, Authority.Monarchic],
+    },
+  },
+  {
+    word: "communal",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic],
+      trait: [Trait.Revolutionary],
+    },
+  },
+
+  {
+    word: "civic",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic],
+    },
+  },
+  {
+    word: "public",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic, Authority.Bureaucratic],
+    },
+  },
+  {
+    word: "common",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic, Authority.Commercial],
+    },
+  },
+  {
+    word: "chartered",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Civic, Authority.Commercial, Authority.Bureaucratic],
+      structure: [Structure.Local, Structure.Dependent, Structure.Minor],
+    },
+  },
+
+  {
+    word: "faithful",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Religious],
+    },
+  },
+  {
+    word: "ecclesiastical",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Religious, Authority.Bureaucratic],
+    },
+  },
+  {
+    word: "apostolic",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Religious, Authority.Monarchic],
+    },
+  },
+
+  {
+    word: "royal",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Monarchic],
+    },
+  },
+  {
+    word: "imperial",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Imperial, Authority.Monarchic],
+    },
+  },
+  {
+    word: "dynastic",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Monarchic],
+      trait: [Trait.Traditional],
+    },
+  },
+
+  {
+    word: "merchant",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Commercial],
+      structure: [Structure.Urban],
+      society: [Society.Maritime],
+    },
+  },
+
+  {
+    word: "scholar's",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic, Authority.Religious],
+      society: [Society.Scholastic],
+    },
+  },
+  {
+    word: "learned",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Technical, Authority.Bureaucratic, Authority.Elite],
+      society: [Society.Scholastic],
+    },
+  },
+  {
+    word: "arcane",
+    type: ModifierType.Identity,
+    tags: {
+      authority: [Authority.Technical, Authority.Religious],
+      society: [Society.Scholastic],
+    },
+  },
+
+  {
+    word: "tribal",
+    type: ModifierType.Identity,
+    tags: {
+      structure: [Structure.Nomadic, Structure.Local, Structure.Minor],
+    },
+  },
+  {
+    word: "clan",
+    type: ModifierType.Identity,
+    tags: {
+      structure: [Structure.Nomadic, Structure.Local, Structure.Minor],
+      authority: [Authority.Monarchic, Authority.Militaristic],
+    },
+  },
+
+  {
+    word: "provincial",
+    type: ModifierType.Identity,
+    tags: {
+      structure: [Structure.Dependent, Structure.Local],
+      authority: [Authority.Bureaucratic, Authority.Imperial],
+    },
+  },
+  {
+    word: "colonial",
+    type: ModifierType.Identity,
+    tags: {
+      structure: [Structure.Dependent],
+      authority: [Authority.Imperial, Authority.Commercial],
+    },
+  },
+  {
+    word: "frontier",
+    type: ModifierType.Identity,
+    tags: {
+      structure: [Structure.Dependent, Structure.Local, Structure.Minor],
+    },
+  },
+];
+
+const PATTERNS = [
+  [],
+  ["qualifier"],
+  ["identity"],
+  ["qualifier", "identity"],
+] as const;
+
 function hasOverlap<T>(a: T[] | undefined, b: T[] | undefined): boolean {
   if (!a || !b) return false;
   return b.some((value) => a.includes(value));
 }
 
-function matchesAxis<T>(coreValues: T[] | undefined, modifierValues: T[] | undefined): boolean {
+function matchesAxis<T>(govTypeValues: T[] | undefined, modifierValues: T[] | undefined): boolean {
   if (!modifierValues) return false;
-  return hasOverlap(coreValues, modifierValues);
+  return hasOverlap(govTypeValues, modifierValues);
 }
 
-function matchesTags(core: Tags, modifier: Tags): boolean {
+function matchesTags(govType: Tags, modifier: Tags): boolean {
   return (
-    matchesAxis(core.authority, modifier.authority) ||
-    matchesAxis(core.structure, modifier.structure) ||
-    matchesAxis(core.society, modifier.society) ||
-    matchesAxis(core.trait, modifier.trait)
+    matchesAxis(govType.authority, modifier.authority) ||
+    matchesAxis(govType.structure, modifier.structure) ||
+    matchesAxis(govType.society, modifier.society) ||
+    matchesAxis(govType.trait, modifier.trait)
   );
 }
 
-function isExcluded(core: Tags, exclude: Tags | undefined): boolean {
+function isExcluded(govType: Tags, exclude: Tags | undefined): boolean {
   if (!exclude) return false;
 
   return (
-    hasOverlap(core.authority, exclude.authority) ||
-    hasOverlap(core.structure, exclude.structure) ||
-    hasOverlap(core.society, exclude.society) ||
-    hasOverlap(core.trait, exclude.trait)
+    hasOverlap(govType.authority, exclude.authority) ||
+    hasOverlap(govType.structure, exclude.structure) ||
+    hasOverlap(govType.society, exclude.society) ||
+    hasOverlap(govType.trait, exclude.trait)
   );
 }
 
@@ -539,33 +677,63 @@ function hasTag<T>(values: T[] | undefined, value: T): boolean {
   return values?.includes(value) ?? false;
 }
 
-function compatibleModifiers(core: Core): Modifier[] {
-  return MODIFIERS.filter((modifier) => {
-    if (isExcluded(core.tags, modifier.exclude)) return false;
-    return matchesTags(core.tags, modifier.tags);
+
+
+function titleWordCount(govType: GovType, modifiers: Modifier[]): number {
+  return modifiers.length + govType.word.split(/\s+/).length;
+}
+
+
+function compatibleModifiers(
+  govType: GovType,
+  modifiers: Modifier[],
+): Modifier[] {
+  return modifiers.filter((modifier) => {
+    if (isExcluded(govType.tags, modifier.exclude)) return false;
+    return matchesTags(govType.tags, modifier.tags);
   });
 }
 
-function titleWordCount(core: Core, modifierCount: number): number {
-  return modifierCount + core.word.split(/\s+/).length;
-}
+function pickModifiers(govType: GovType, rng: RNG, count: number): Modifier[] {
+  if (count === 0) return [];
 
-function pickModifiers(core: Core, rng: RNG, count: number): Modifier[] {
-  const pool = compatibleModifiers(core);
-  const picked: Modifier[] = [];
-  const usedTypes = new Set<ModifierType>();
+  const qualifiers = compatibleModifiers(
+    govType,
+    QUALIFIER_MODIFIERS,
+  );
 
-  while (picked.length < count && pool.length > 0) {
-    const index = Math.floor(rng() * pool.length);
-    const modifier = pool.splice(index, 1)[0];
+  const identities = compatibleModifiers(
+    govType,
+    IDENTITY_MODIFIERS,
+  );
 
-    if (usedTypes.has(modifier.type)) continue;
+  const validPatterns = PATTERNS.filter(
+    (pattern) =>
+      pattern.length === count &&
+      pattern.every((slot) => {
+        if (slot === "qualifier") return qualifiers.length > 0;
+        if (slot === "identity") return identities.length > 0;
+        return true;
+      }),
+  );
 
-    usedTypes.add(modifier.type);
-    picked.push(modifier);
+  if (validPatterns.length === 0) return [];
+
+  const pattern = randomChoice(validPatterns, rng);
+
+  const modifiers: Modifier[] = [];
+
+  for (const slot of pattern) {
+    if (slot === "qualifier") {
+      modifiers.push(randomChoice(qualifiers, rng));
+    }
+
+    if (slot === "identity") {
+      modifiers.push(randomChoice(identities, rng));
+    }
   }
 
-  return picked;
+  return modifiers;
 }
 
 function deriveDensityFactor(tags: Tags): number {
@@ -598,38 +766,52 @@ function titleCase(words: string): string {
 }
 
 /**
- * Compose a 2- or 3-word government type from a core form plus compatible modifiers.
+ * Compose a 2- or 3-word government type from a govType form plus compatible semantic modifiers.
+ *
+ * Modifier pools are separated by grammatical slot:
+ *
+ * - Status: provisional, sovereign, autonomous
+ * - Honorific: royal, holy, divine, most-serene
+ * - Qualifier: federal, parliamentary, mercantile, collectivist
+ * - Identity: people's, popular, free
+ *
+ * Valid modifier patterns are intentionally constrained. For example, status + qualifier is disallowed,
+ * which prevents names like "Provisional Collectivist Horde".
  *
  * Examples:
  * - Federal Republic
- * - Holy Kingdom
- * - Mercantile City-State
- * - Enlightened Technocracy
+ * - Most-Serene Republic
+ * - Royal Constitutional Kingdom
+ * - Democratic People's Republic
+ * - Mercantile Trade League
+ * - Autonomous City-State
  *
- * Density is derived from the core's tags. The tags are the source of truth.
+ * Density is derived from the govType's tags. The tags are the source of truth.
  */
 export function generateGovernment(rng: RNG): Government {
   const targetWords = rng() < 0.5 ? 2 : 3;
 
   for (let attempt = 0; attempt < 50; attempt++) {
-    const core = randomChoice(CORES, rng);
-    const modifierCount = targetWords - core.word.split(/\s+/).length;
+    const govType = randomChoice(GOV_TYPES, rng);
+    const modifierCount = targetWords - govType.word.split(/\s+/).length;
     if (modifierCount < 0 || modifierCount > 2) continue;
 
-    const modifiers = pickModifiers(core, rng, modifierCount);
-    if (titleWordCount(core, modifiers.length) !== targetWords) continue;
+    const modifiers = pickModifiers(govType, rng, modifierCount);
+    if (titleWordCount(govType, modifiers) !== targetWords) continue;
 
     return {
-      type: titleCase([...modifiers.map((modifier) => modifier.word), core.word].join(" ")),
-      densityFactor: deriveDensityFactor(core.tags),
+      type: titleCase([...modifiers.map((modifier) => modifier.word), govType.word].join(" ")),
+      densityFactor: deriveDensityFactor(govType.tags),
+      govType,
     };
   }
 
-  const core = CORES.find((entry) => entry.word.split(/\s+/).length === 1) ?? CORES[0];
-  const modifiers = pickModifiers(core, rng, 1);
+  const govType = GOV_TYPES.find((entry) => entry.word.split(/\s+/).length === 1) ?? GOV_TYPES[0];
+  const modifiers = pickModifiers(govType, rng, 1);
 
   return {
-    type: titleCase([...modifiers.map((modifier) => modifier.word), core.word].join(" ")),
-    densityFactor: deriveDensityFactor(core.tags),
+    type: titleCase([...modifiers.map((modifier) => modifier.word), govType.word].join(" ")),
+    densityFactor: deriveDensityFactor(govType.tags),
+    govType,
   };
 }

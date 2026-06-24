@@ -135,19 +135,22 @@ export function colorAt(
 // the WebGL renderer build their fills from this, so they stay pixel-identical.
 export type CellColors = { palette: string[]; colorIdx: Int32Array };
 
+/** The choropleth's source data, threaded to the WebGL renderer so it can bake + sample the country
+ *  texture (see countryTexture.ts) — which lets the tint follow onto detail patches at any zoom. The
+ *  base map is needed for its cell sites during the bake. */
+export type ChoroplethTint = {
+  map: GlobeMap; // the BASE map (countryOf / sites index into it)
+  countryOf: Int32Array; // per base cell: country index, or -1 for ocean / water
+  countryColors: Int32Array; // per country index: 0–3 colour class
+  key: string; // identity for the renderer's texture cache (changes with the data + toggle)
+};
+
 export function computeCellColors(map: GlobeMap, theme: Theme, viewPlates: boolean): CellColors {
   const { elevation, moisture, ice, cellCount, rainfall } = map;
-  const colors = computeColorsFromFields(
-    elevation,
-    moisture,
-    ice,
-    rainfall,
-    cellCount,
-    theme
-  );
+  const colors = computeColorsFromFields(elevation, moisture, ice, rainfall, cellCount, theme);
   if (!viewPlates) return colors;
 
-  // Plate overlay ON: tint each cell's biome colour with its plate's color at PLATE_OVERLAY_OPACITY
+  // Plate overlay ON: tint each cell's biome colour with its plate's color at PLATE_OVERLAY_OPACITY.
   const plateColors = computePlateColors(map);
   return internPalette(cellCount, (i) =>
     quantizeColor(

@@ -232,6 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Interactive country labels (DOM) + the hover state that drives the territory highlight.
   let hoveredCountry: number | null = null;
   let labelResult: MapFeatures | null = null; // the result the DOM labels were last built from
+  let featureEpoch = 0; // bumps when the feature result changes — keys the GPU choropleth colour cache
   // One shared info popup for both countries and cities; it follows its anchor + self-closes (InfoPopup).
   const infoPopup = new InfoPopup();
   const countryLabels = new CountryLabels(canvas.parentElement as HTMLElement, {
@@ -252,27 +253,21 @@ document.addEventListener("DOMContentLoaded", () => {
   function drawCountryOverlay(): void {
     const baseMap = pipeline.base();
     const entry = baseMap ? featureCache.get(baseMap) : undefined;
-    const showCountries = appState.settings.viewCountries ?? false;
-    const showColors = appState.settings.viewCountryColors ?? false;
-    if (!baseMap || !entry || (!showCountries && !showColors)) {
+    if (!baseMap || !entry || !(appState.settings.viewCountries ?? false)) {
       countryCanvas.getContext("2d")?.clearRect(0, 0, countryCanvas.width, countryCanvas.height);
       return;
     }
     const highlight =
-      showCountries && hoveredCountry !== null
+      hoveredCountry !== null
         ? { map: baseMap, countryOf: entry.result.countryOf, index: hoveredCountry }
         : null;
-    const fill = showColors
-      ? { map: baseMap, countryOf: entry.result.countryOf, colorClass: entry.result.countryColors }
-      : null;
     drawCountries(
       countryCanvas,
-      showCountries ? entry.result.borders : new Float32Array(0),
+      entry.result.borders,
       highlight,
       appState.orientation,
       appState.settings.zoom,
-      globeRenderer.horizontalOffsetFraction(),
-      fill
+      globeRenderer.horizontalOffsetFraction()
     );
   }
 
@@ -286,19 +281,61 @@ document.addEventListener("DOMContentLoaded", () => {
     const baseMap = pipeline.base();
     const overlay = pipeline.overlay();
     if (!baseMap) return;
-    // The globe (rung 0) is the base; an overlaid detail patch (if any) sits on top. When a patch
-    // is overlaid, the base skips the cells it hides (its cap), so a zoomed-in view doesn't redraw
-    // a full globe under the patch.
-    globeRenderer.draw(
-      canvas,
-      baseMap,
-      appState.settings,
-      appState.orientation,
-      true,
-      overlay?.cap
-    );
+
+    const viewLevel = pipeline.view().level;
+    const showLabels = appState.settings.viewLabels ?? false;
+    const showCountries = appState.settings.viewCountries ?? false;
+    const showCities = appState.settings.viewCities ?? false;
+    const showCountryColors = appState.settings.viewCountryColors ?? false;
+    const clear = (c: HTMLCanvasElement) =>
+      c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
+
+    // Labels, country borders, and cities share one feature set (countries drive naming), computed once
+    // per (base map, sea level, language) and cached. Resolved BEFORE the globe draw so the choropleth
+    // can tint the globe's per-cell colours on the GPU (free per frame).
+    let entry: FeatureCacheEntry | null = null;
+    if (showLabels || showCountries || showCities || showCountryColors) {
+      const seaLevel = OCEAN.SEA_LEVEL.value;
+      entry = featureCache.get(baseMap) ?? null;
+      if (!entry || entry.seaLevel !== seaLevel || entry.language !== appState.language) {
+        entry = {
+          seaLevel,
+          language: appState.language,
+          result: computeMapFeatures(
+            baseMap,
+            seaLevel,
+            appState.language,
+            appState.mapName,
+            featureNamer,
+            appState.selectedLanguages
+          ),
+        };
+        featureCache.set(baseMap, entry);
+      }
+      // Rebuild the interactive labels/markers when the underlying result changes (new map / dials).
+      if (entry.result !== labelResult) {
+        labelResult = entry.result;
+        featureEpoch++;
+        hoveredCountry = null;
+        countryLabels.setCountries(entry.result.countries);
+        cityMarkers.setCities(entry.result.cities);
+      }
+    }
+
+    // The choropleth tints the BASE globe's per-cell colours on the GPU. The detail patch has no
+    // per-cell country data, so it stays untinted when zoomed in (an accepted limit of the GPU path).
+    const choropleth =
+      showCountryColors && entry
+        ? { map: baseMap, countryOf: entry.result.countryOf, countryColors: entry.result.countryColors, key: `${featureEpoch}` }
+        : undefined;
+
+    // The globe (rung 0) is the base; an overlaid detail patch (if any) sits on top. When a patch is
+    // overlaid, the base skips the cells it hides (its cap), so a zoomed-in view doesn't redraw a full
+    // globe under the patch.
+    globeRenderer.draw(canvas, baseMap, appState.settings, appState.orientation, true, overlay?.cap, choropleth);
     if (overlay) {
-      globeRenderer.draw(canvas, overlay, appState.settings, appState.orientation, false);
+      // Pass the same tint so the detail patch samples the country texture too (follows at any zoom).
+      globeRenderer.draw(canvas, overlay, appState.settings, appState.orientation, false, undefined, choropleth);
     }
     // Plate-motion arrows: a 2D overlay, drawn only with the plate view on (geometry is sampled in
     // the worker; here we just project it to match the active renderer's offset). Otherwise wipe it.
@@ -315,43 +352,8 @@ document.addEventListener("DOMContentLoaded", () => {
       arrowCanvas.getContext("2d")?.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
     }
 
-    // Geographic labels + the country layer share one computed feature set (countries drive naming),
-    // computed once per (base map, sea level, language) and cached; here we just re-project. Labels
-    // are a master switch (default ON): off → no labels. Geographic-label reveal tier ramps with the
-    // level: 0 = oceans + seas (whole-globe view, small), 1 = large lakes/islands, 2 = the rest. The
-    // countries layer (default OFF) draws dotted-red borders + red country names.
-    const viewLevel = pipeline.view().level;
-    const showLabels = appState.settings.viewLabels ?? false;
-    const showCountries = appState.settings.viewCountries ?? false;
-    const showCities = appState.settings.viewCities ?? false;
-    const showCountryColors = appState.settings.viewCountryColors ?? false;
-    const clear = (c: HTMLCanvasElement) =>
-      c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
-    if (showLabels || showCountries || showCities || showCountryColors) {
-      const seaLevel = OCEAN.SEA_LEVEL.value;
-      let entry = featureCache.get(baseMap);
-      if (!entry || entry.seaLevel !== seaLevel || entry.language !== appState.language) {
-        entry = {
-          seaLevel,
-          language: appState.language,
-          result: computeMapFeatures(
-            baseMap,
-            seaLevel,
-            appState.language,
-            appState.mapName,
-            featureNamer,
-            appState.selectedLanguages
-          ),
-        };
-        featureCache.set(baseMap, entry);
-      }
-      // Rebuild the interactive country labels when the underlying result changes (new map / dials).
-      if (entry.result !== labelResult) {
-        labelResult = entry.result;
-        hoveredCountry = null;
-        countryLabels.setCountries(entry.result.countries);
-        cityMarkers.setCities(entry.result.cities);
-      }
+    // 2D / DOM overlays over the globe: feature labels, country borders + names, city markers.
+    if (entry) {
       const offset = globeRenderer.horizontalOffsetFraction();
       if (showLabels) {
         drawFeatureLabels(
@@ -363,12 +365,12 @@ document.addEventListener("DOMContentLoaded", () => {
           viewLevel
         );
       } else clear(labelCanvas);
-      // Country overlay (choropleth fill + borders + hover highlight) self-gates on the two toggles.
-      drawCountryOverlay();
       if (showCountries) {
+        drawCountryOverlay();
         countryLabels.setVisible(true);
         countryLabels.update(canvas, entry.result.countries, appState.orientation, appState.settings.zoom, offset);
       } else {
+        clear(countryCanvas);
         countryLabels.setVisible(false);
       }
       if (showCities) {

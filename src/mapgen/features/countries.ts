@@ -82,7 +82,7 @@ class MinHeap {
     const last = --this.size;
     this.keys[0] = this.keys[last];
     this.vals[0] = this.vals[last];
-    for (let i = 0; ; ) {
+    for (let i = 0; ;) {
       const l = 2 * i + 1;
       const r = l + 1;
       let m = i;
@@ -262,11 +262,13 @@ export function assignCountries(
       jitter: polityRng(),
     });
 
+    const name = namer.generate({ seed: `${mapSeed}|country|${k}`, lang: language, government: government });
+
     compact[k] = countries.length;
     countries.push({
       index: countries.length,
       language,
-      name: namer.generate({ seed: `${mapSeed}|country|${k}`, lang: language }),
+      name,
       cellCount: cells.length,
       areaKm2,
       government: government.type,

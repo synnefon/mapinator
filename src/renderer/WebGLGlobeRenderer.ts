@@ -2,7 +2,8 @@ import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
 import { LOD, type MapSettings } from "../common/settings";
-import { computeCellColors } from "./BiomeColor";
+import { computeCellColors, type ChoroplethTint } from "./BiomeColor";
+import { bakeCountryTexture, COUNTRY_TEX_H, COUNTRY_TEX_W } from "./countryTexture";
 import { GlobeRenderer, globeRadiusPx } from "./GlobeRenderer";
 
 /** The spherical cap occluded by an overlaid patch (accepted for interface parity;
@@ -17,7 +18,8 @@ export interface IGlobeRenderer {
     settings: MapSettings,
     orientation: Quat,
     clear?: boolean,
-    skipCap?: SkipCap
+    skipCap?: SkipCap,
+    choropleth?: ChoroplethTint
   ): void;
   /** Horizontal offset of the globe centre as a fraction of canvas width (the globe is nudged
    *  right to clear the menu). Renderer-specific, so a 2D overlay can match the projection. */
@@ -54,6 +56,7 @@ uniform sampler2D uPalette; // 1×N RGBA8 palette; cell colour fetched by index
 out vec3 vColor;
 out float vShade;        // view-space z → limb darkening
 out float vTerrain;      // baked relief hillshade
+out vec3 vWorldDir;      // un-rotated unit-sphere direction → samples the country choropleth texture
 
 // Same optimized quaternion rotation as common/3DMath.ts:Quat.rotate.
 vec3 qrot(vec4 q, vec3 v) {
@@ -74,6 +77,7 @@ void main() {
   vColor = texelFetch(uPalette, ivec2(int(aColorIdx), 0), 0).rgb;
   vShade = r.z;
   vTerrain = aShade;
+  vWorldDir = aPos;
 }`;
 
 const FRAG_SRC = `#version 300 es
@@ -81,13 +85,22 @@ precision highp float;
 in vec3 vColor;
 in float vShade;
 in float vTerrain;
+in vec3 vWorldDir;
 uniform float uAmbient;
+uniform sampler2D uCountryTex; // equirect choropleth: rgb = country/sea tint, a = blend amount
+uniform float uChoropleth;     // 0 = off, 1 = on (scales the per-texel blend)
 out vec4 fragColor;
 void main() {
+  // Choropleth: sample the country texture by world direction (equirect) and blend over the biome.
+  // Sampled unconditionally (keeps the uniform live + bound); uChoropleth = 0 zeroes the mix when off.
+  vec3 dir = normalize(vWorldDir);
+  vec2 uv = vec2(atan(dir.z, dir.x) * 0.15915494 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) * 0.31830989 + 0.5);
+  vec4 cc = texture(uCountryTex, uv);
+  vec3 base = mix(vColor, cc.rgb, cc.a * uChoropleth);
   // Per-pixel limb darkening (smoother than the Canvas2D per-cell shade buckets).
   float shade = uAmbient + (1.0 - uAmbient) * clamp(vShade, 0.0, 1.0);
   // Baked relief hillshade makes mountains read as 3D — just a multiply, no per-frame work.
-  fragColor = vec4(vColor * shade * vTerrain, 1.0);
+  fragColor = vec4(base * shade * vTerrain, 1.0);
 }`;
 
 type GeomEntry = {
@@ -113,6 +126,11 @@ type GLState = {
   uOffsetX: WebGLUniformLocation;
   uAmbient: WebGLUniformLocation;
   uPalette: WebGLUniformLocation;
+  uCountryTex: WebGLUniformLocation;
+  uChoropleth: WebGLUniformLocation;
+  // Choropleth country texture (equirect), baked on demand + cached by key; shared by base + patch.
+  countryTex: WebGLTexture | null;
+  countryKey: string | null;
   // Per-map GPU buffers, LRU-evicted by total bytes so GPU memory stays bounded.
   geom: Map<GlobeMap, GeomEntry>;
   geomBytes: number;
@@ -159,7 +177,8 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     settings: MapSettings,
     orientation: Quat,
     clear = true,
-    _skipCap?: SkipCap
+    _skipCap?: SkipCap,
+    choropleth?: ChoroplethTint
   ): void {
     const st = this.getState(canvas);
     const { gl } = st;
@@ -197,6 +216,32 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, entry.palTex);
     gl.uniform1i(st.uPalette, 0);
+
+    // Choropleth country texture on unit 1 (baked on demand, cached by key; shared by base + patch
+    // passes so the tint follows onto detail patches). When off, bind any valid texture; the mix is 0.
+    gl.activeTexture(gl.TEXTURE1);
+    if (choropleth) {
+      if (!st.countryTex) {
+        st.countryTex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, st.countryTex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); // longitude seam wraps
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); // poles clamp
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      } else {
+        gl.bindTexture(gl.TEXTURE_2D, st.countryTex);
+      }
+      if (st.countryKey !== choropleth.key) {
+        const data = bakeCountryTexture(choropleth.map, choropleth.countryOf, choropleth.countryColors);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COUNTRY_TEX_W, COUNTRY_TEX_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        st.countryKey = choropleth.key;
+      }
+      gl.uniform1f(st.uChoropleth, 1.0);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, entry.palTex); // any valid texture; the blend is scaled to 0
+      gl.uniform1f(st.uChoropleth, 0.0);
+    }
+    gl.uniform1i(st.uCountryTex, 1);
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, entry.idxBuf);
     gl.drawElements(gl.TRIANGLES, entry.indexCount, gl.UNSIGNED_INT, 0);
@@ -237,6 +282,10 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       uOffsetX: uni("uOffsetX"),
       uAmbient: uni("uAmbient"),
       uPalette: uni("uPalette"),
+      uCountryTex: uni("uCountryTex"),
+      uChoropleth: uni("uChoropleth"),
+      countryTex: null,
+      countryKey: null,
       geom: new Map(),
       geomBytes: 0,
     };

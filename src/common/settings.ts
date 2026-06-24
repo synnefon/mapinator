@@ -248,7 +248,7 @@ export const DIALS = {
       doc: "carrier octaves; more = more island sizes / richer coasts",
     },
     GAIN: {
-      value: 0.7,
+      value: 0.56,
       doc: "amplitude falloff per octave; higher = rougher",
     },
     LACUNARITY: {
@@ -256,11 +256,11 @@ export const DIALS = {
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
-      value: 2.45,
+      value: 1.9,
       doc: "larger = bigger, fewer continents",
     },
     AMPLITUDE: {
-      value: 0.835,
+      value: 1.9,
       doc: "higher = more decisive land/ocean split, sharper coasts",
     },
     BASE_HEIGHT: {
