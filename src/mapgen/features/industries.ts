@@ -21,40 +21,39 @@ const INDUSTRY_RULES: IndustryRule[] = [
   // --- Water & coast (sea = `coastal`; inland water = `nearWater && !coastal`) ---
   { name: "fishing", when: { nearWater: true } },
   { name: "shipping", when: { coastal: true } },
-  { name: "shipbuilding", when: [{ coastal: true, bands: ["WET"] }, { coastal: true, families: ["MEDIUM"] }] },
+  { name: "shipbuilding", when: [{ coastal: true, bands: ["WET"] }, { coastal: true, elevations: ["MEDIUM"] }] },
   { name: "river trade", when: { nearWater: true, coastal: false } },
-  { name: "salt trade", when: { coastal: true, families: ["LOW"], bands: ["DRY"] } },
+  { name: "salt trade", when: { coastal: true, elevations: ["LOW"], bands: ["DRY"] } },
   { name: "whaling", when: { coastal: true, minIce: 0.3 } },
-  { name: "pearling", when: { coastal: true, families: ["LOW"], maxIce: 0.1 } },
+  { name: "pearling", when: { coastal: true, elevations: ["LOW"], maxIce: 0.1 } },
   { name: "amber trade", when: { coastal: true, minIce: 0.2 } },
-  { name: "spice trade", when: { coastal: true, families: ["LOW"], anyTags: { authority: [Authority.Commercial] } } },
-  { name: "sugar refining", when: { coastal: true, families: ["LOW"], bands: ["WET", "MID"], maxIce: 0.1 } },
+  { name: "spice trade", when: { coastal: true, elevations: ["LOW"], anyTags: { authority: [Authority.Commercial] } } },
+  { name: "sugar refining", when: { coastal: true, elevations: ["LOW"], bands: ["WET", "MID"], maxIce: 0.1 } },
   { name: "cartography", when: { coastal: true, anyTags: { society: [Society.Scholastic, Society.Maritime] } } },
   { name: "smuggling", when: { coastal: true, capital: false, anyTags: { authority: [Authority.Commercial] } } },
   { name: "privateering", when: { coastal: true, capital: false, anyTags: { authority: [Authority.Militaristic] } } },
-  { name: "pottery", when: { families: ["LOW"], nearWater: true } },
+  { name: "pottery", when: { elevations: ["LOW"], nearWater: true } },
   { name: "canal works", when: { biomes: ["wetland"], anyTags: { structure: [Structure.Urban] } } },
 
   // --- Farming & herding ---
   {
     name: "agriculture",
-    when: [{ families: ["LOW"], bands: ["MID", "WET"] }, { bands: ["MID"] }, { anyTags: { society: [Society.Agrarian] } }],
+    when: [{ elevations: ["LOW"], bands: ["MID", "WET"] }, { bands: ["MID"] }, { anyTags: { society: [Society.Agrarian] } }],
   },
-  { name: "herding", when: [{ bands: ["DRY"], families: ["MEDIUM"] }, { anyTags: { structure: [Structure.Nomadic], society: [Society.Agrarian] } }] },
-  { name: "forestry", when: { families: ["MEDIUM"], bands: ["WET", "MID"] } },
-  { name: "viticulture", when: { families: ["MEDIUM"], bands: ["MID"], maxElevationMeters: 1200 } },
+  { name: "herding", when: [{ bands: ["DRY"], elevations: ["MEDIUM"] }, { anyTags: { structure: [Structure.Nomadic], society: [Society.Agrarian] } }] },
+  { name: "forestry", when: { elevations: ["MEDIUM"], bands: ["WET", "MID"] } },
+  { name: "viticulture", when: { elevations: ["MEDIUM"], bands: ["MID"], maxElevationMeters: 1200 } },
   { name: "date farming", when: { biomes: ["desert"], nearWater: true } },
   { name: "rice farming", when: { biomes: ["wetland"] } },
-  { name: "olive orchards", when: { families: ["LOW"], bands: ["DRY", "MID"], maxElevationMeters: 800 } },
-  { name: "linen", when: { families: ["LOW"], bands: ["WET", "MID"] } },
-  { name: "beekeeping", when: { families: ["LOW", "MEDIUM"], bands: ["MID", "WET"] } },
-  { name: "cheesemaking", when: { families: ["MEDIUM", "HIGH"], bands: ["MID", "WET"] } },
+  { name: "olive farming", when: { elevations: ["LOW"], bands: ["DRY", "MID"], maxElevationMeters: 800 } },
+  { name: "linen", when: { elevations: ["LOW"], bands: ["WET", "MID"] } },
+  { name: "cheesemaking", when: { elevations: ["MEDIUM", "HIGH"], bands: ["MID", "WET"] } },
   { name: "brewing", when: { anyTags: { society: [Society.Agrarian] }, bands: ["MID", "WET"] } },
   { name: "distilling", when: { anyTags: { society: [Society.Agrarian] }, minIce: 0.15 } },
   { name: "leatherworking", when: { anyTags: { society: [Society.Agrarian], structure: [Structure.Nomadic] } } },
-  { name: "wool", when: { families: ["MEDIUM", "HIGH"], anyTags: { society: [Society.Agrarian], structure: [Structure.Nomadic] } } },
-  { name: "tea", when: { families: ["MEDIUM", "HIGH"], bands: ["WET"], minElevationMeters: 600 } },
-  { name: "cotton", when: { families: ["LOW"], bands: ["MID", "DRY"], nearWater: true } },
+  { name: "wool", when: { elevations: ["MEDIUM", "HIGH"], anyTags: { society: [Society.Agrarian], structure: [Structure.Nomadic] } } },
+  { name: "tea", when: { elevations: ["MEDIUM", "HIGH"], bands: ["WET"], minElevationMeters: 600 } },
+  { name: "cotton", when: { elevations: ["LOW"], bands: ["MID", "DRY"], nearWater: true } },
 
   // --- Climate-driven ---
   { name: "fur trapping", when: { biomes: ["tundra", "snowfields", "montane forest"] } },
@@ -68,37 +67,38 @@ const INDUSTRY_RULES: IndustryRule[] = [
   { name: "horse breeding", when: { biomes: ["grassland", "steppe"], anyTags: { structure: [Structure.Nomadic], trait: [Trait.Expansionist] } } },
 
   // --- Mountain & mineral ---
-  { name: "mining", when: [{ families: ["HIGH", "VERY_HIGH"] }, { families: ["MEDIUM"], bands: ["DRY"] }] },
-  { name: "quarrying", when: { families: ["HIGH"], bands: ["DRY"] } },
-  { name: "metalworking", when: { families: ["HIGH", "VERY_HIGH"], anyTags: { society: [Society.Industrial], authority: [Authority.Technical] } } },
-  { name: "gemcutting", when: { families: ["HIGH", "VERY_HIGH"], anyTags: { authority: [Authority.Elite, Authority.Commercial] } } },
-  { name: "glassblowing", when: [{ biomes: ["desert"] }, { coastal: true, anyTags: { structure: [Structure.Urban] } }] },
+  { name: "mining", when: [{ elevations: ["HIGH", "VERY_HIGH"] }, { elevations: ["MEDIUM"], bands: ["DRY"] }] },
+  { name: "quarrying", when: { elevations: ["HIGH"], bands: ["DRY"] } },
+  { name: "metalworking", when: { elevations: ["HIGH", "VERY_HIGH"], anyTags: { society: [Society.Industrial], authority: [Authority.Technical] } } },
+  { name: "gemcutting", when: { elevations: ["HIGH", "VERY_HIGH"], anyTags: { authority: [Authority.Elite, Authority.Commercial] } } },
+  { name: "glassblowing", when: [{ coastal: true, anyTags: { structure: [Structure.Urban], authority: [Authority.Technical, Authority.Commercial] } }] },
   {
     name: "armory",
     when: [
       { tiers: ["medium", "big"], anyTags: { authority: [Authority.Militaristic] } },
-      { families: ["HIGH", "VERY_HIGH"], anyTags: { authority: [Authority.Technical] } },
+      { elevations: ["HIGH", "VERY_HIGH"], anyTags: { authority: [Authority.Technical] } },
     ],
   },
 
   // --- Craft & industry ---
   { name: "manufacturing", when: [{ tiers: ["big"] }, { anyTags: { society: [Society.Industrial], authority: [Authority.Technical], structure: [Structure.Urban] } }] },
   { name: "textiles", when: [{ tiers: ["medium", "big"] }, { anyTags: { society: [Society.Industrial, Society.Agrarian] } }] },
-  { name: "silk weaving", when: { families: ["LOW", "MEDIUM"], anyTags: { authority: [Authority.Commercial], society: [Society.Industrial] } } },
+  { name: "silk weaving", when: { elevations: ["LOW", "MEDIUM"], anyTags: { authority: [Authority.Commercial], society: [Society.Industrial] } } },
   { name: "papermaking", when: { nearWater: true, anyTags: { society: [Society.Scholastic] } } },
   { name: "clockmaking", when: { tiers: ["medium", "big"], anyTags: { authority: [Authority.Technical], structure: [Structure.Urban] } } },
 
   // --- Leisure & travel (period-appropriate destinations/spectacle; cf. `pilgrimage`, `theater`) ---
-  { name: "hot springs", when: { families: ["HIGH", "VERY_HIGH"] } },
+  { name: "hot springs", when: { elevations: ["HIGH", "VERY_HIGH"] } },
   { name: "holy festivals", when: { anyTags: { authority: [Authority.Religious], trait: [Trait.Traditional] } } },
   { name: "tournaments", when: { anyTags: { authority: [Authority.Monarchic, Authority.Militaristic] } } },
   { name: "gaming houses", when: { tiers: ["medium", "big"], anyTags: { authority: [Authority.Commercial], structure: [Structure.Urban] } } },
   { name: "minstrelsy", when: { anyTags: { trait: [Trait.Traditional], structure: [Structure.Urban] } } },
-
+  { name: "gambling", when: { anyTags: { authority: [Authority.Commercial], structure: [Structure.Urban] } } },
+  
   // --- Trade, government & culture ---
   { name: "banking", when: [{ capital: true }, { tiers: ["big"] }, { anyTags: { authority: [Authority.Commercial, Authority.Elite] } }] },
   { name: "scholarship", when: { anyTags: { society: [Society.Scholastic], authority: [Authority.Technical, Authority.Religious] } } },
-  { name: "astronomy", when: { families: ["HIGH", "VERY_HIGH"], anyTags: { society: [Society.Scholastic] } } },
+  { name: "astronomy", when: { elevations: ["HIGH", "VERY_HIGH"], anyTags: { society: [Society.Scholastic] } } },
   { name: "alchemy", when: { tags: { society: [Society.Scholastic], authority: [Authority.Technical] } } },
   { name: "printing", when: [{ tags: { society: [Society.Scholastic] }, tiers: ["big"] }, { tags: { society: [Society.Scholastic], structure: [Structure.Urban] } }] },
   { name: "theater", when: { tiers: ["big"], anyTags: { structure: [Structure.Urban] } } },
@@ -108,6 +108,10 @@ const INDUSTRY_RULES: IndustryRule[] = [
   { name: "diplomacy", when: { capital: true, anyTags: { authority: [Authority.Bureaucratic, Authority.Elite] } } },
   { name: "mercenary trade", when: { tags: { authority: [Authority.Militaristic, Authority.Commercial] } } },
 ];
+
+// Every industry name, in rule order — for completeness checks (e.g. the fun-fact flavour guard, which
+// requires at least one industry-specific template per industry).
+export const INDUSTRY_NAMES: string[] = INDUSTRY_RULES.map((r) => r.name);
 
 // Industry count grows with city size — smaller cities get fewer.
 const INDUSTRY_COUNT: Record<CityTier, number> = { small: 1, medium: 2, big: 3 };

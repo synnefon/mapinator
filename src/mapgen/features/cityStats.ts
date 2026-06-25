@@ -55,6 +55,7 @@ export type CityContext = {
   coastal: boolean; // the cell TOUCHES a large body of water (the sea) — gates maritime industry + flavour
   nearWater: boolean; // the cell TOUCHES water of any kind (lakes, rivers included)
   govTags: Tags; // the owning country's government's semantic tags
+  industries: string[]; // the city's derived industries; populated before generateFunFact so facts can gate on them
   countryName: string;
   rng: RNG;
 };
@@ -102,8 +103,13 @@ export function cityProfile(args: {
     coastal: args.seaDist === 0,
     nearWater: args.coastDist === 0,
     govTags: args.govTags,
+    industries: [],
     countryName: args.countryName,
     rng: args.rng,
   };
-  return { elevationMeters: meters, industries: deriveIndustries(ctx), funFact: generateFunFact(ctx, args.usedFunFacts) };
+  // Industries first, then fold them into the context so fun facts can gate on the city's ACTUAL trades
+  // (not just the government's Society.Industrial tag) — keeps the flavour line in step with the industries line.
+  const industries = deriveIndustries(ctx);
+  ctx.industries = industries;
+  return { elevationMeters: meters, industries, funFact: generateFunFact(ctx, args.usedFunFacts) };
 }

@@ -30,14 +30,14 @@ export function latitudeHabitability(latDeg: number): number {
 
 // Climate habitability by biome, grounded in ~1400 densities: lush green land (forest / well-watered
 // plains) carried the dense farming populations, while deserts, snow-capped mountains, and ice were
-// nearly empty. Bands/families are the SAME ones the renderer colours by (see terrainClassOf), so the
+// nearly empty. Bands/elevations are the SAME ones the renderer colours by (see terrainClassOf), so the
 // "greener → denser" rule tracks the green you actually see on the map.
 const MOISTURE_HABITABILITY: Record<MoistureBand, number> = {
   WET: 1.25, // forest / lush — densest
   MID: 0.85, // grassland / temperate plains
   DRY: 0.12, // desert — sparse
 };
-const FAMILY_HABITABILITY: Record<ElevationFamily, number> = {
+const ELEVATION_HABITABILITY: Record<ElevationFamily, number> = {
   OCEAN: 0, // never reached (ocean cells classify as null, not land); present to satisfy the record
   LOW: 1.0,
   MEDIUM: 0.9,
@@ -49,10 +49,10 @@ const FAMILY_HABITABILITY: Record<ElevationFamily, number> = {
  *  → low. Averaged over a country's cells in countries.ts to form PopContext.climate. */
 export function climateHabitability(
   band: MoistureBand,
-  family: ElevationFamily,
+  elevation: ElevationFamily,
   ice: number
 ): number {
-  return MOISTURE_HABITABILITY[band] * FAMILY_HABITABILITY[family] * (1 - 0.92 * ice);
+  return MOISTURE_HABITABILITY[band] * ELEVATION_HABITABILITY[elevation] * (1 - 0.92 * ice);
 }
 
 // Density multipliers applied in turn. Each is a small, isolated, testable function of the context.

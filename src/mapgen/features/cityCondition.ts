@@ -11,16 +11,18 @@ import { type Tags } from "./government";
 
 export type TagFilter = Partial<Tags>;
 
-/** Optional constraints over a CityContext. Set fields are AND-combined. Array fields (families/bands/
- *  biomes/tiers) match if the city's value is ONE OF the listed (OR within the field). Tag filters:
- *  `tags` = every named tag present, `anyTags` = at least one present, `excludeTags` = none present. */
+/** Optional constraints over a CityContext. Set fields are AND-combined. Array fields (elevations/bands/
+ *  biomes/tiers) match if the city's value is ONE OF the listed (OR within the field); `industries`
+ *  matches if the city HAS at least one of the listed. Tag filters: `tags` = every named tag present,
+ *  `anyTags` = at least one present, `excludeTags` = none present. */
 export type CityCondition = {
   tiers?: CityTier[];
   capital?: boolean;
 
-  families?: ElevationFamily[];
+  elevations?: ElevationFamily[];
   bands?: MoistureBand[];
   biomes?: BiomeName[];
+  industries?: string[]; // city has AT LEAST ONE of these derived industries (see industries.ts)
 
   coastal?: boolean;
   nearWater?: boolean;
@@ -74,9 +76,10 @@ function matchesSingle(c: CityContext, when: CityCondition): boolean {
   if (when.capital !== undefined && c.isCapital !== when.capital) return false;
   if (when.tiers && !when.tiers.includes(c.tier)) return false;
 
-  if (when.families && !when.families.includes(c.family)) return false;
+  if (when.elevations && !when.elevations.includes(c.family)) return false;
   if (when.bands && !when.bands.includes(c.band)) return false;
   if (when.biomes && !when.biomes.includes(c.biome)) return false;
+  if (when.industries && !when.industries.some((n) => c.industries.includes(n))) return false;
 
   if (when.coastal !== undefined && c.coastal !== when.coastal) return false;
   if (when.nearWater !== undefined && c.nearWater !== when.nearWater) return false;
@@ -87,11 +90,20 @@ function matchesSingle(c: CityContext, when: CityCondition): boolean {
   if (when.minIce !== undefined && c.ice < when.minIce) return false;
   if (when.maxIce !== undefined && c.ice > when.maxIce) return false;
 
-  if (!includesAllTags(c.govTags, when.tags)) return false;
-  if (!includesAnyTag(c.govTags, when.anyTags)) return false;
-  if (!includesNoTags(c.govTags, when.excludeTags)) return false;
+  if (!tagsMatch(c.govTags, when)) return false;
 
   return true;
+}
+
+/** The tag half of a condition: `tags` (all present) ∧ `anyTags` (≥1 present) ∧ `excludeTags` (none present).
+ *  Split out so a given govType's tag set can be tested directly (e.g. the offline combo audit), not only
+ *  via a full CityContext. */
+export function tagsMatch(govTags: Tags, when: Pick<CityCondition, "tags" | "anyTags" | "excludeTags">): boolean {
+  return (
+    includesAllTags(govTags, when.tags) &&
+    includesAnyTag(govTags, when.anyTags) &&
+    includesNoTags(govTags, when.excludeTags)
+  );
 }
 
 /** Does the context satisfy `when`? `undefined` always matches. An ARRAY is any-of (OR): it matches when

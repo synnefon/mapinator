@@ -246,7 +246,7 @@ function largeWaterMask(map: GlobeMap, seaLevel: number, adjacency: number[][]):
 }
 
 /** Per-cell cap on the biggest city a cell may host: 2 = any, 1 = small only (HIGH ground), 0 = none
- *  (VERY_HIGH peaks + non-land). Derived from the same elevation families the renderer colours by. */
+ *  (VERY_HIGH peaks + non-land). Derived from the same elevations the renderer colours by. */
 export function elevationCaps(map: GlobeMap): Int8Array {
   const { cellCount, elevation, moisture, rainfall } = map;
   const cap = new Int8Array(cellCount);

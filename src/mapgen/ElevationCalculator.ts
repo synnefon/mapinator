@@ -208,7 +208,7 @@ export class ElevationCalculator {
     const ec = applyContrast(h0, CONTINENT.ELEVATION_CONTRAST);
     if (ec < cwl) return 1;
     const landE = Math.min((ec - cwl) / (1 - cwl), 1 - 1e-9);
-    const family = getElevationBandNameRaw(landE).colorFamily;
+    const family = getElevationBandNameRaw(landE).colorElevation;
     // TRUE MOUNTAINS only: the HIGH (bare rock) + VERY_HIGH (snow) bands — the height only the
     // MOUNTAIN wave can reach (land base is capped to the green band). Everything below — green
     // foothills/swell (MEDIUM) and flat LOW plains — stays flat-lit, so shadows mark real

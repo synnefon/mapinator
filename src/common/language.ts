@@ -74,7 +74,7 @@ type LanguageConfig = {
   vowelLinker: string;
 };
 
-// A few reusable vowel bundles to bias families
+// A few reusable vowel bundles to bias elevations
 const V_OPEN = ["a", "e", "i", "o", "u"];
 const V_DIP = ["ai", "au", "ei", "ia", "io", "oa", "ue", "ui"];
 const V_SOFT = ["a", "e", "i", "o", "u", "ia", "io", "ie", "ea"];

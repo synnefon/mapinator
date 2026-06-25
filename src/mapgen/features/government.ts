@@ -68,7 +68,7 @@ type Modifier = {
   exclude?: Tags;
 };
 
-const GOV_TYPES: GovType[] = [
+export const GOV_TYPES: GovType[] = [
   { word: "republic", tags: { authority: [Authority.Civic] } },
   { word: "federation", tags: { authority: [Authority.Civic], structure: [Structure.Federal] } },
   {
@@ -120,7 +120,7 @@ const GOV_TYPES: GovType[] = [
   },
   {
     word: "freehold",
-    tags: { authority: [Authority.Civic], structure: [Structure.Local, Structure.Minor] },
+    tags: { authority: [Authority.Civic], structure: [Structure.Local, Structure.Minor], society: [Society.Agrarian] },
   },
 
   {

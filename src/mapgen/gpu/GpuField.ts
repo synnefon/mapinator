@@ -17,11 +17,11 @@ export type GpuFieldResult = {
 
 const now = (): number => performance.now();
 
-// The landE at which the hillshade family gate turns on (MEDIUM→HIGH boundary): the break just before
-// the first HIGH-family band. Derived so it tracks elevationBands.ts. Mirrors the CPU's
+// The landE at which the hillshade elevation gate turns on (MEDIUM→HIGH boundary): the break just before
+// the first HIGH-elevation band. Derived so it tracks elevationBands.ts. Mirrors the CPU's
 // getElevationBandNameRaw HIGH/VERY_HIGH gate in ElevationCalculator.hillshadeAt.
 const SHADE_MIN_LAND_E = ELEVATION_BAND_BREAKS[
-  ELEVATION_BAND_BREAKS.findIndex((b) => b.colorFamily === "HIGH") - 1
+  ELEVATION_BAND_BREAKS.findIndex((b) => b.colorElevation === "HIGH") - 1
 ].breakPoint;
 
 /**

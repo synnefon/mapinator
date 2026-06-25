@@ -1,7 +1,7 @@
 // The elevation discretization: raw elevation [-1..1] → band + colour family. This is the ONE home
 // for "which band is this height", shared by the renderer's biome colouring (biomes.ts) AND the
 // generation hillshade gate (ElevationCalculator). It lives in `common` so generation never has to
-// reach into the render-side `biomes` module to gate shading on the mountain families.
+// reach into the render-side `biomes` module to gate shading on the mountain elevations.
 
 export type ElevationFamily = "OCEAN" | "LOW" | "MEDIUM" | "HIGH" | "VERY_HIGH";
 
@@ -23,25 +23,25 @@ export type ElevationBand =
 export const ELEVATION_BAND_BREAKS: readonly {
   breakPoint: number;
   band: ElevationBand;
-  colorFamily: ElevationFamily;
+  colorElevation: ElevationFamily;
 }[] = [
-  { breakPoint: -0.7, colorFamily: "OCEAN", band: "OCEAN_3" }, // deep
-  { breakPoint: -0.35, colorFamily: "OCEAN", band: "OCEAN_2" }, // medium
-  { breakPoint: 0, colorFamily: "OCEAN", band: "OCEAN_1" }, // shallow
-  { breakPoint: 0.2, colorFamily: "LOW", band: "LOW_1" },
-  { breakPoint: 0.22, colorFamily: "LOW", band: "LOW_2" },
-  { breakPoint: 0.35, colorFamily: "MEDIUM", band: "MEDIUM_1" },
-  { breakPoint: 0.52, colorFamily: "MEDIUM", band: "MEDIUM_2" },
-  { breakPoint: 0.62, colorFamily: "HIGH", band: "HIGH_1" },
-  { breakPoint: 0.75, colorFamily: "HIGH", band: "HIGH_2" },
-  { breakPoint: 0.87, colorFamily: "VERY_HIGH", band: "VERY_HIGH_1" },
-  { breakPoint: 1.0, colorFamily: "VERY_HIGH", band: "VERY_HIGH_2" },
+  { breakPoint: -0.7, colorElevation: "OCEAN", band: "OCEAN_3" }, // deep
+  { breakPoint: -0.35, colorElevation: "OCEAN", band: "OCEAN_2" }, // medium
+  { breakPoint: 0, colorElevation: "OCEAN", band: "OCEAN_1" }, // shallow
+  { breakPoint: 0.2, colorElevation: "LOW", band: "LOW_1" },
+  { breakPoint: 0.22, colorElevation: "LOW", band: "LOW_2" },
+  { breakPoint: 0.35, colorElevation: "MEDIUM", band: "MEDIUM_1" },
+  { breakPoint: 0.52, colorElevation: "MEDIUM", band: "MEDIUM_2" },
+  { breakPoint: 0.62, colorElevation: "HIGH", band: "HIGH_1" },
+  { breakPoint: 0.75, colorElevation: "HIGH", band: "HIGH_2" },
+  { breakPoint: 0.87, colorElevation: "VERY_HIGH", band: "VERY_HIGH_1" },
+  { breakPoint: 1.0, colorElevation: "VERY_HIGH", band: "VERY_HIGH_2" },
 ] as const;
 
 // Continuous elevation -> unified band (the first break whose upper bound it falls under).
 export function getElevationBandNameRaw(elevation: number): {
   breakPoint: number;
-  colorFamily: ElevationFamily;
+  colorElevation: ElevationFamily;
   band: ElevationBand;
 } {
   const firstBreak = ELEVATION_BAND_BREAKS.find(
