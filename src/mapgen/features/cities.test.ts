@@ -5,7 +5,7 @@ import { terrainClassOf } from "../../renderer/BiomeColor";
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
-import { assignCities, coastDistance } from "./cities";
+import { assignCities, coastDistance, type City } from "./cities";
 import { assignCountries } from "./countries";
 
 const PARAMS = snapshotParams();
@@ -23,16 +23,6 @@ const build = () => {
   );
   const cities = assignCities(map, seaLevel, adjacency, countryOf, countries, SEED, new NameGenerator("c"));
   return { map, adjacency, countries, cities };
-};
-
-// A city's anchor is an exact cell-site vector, so it maps back to its cell index for terrain lookups.
-const keyOf = (v: { x: number; y: number; z: number }): string => `${v.x},${v.y},${v.z}`;
-const cellLookup = (map: ReturnType<typeof build>["map"]): Map<string, number> => {
-  const m = new Map<string, number>();
-  for (let c = 0; c < map.cellCount; c++) {
-    m.set(`${map.sites[3 * c]},${map.sites[3 * c + 1]},${map.sites[3 * c + 2]}`, c);
-  }
-  return m;
 };
 
 describe("assignCities", () => {
@@ -75,11 +65,10 @@ describe("assignCities", () => {
   it("places cities disproportionately near the coast", () => {
     const { map, adjacency, cities } = build();
     const coastDist = coastDistance(map, seaLevel, adjacency);
-    const cellOf = cellLookup(map);
     const isCoastal = (d: number): boolean => d >= 0 && d <= 2;
     let cityCoastal = 0;
     for (const city of cities) {
-      if (isCoastal(coastDist[cellOf.get(keyOf(city.anchor))!])) cityCoastal++;
+      if (isCoastal(coastDist[city.cell])) cityCoastal++;
     }
     let landTotal = 0;
     let landCoastal = 0;
@@ -93,9 +82,8 @@ describe("assignCities", () => {
 
   it("keeps cities off high ground: none on VERY_HIGH, only small on HIGH", () => {
     const { map, cities } = build();
-    const cellOf = cellLookup(map);
     for (const city of cities) {
-      const cell = cellOf.get(keyOf(city.anchor))!;
+      const cell = city.cell;
       const family = terrainClassOf(map.elevation[cell], map.moisture[cell], map.rainfall)?.family;
       expect(family).not.toBe("VERY_HIGH");
       if (family === "HIGH") expect(city.population).toBeLessThan(20_000); // MEDIUM_POP — small cities only
@@ -135,11 +123,22 @@ describe("assignCities", () => {
     expect(high.urban).toBeGreaterThan(low.urban); // and a larger total urban population
   });
 
-  it("is deterministic for a fixed seed", () => {
+  it("is deterministic for a fixed seed (incl. industries, elevation, fun fact, country)", () => {
     const a = build().cities;
     const b = build().cities;
-    expect(a.map((c) => `${c.name}:${c.population}:${c.tier}:${c.isCapital}`)).toStrictEqual(
-      b.map((c) => `${c.name}:${c.population}:${c.tier}:${c.isCapital}`)
-    );
+    const key = (c: City) =>
+      [c.name, c.population, c.tier, c.isCapital, c.countryName, c.elevationMeters, c.industries.join("/"), c.funFact].join(":");
+    expect(a.map(key)).toStrictEqual(b.map(key));
+  });
+
+  it("attaches well-formed stats: 1–3 industries, non-negative elevation, a fun fact, its country", () => {
+    const { countries, cities } = build();
+    for (const c of cities) {
+      expect(c.industries.length).toBeGreaterThanOrEqual(1);
+      expect(c.industries.length).toBeLessThanOrEqual(3);
+      expect(c.elevationMeters).toBeGreaterThanOrEqual(0);
+      expect(c.funFact.trim().length).toBeGreaterThan(0);
+      expect(c.countryName).toBe(countries[c.countryIndex].name);
+    }
   });
 });

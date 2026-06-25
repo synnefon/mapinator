@@ -15,7 +15,12 @@ export interface GlobeMap {
     sites: Float32Array; // 3 per cell: [x,y,z, …] — Voronoi site / cell center
     ringOffsets: Uint32Array; // cellCount+1 prefix offsets (in vertices) into ringVerts
     ringVerts: Float32Array; // 3 per vertex: each cell's closed polygon ring
-    elevation: Float32Array; // [0,1] raw elevation (pre sea-level contrast)
+    elevation: Float32Array; // [0,1] raw elevation (pre sea-level contrast) — drives land/water + colour
+    // Display-only elevation: the rendered `elevation` caps ALL non-mountain land at one height (so flat
+    // land reads as a single green band), which makes every flat cell share ONE value. This restores a
+    // continentalness-driven inland rise (+ the real mountain relief on top) so stats/labels — e.g. a
+    // city's metres — vary across flat land. NEVER feeds rendering or land/water (see reportElevationAt).
+    reportElevation: Float32Array; // [0,1]
     moisture: Float32Array; // [0,1] already-contrasted moisture
     ice: Float32Array; // [0,1] polar ice-cap mask (1 = full ice)
     shade: Float32Array; // [0,1] baked relief hillshade (1 = lit, FLOOR = shadowed); a draw-time colour multiply

@@ -13,6 +13,7 @@ import { ElevationCalculator } from "./ElevationCalculator";
 import {
   goldbergCapLevel,
   goldbergCapMesh,
+  goldbergGlobeOverlayLevel,
   goldbergLevelForPoints,
   goldbergMesh,
 } from "./Goldberg";
@@ -88,12 +89,16 @@ export class MapGenerator {
     continentalnessOverride?: number,
     geometryOnly = false
   ): GlobeMap {
-    // Whole globe: the full mesh (cached by level). Nothing globe-wide is (re)built here — rung 0
-    // is exactly "coarse mesh + per-cell fields," no heavier than any other rung. The globe is the
-    // canonical CPU field (feature detection + saves depend on it), so it is never geometryOnly.
+    // Whole globe (the full mesh, cached by level). Two flavours, picked by geometryOnly:
+    //  • CANONICAL BASE (geometryOnly false): coarse (goldbergLevelForPoints) + fully CPU-sampled —
+    //    feature detection + saves depend on it, so it is never geometryOnly. Unchanged.
+    //  • FINE GPU OVERLAY (geometryOnly true): a FINER whole-globe mesh (goldbergGlobeOverlayLevel)
+    //    drawn at the zoomed-OUT view so its coastline matches the detail patches; its fields are
+    //    computed on the GPU, so no CPU sampling here.
     if (halfAngle >= Math.PI) {
-      const mesh = this.getMesh(points);
-      return this.packMesh(mesh, points, continentalnessOverride, undefined, false);
+      const level = geometryOnly ? goldbergGlobeOverlayLevel(points) : goldbergLevelForPoints(points);
+      const mesh = this.getMesh(level);
+      return this.packMesh(mesh, points, continentalnessOverride, undefined, geometryOnly);
     }
     // Detail cap at a finer subdivision than the global mesh. Cells outside the inset cap, and
     // incomplete-ring boundary cells, are dropped inside the mesher. `geometryOnly` skips the per-cell
@@ -152,6 +157,7 @@ export class MapGenerator {
     const ringOffsets = new Uint32Array(n + 1);
     const ringVerts = new Float32Array(totalVerts * 3);
     const elevation = new Float32Array(n);
+    const reportElevation = new Float32Array(n);
     const moisture = new Float32Array(n);
     const ice = new Float32Array(n);
     const shade = new Float32Array(n);
@@ -183,6 +189,7 @@ export class MapGenerator {
       if (!geometryOnly) {
         const cell = this.elevationCalc.sampleCell(site, continentalnessOverride);
         elevation[i] = cell.elevation;
+        reportElevation[i] = cell.reportElevation;
         moisture[i] = cell.moisture;
         ice[i] = cell.ice;
         shade[i] = cell.shade;
@@ -202,6 +209,7 @@ export class MapGenerator {
       ringOffsets,
       ringVerts,
       elevation,
+      reportElevation,
       moisture,
       ice,
       shade,
@@ -215,11 +223,10 @@ export class MapGenerator {
     };
   }
 
-  /** Build (or reuse) the global hex (Goldberg) mesh for a point count. The point count picks a
-   *  subdivision level; the grid is deterministic + nested, so it's stable across zoom (a finer
-   *  level refines the coarse hexes in place rather than re-tessellating). */
-  private getMesh(pointCount: number): MeshCell[] {
-    const level = goldbergLevelForPoints(pointCount);
+  /** Build (or reuse) the global hex (Goldberg) mesh at a subdivision level. The grid is
+   *  deterministic + nested, so it's stable across zoom (a finer level refines the coarse hexes in
+   *  place rather than re-tessellating) and seed-independent, so it's cached + reused across seeds. */
+  private getMesh(level: number): MeshCell[] {
     const cached = this.meshCache.get(level);
     if (cached) return cached;
 

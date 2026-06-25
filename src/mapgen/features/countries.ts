@@ -7,7 +7,7 @@ import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { NameGenerator } from "../NameGenerator";
 import { vertexKey } from "./adjacency";
 import { angularExtent, poleOfInaccessibility } from "./detect";
-import { generateGovernment } from "./government";
+import { generateGovernment, type GovType } from "./government";
 import { climateHabitability, estimatePopulation } from "./population";
 
 // The globe is rendered as a unit sphere; we size it to Earth EXACTLY so areas read in real units.
@@ -27,6 +27,7 @@ export type Country = {
   cellCount: number;
   areaKm2: number;
   government: string; // composed government type, e.g. "federal republic"
+  govType: GovType; // the base form + its semantic tags — drives city industry + fun facts
   population: number;
   anchorCell: number; // label position — the country's interior-most cell
   extent: number; // angular radius (rad) for label sizing
@@ -262,7 +263,8 @@ export function assignCountries(
       jitter: polityRng(),
     });
 
-    const name = namer.generate({ seed: `${mapSeed}|country|${k}`, lang: language, government: government });
+    // Globally unique across the whole map (the namer re-rolls on collision; reset per generation).
+    const name = namer.generate({ seed: `${mapSeed}|country|${k}`, lang: language, government, unique: true });
 
     compact[k] = countries.length;
     countries.push({
@@ -272,6 +274,7 @@ export function assignCountries(
       cellCount: cells.length,
       areaKm2,
       government: government.type,
+      govType: government.govType,
       population,
       anchorCell,
       extent: angularExtent(anchorCell, cells, sites),

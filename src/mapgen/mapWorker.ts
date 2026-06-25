@@ -50,6 +50,7 @@ ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
     map.ringOffsets.buffer,
     map.ringVerts.buffer,
     map.elevation.buffer,
+    map.reportElevation.buffer,
     map.moisture.buffer,
     map.ice.buffer,
     map.shade.buffer,

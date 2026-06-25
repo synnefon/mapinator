@@ -47,8 +47,14 @@ export class CityMarkers {
         this.popup.open({
           source: "city",
           anchor: city.anchor,
-          title: city.isCapital ? `${city.name} (capital)` : city.name,
-          rows: [["population", this.formatPopulation(city.population)]],
+          title: city.name,
+          subtitle: `(${city.isCapital ? "capital" : "city"} of ${city.countryName})`,
+          rows: [
+            ["population", this.formatPopulation(city.population)],
+            ["industries", city.industries.join(", ")],
+            ["elevation", this.formatElevation(city.elevationMeters)],
+          ],
+          footer: city.funFact,
           minLevel: city.minLevel, // popup closes if you zoom out past the marker's tier
           at: { x: e.clientX, y: e.clientY },
         });
@@ -97,5 +103,9 @@ export class CityMarkers {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} million`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(0)} thousand`;
     return n.toLocaleString();
+  }
+
+  private formatElevation(meters: number): string {
+    return `${meters.toLocaleString()} m`;
   }
 }

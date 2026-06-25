@@ -16,6 +16,7 @@ const {
   DENSITY_STEP_RATIO,
   DETAIL_BIAS,
   PATCH_PRELOAD_MARGIN,
+  GLOBE_OVERLAY_POINTS,
 } = LOD;
 // The global mesh is the curve's zoom-0 anchor (rung 0).
 const GLOBAL_POINTS = globePointCount(MAP_DEFAULTS.resolution);
@@ -128,6 +129,15 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
   let baseMap: GlobeMap | null = null;
   let overlay: GlobeMap | null = null;
   let overlayLevel = 0; // level of the patch currently shown (0 = none; for switch hysteresis)
+  // Fine WHOLE-GLOBE GPU overlay shown at the zoomed-OUT view (level 0): a finer-than-base hex mesh
+  // over the whole sphere, generated mesh-only (the renderer computes its field on the GPU), so its
+  // coastline matches the detail patches instead of the coarse base hexes ("connectivity reverses on
+  // zoom"). Its geometry is seed- AND orientation-independent, so it's built ONCE and KEPT across
+  // reset() — the renderer re-samples the current field at draw. Null until built, or whenever the
+  // GPU path is off (then the coarse base shows, exactly as before).
+  let fineGlobe: GlobeMap | null = null;
+  let fineGlobeKey: string | null = null;
+  let fineGlobeInFlight = false;
   const lodCache = new Map<string, GlobeMap>(); // "level|…" → rung map (LRU by insertion)
   let lodQueue: { key: string; level: number; center: Vec3 }[] = []; // missing rungs, coarse→fine
   const lodActive = new Set<string>(); // rung keys currently in flight (≤ maxInFlight at once)
@@ -213,12 +223,39 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     return dist + vr <= capRadius;
   }
 
+  // Build the fine whole-globe overlay once (GPU path only — it's GPU-rendered). Keyed by its own
+  // density, so it rebuilds only if GLOBE_OVERLAY_POINTS changes; its geometry is seed/param-
+  // independent, so it survives reset() (no "blink to coarse" on a dial tweak — the renderer just
+  // samples the new field at draw). Dispatched out-of-band of the rung queue; the worker pool queues
+  // it behind the rungs already in flight, so the coarse base still lands first.
+  function ensureFineGlobe(): void {
+    if (!detailGeometryOnly) return; // GPU path off → fall back to the coarse base (prior behaviour)
+    const key = `fine|${GLOBE_OVERLAY_POINTS}`;
+    if (fineGlobeKey === key || fineGlobeInFlight) return;
+    fineGlobeInFlight = true;
+    postGenerate({
+      kind: "generate",
+      center: { x: 0, y: 0, z: 1 }, // ignored — a whole-globe mesh has no centre
+      halfAngle: Math.PI,
+      points: GLOBE_OVERLAY_POINTS,
+      geometryOnly: true,
+    }).then((map) => {
+      fineGlobeInFlight = false;
+      fineGlobe = map;
+      fineGlobeKey = key;
+      refreshOverlay(getView()); // show it immediately if we're at the zoomed-out view
+      onReady();
+    });
+  }
+
   // Sticky overlay: show the finest CACHED detail patch (level ≥1, ≤ target, ANY bucket) whose cap
   // still covers the view. If nothing covers yet, keep the previous patch rather than blanking.
   function refreshOverlay(v: LodView): void {
     const t = currentView(v);
     if (t.level === 0) {
-      overlay = null; // whole-globe view: no detail overlay
+      // Zoomed all the way out: draw the fine whole-globe overlay so the coastline matches the detail
+      // patches. Null (GPU off / not built yet) falls back to the coarse base, the prior behaviour.
+      overlay = fineGlobe;
       overlayLevel = 0;
       return;
     }
@@ -315,6 +352,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     overlay: () => overlay,
     sync: () => {
       syncLod(getView());
+      ensureFineGlobe(); // after syncLod so the coarse base (rung 0) takes worker priority
       onReady();
     },
     reset: () => {

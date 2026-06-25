@@ -667,6 +667,22 @@ select[multiple] optgroup {
   font-size: 16px;
   padding-right: 1.3em; /* reserve room for the × so a long title never runs under it */
 }
+/* Dimmed line just under the title, e.g. "(capital of …)". Hidden via inline style when unused. */
+.info-popup-subtitle {
+  margin: -4px 0 8px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+/* Free-text trailer (a city's fun fact). Fills the popup's full width (set by the nowrap title/body) and
+   wraps within it: width:0 stops it from widening the box, min-width:100% stretches it to that width. */
+.info-popup-footer {
+  margin-top: 8px;
+  width: 0;
+  min-width: 100%;
+  line-height: 1.4;
+  font-style: italic;
+  opacity: 0.75;
+}
 /* 2-col grid: key column sizes to the widest label, values left-align in their own column. */
 .info-popup-body {
   display: grid;

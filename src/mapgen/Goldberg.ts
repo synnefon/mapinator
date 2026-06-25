@@ -51,6 +51,14 @@ export function goldbergCapLevel(points: number): number {
   return goldbergLevel(points, 7, 11);
 }
 
+/** Whole-globe GPU-OVERLAY level from a point count. Finer than the coarse CPU base
+ *  (goldbergLevelForPoints, ≤ 6) so the zoomed-OUT coastline matches the detail patches, but capped
+ *  at 8 (≈ 655K cells) because this meshes the WHOLE sphere — beyond that the one-time build gets
+ *  expensive and the extra cells are sub-pixel at the zoomed-out view anyway. */
+export function goldbergGlobeOverlayLevel(points: number): number {
+  return goldbergLevel(points, 7, 8);
+}
+
 /** Geodesic icosphere at `level`: every triangle bisected `level` times, all vertices
  *  on the unit sphere. Shared edge midpoints are cached so vertices aren't duplicated. */
 function buildGeodesic(level: number): {

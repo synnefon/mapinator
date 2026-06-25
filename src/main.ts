@@ -481,12 +481,28 @@ document.addEventListener("DOMContentLoaded", () => {
     pipeline.sync(); // queues every uncovered rung (incl. the globe) and re-renders via onReady
   }
 
+  // The worker-side generation params (snapshotParams) from the last apply. A tuning change that
+  // leaves these untouched produces an identical globe + detail patches, so we can keep them.
+  let lastParamsKey = JSON.stringify(snapshotParams());
+
   // Apply the current advanced-tuning overrides everywhere, then rebuild. Render dials
   // (sea level, elevation contrast, …) take effect on this thread; generation dials + feature
   // switches go to the worker as a resolved params snapshot. pipeline.reset() discards in-flight
   // maps built with the old tuning, and ensureMap regenerates at the current view.
   function applyAdvancedTuning(): void {
     applyTuning({ ...appState.tuningOverrides }); // render-side dials (sea level, contrast, colours) on this thread
+    // Some dials (e.g. CITY.URBAN_FRACTION) aren't in snapshotParams — they don't touch terrain gen,
+    // only the cheap feature/city layer. If the worker params didn't actually change, skip the costly
+    // pipeline.reset() (which would regenerate the globe AND every zoomed-in detail patch) and just
+    // drop the cached feature result so cities re-derive at the new dial on the next frame.
+    const paramsKey = JSON.stringify(snapshotParams());
+    if (paramsKey === lastParamsKey) {
+      const baseMap = pipeline.base();
+      if (baseMap) featureCache.delete(baseMap);
+      scheduleRender();
+      return;
+    }
+    lastParamsKey = paramsKey;
     // Generation dials + features → worker as a params snapshot (no seed change). snapshotParams()
     // reads the dials applyTuning just wrote, plus the live FEATURES.
     pool.configure({ params: snapshotParams() });

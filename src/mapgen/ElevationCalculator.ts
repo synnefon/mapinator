@@ -20,6 +20,12 @@ const WARP_OFFSET_Z = 9.3;
 // sitting exactly at the waterline below it → rendered as ocean. ~0.02 lands at the contrast pivot.
 const LAND_HAIR = 0.02;
 
+// DISPLAY ONLY (reportElevationAt): how far above the waterline the deepest continental interior reads,
+// in raw-elevation units, before the colour cap flattens it. The rendered field pins all non-mountain
+// land to LAND_HAIR above the waterline (one green band → one elevation), so this restores a plausible
+// coast→interior rise purely for stats/labels. ~0.07 ≈ a ~1 km interior plateau; never feeds rendering.
+const REPORT_INLAND_RISE = 0.07;
+
 // Range-envelope noise (#3 — along-strike variation): a low-frequency wave that swells, pinches,
 // and gaps each range along its length so it doesn't read as a uniform arc. Wavelength sets how
 // often it pinches; the offset decorrelates it from the other fields.
@@ -163,6 +169,23 @@ export class ElevationCalculator {
     const mountainWeight = landMask * (1 - TECTONIC.COAST_BIAS * inland);
     const mountains = mountainWeight * this.mountainRelief(x, y, z, upliftOverride);
     return clamp(Math.max(land + mountains, OCEAN.SEA_LEVEL));
+  }
+
+  /**
+   * DISPLAY-ONLY elevation (see GlobeMap.reportElevation): the rendered `elevation` caps every
+   * non-mountain land cell at LAND_HAIR above the waterline so flat land stays one green band — which
+   * means all flat-land cells share ONE elevation (city cards then show the same metres everywhere off
+   * the mountains). Here we restore a plausible coast→interior rise from the continentalness carrier `C`
+   * (the only signal that varies across flat land) using the SAME `inland` ramp elevationAt uses, then
+   * add the REAL mountain relief (`rendered − cap`) back on top. NOT used by rendering or land/water.
+   */
+  public reportElevationAt(C: number, renderedElevation: number): number {
+    const { OCEAN } = this.params;
+    if (renderedElevation < OCEAN.SEA_LEVEL) return renderedElevation; // ocean: leave depth as-is
+    const inland = smoothstep(OCEAN.SHELF[1], 1, C); // 0 at the shoreline → 1 deep inland (matches elevationAt)
+    const mountainRelief = Math.max(0, renderedElevation - (OCEAN.SEA_LEVEL + LAND_HAIR)); // height above the flat cap
+    // Coast reads ~waterline (≈ 0 m) and rises with the carrier into the interior; mountains add on top.
+    return clamp(OCEAN.SEA_LEVEL + inland * REPORT_INLAND_RISE + mountainRelief);
   }
 
   /**
@@ -348,7 +371,7 @@ export class ElevationCalculator {
   public sampleCell(
     site: Vec3,
     continentalnessOverride?: number
-  ): { elevation: number; moisture: number; ice: number; shade: number; plate: number } {
+  ): { elevation: number; reportElevation: number; moisture: number; ice: number; shade: number; plate: number } {
     const { ICE, MOISTURE } = this.params;
     // continentalness drives both the land/ocean elevation and the moisture maritime layer
     // (`broad` = the low-octave low-pass that sizes the maritime reach to the water body).
@@ -361,12 +384,14 @@ export class ElevationCalculator {
     // redundant warp + scan per land cell; bit-identical to the old separate upliftAt + plateAt.
     const { uplift, plate } = this.tectonics.upliftAndPlateAt(site.x, site.y, site.z);
     const elevation = this.elevationAt(site, continentalness, uplift);
+    // Display-only elevation (varies across flat land where `elevation` is pinned flat) — for stats/labels.
+    const reportElevation = this.reportElevationAt(continentalness, elevation);
     // Relief shading from the SAME field — reuses continentalness, only re-samples the relief twice
     // (for the slope). Baked per cell → a free colour multiply at draw time.
     const shade = this.hillshadeAt(site, continentalness, elevation);
     const moisture = this.moistureAt(site, continentalness, broadContinentalness);
     const ice = this.iceAt(site, elevation, clamp(ICE.COVERAGE));
-    return { elevation, moisture, ice, shade, plate };
+    return { elevation, reportElevation, moisture, ice, shade, plate };
   }
 
   /**

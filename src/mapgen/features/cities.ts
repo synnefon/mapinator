@@ -1,23 +1,31 @@
-import type { Vec3 } from "../../common/3DMath";
+import { Vec3 } from "../../common/3DMath";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, type RNG } from "../../common/random";
 import { CITY } from "../../common/settings";
 import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { NameGenerator } from "../NameGenerator";
+import { cityProfile } from "./cityStats";
 import type { Country } from "./countries";
+import { detectComponents } from "./detect";
 
 export type CityTier = "big" | "medium" | "small";
 
 /** A city marker: a point inside a country, sized + zoom-gated by tier, with a generated name and an
- *  estimated population (its slice of the country's urban total). `anchor` is a unit-sphere point. */
+ *  estimated population (its slice of the country's urban total). `anchor` is a unit-sphere point.
+ *  Carries the displayable extras the click card shows: owning country, industries, elevation, fun fact. */
 export type City = {
   name: string;
   anchor: Vec3;
+  cell: number; // the base-map cell the city sits on (the anchor itself may be nudged shoreward for display)
   population: number;
   tier: CityTier;
   isCapital: boolean;
   minLevel: number; // lowest LOD zoom level the marker shows at (big 1, medium 2, small 3)
   countryIndex: number;
+  countryName: string; // owning country's name — for the "(capital of …)" card line
+  industries: string[]; // 1–3 leading industries (biome + government tags + size + water proximity)
+  elevationMeters: number; // realistic elevation, Mount-Everest-anchored
+  funFact: string; // short, deterministic flavour line
 };
 
 // Tiering grounded in ~1400 sizes: a handful of "great cities" (≳75k — Paris, Cairo, Hangzhou…), a
@@ -45,6 +53,15 @@ const COASTAL_PULL = 8; // a shore cell is up to ~9× as likely to host a city a
 const COAST_FALLOFF = 1.5; // hops over which the coastal pull decays
 const SPREAD2 = 0.0025; // squared-chord spacing (~0.07 rad ≈ 450 km) the spread suppression falls off over
 
+// A water body counts as "large" (a sea/ocean, not a lake/pond) if it's the biggest water body OR spans
+// at least this fraction of all cells. Maritime industry + flavour key off proximity to large water, so a
+// city one hop from a pond isn't "coastal". Resolution-independent (a fraction of the cell count).
+const LARGE_WATER_FRAC = 0.01;
+
+// A coastal city's marker slides this fraction from its cell centre toward the bordering sea, so it sits
+// on the shore rather than a hex-centre inland. The shared land/water edge is ~halfway, so <0.5 stays on land.
+const SHORE_PULL = 0.45;
+
 const tierOf = (population: number, isCapital: boolean): CityTier =>
   isCapital || population >= BIG_POP ? "big" : population >= MEDIUM_POP ? "medium" : "small";
 
@@ -53,6 +70,27 @@ const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
   y: map.sites[3 * cell + 1],
   z: map.sites[3 * cell + 2],
 });
+
+/** A city marker position: a coastal cell's centre nudged toward its bordering large-water cells (so the
+ *  marker sits on the shore, not a hex-centre inland); a cell that touches no large water keeps its centre. */
+const coastAnchor = (map: GlobeMap, adjacency: number[][], cell: number, largeWater: Uint8Array): Vec3 => {
+  const c = siteVec(map, cell);
+  let sx = 0, sy = 0, sz = 0, n = 0;
+  for (const nb of adjacency[cell]) {
+    if (largeWater[nb] !== 1) continue;
+    sx += map.sites[3 * nb];
+    sy += map.sites[3 * nb + 1];
+    sz += map.sites[3 * nb + 2];
+    n++;
+  }
+  if (n === 0) return c; // not on a large-water shore — keep the cell centre
+  // Lerp the centre toward the mean of the bordering sea cells (≈ the shoreline), then re-project to the sphere.
+  return Vec3.normalize({
+    x: c.x + SHORE_PULL * (sx / n - c.x),
+    y: c.y + SHORE_PULL * (sy / n - c.y),
+    z: c.z + SHORE_PULL * (sz / n - c.z),
+  });
+};
 
 /**
  * Place + size the cities of every country. Each country devotes CITY.URBAN_FRACTION of its people to
@@ -72,6 +110,8 @@ export function assignCities(
   namer: NameGenerator
 ): City[] {
   const coastDist = coastDistance(map, seaLevel, adjacency);
+  const largeWater = largeWaterMask(map, seaLevel, adjacency);
+  const seaDist = waterHopDistance(map, seaLevel, adjacency, (i) => largeWater[i] === 1);
   const elevCap = elevationCaps(map);
   const urbanFraction = CITY.URBAN_FRACTION.value;
 
@@ -102,36 +142,68 @@ export function assignCities(
     const placed = placeCities(map, cells, coastDist, elevCap, nCities, urbanPop, rng);
     if (placed.length === 0) continue;
     const capitalIdx = pickWeightedRank(CAPITAL_RANK_WEIGHTS, placed.length, rng);
+    const usedFunFacts = new Set<string>(); // dedupe fun facts within this country
 
     placed.forEach(({ cell, population }, idx) => {
       const isCapital = idx === capitalIdx;
       if (!isCapital && population < MIN_CITY_POP) return; // a village, not a marked city
       const tier = tierOf(population, isCapital);
+      // Name is globally unique (the namer re-rolls on collision); stats are seeded on a SEPARATE stream
+      // so adding them never shifts placement/population (which consume the per-country `rng` above).
+      const name = namer.generate({ seed: `${mapSeed}|city|${country.index}|${idx}`, lang: country.language, unique: true });
+      const profile = cityProfile({
+        rawElevation: map.elevation[cell],
+        reportElevation: map.reportElevation[cell],
+        moisture: map.moisture[cell],
+        rainfall: map.rainfall,
+        ice: map.ice[cell],
+        seaLevel,
+        coastDist: coastDist[cell],
+        seaDist: seaDist[cell],
+        population,
+        tier,
+        isCapital,
+        govTags: country.govType.tags,
+        countryName: country.name,
+        usedFunFacts,
+        rng: makeRNG(`${mapSeed}|city-stats|${country.index}|${idx}`),
+      });
       cities.push({
-        name: namer.generate({ seed: `${mapSeed}|city|${country.index}|${idx}`, lang: country.language }),
-        anchor: siteVec(map, cell),
+        name,
+        anchor: coastAnchor(map, adjacency, cell, largeWater),
+        cell,
         population,
         tier,
         isCapital,
         minLevel: TIER_MIN_LEVEL[tier],
         countryIndex: country.index,
+        countryName: country.name,
+        industries: profile.industries,
+        elevationMeters: profile.elevationMeters,
+        funFact: profile.funFact,
       });
     });
   }
   return cities;
 }
 
-/** Each land cell's distance, in graph hops, to the nearest water — a multi-source BFS out from the
- *  coastline (a land cell touching water is 0). Water cells stay -1. Used to bias cities toward coasts. */
-export function coastDistance(map: GlobeMap, seaLevel: number, adjacency: number[][]): Int32Array {
+/** Multi-source BFS over LAND cells: each land cell's hops to the nearest water cell flagged by
+ *  `isSourceWater` (a land cell touching such water is 0). Water cells stay -1, as do land cells that
+ *  reach no flagged water. Land is `elevation ≥ seaLevel`. */
+function waterHopDistance(
+  map: GlobeMap,
+  seaLevel: number,
+  adjacency: number[][],
+  isSourceWater: (i: number) => boolean
+): Int32Array {
   const { cellCount, elevation } = map;
-  const isWater = (i: number): boolean => elevation[i] < seaLevel;
+  const isLand = (i: number): boolean => elevation[i] >= seaLevel;
   const dist = new Int32Array(cellCount).fill(-1);
   const queue: number[] = [];
   for (let i = 0; i < cellCount; i++) {
-    if (isWater(i)) continue;
+    if (!isLand(i)) continue;
     for (const nb of adjacency[i]) {
-      if (isWater(nb)) {
+      if (isSourceWater(nb)) {
         dist[i] = 0;
         queue.push(i);
         break;
@@ -142,13 +214,35 @@ export function coastDistance(map: GlobeMap, seaLevel: number, adjacency: number
     const c = queue[head];
     const next = dist[c] + 1;
     for (const nb of adjacency[c]) {
-      if (!isWater(nb) && dist[nb] === -1) {
+      if (isLand(nb) && dist[nb] === -1) {
         dist[nb] = next;
         queue.push(nb);
       }
     }
   }
   return dist;
+}
+
+/** Each land cell's distance, in graph hops, to the nearest water of ANY kind — a multi-source BFS out
+ *  from the coastline (a land cell touching water is 0). Water cells stay -1. Biases cities to coasts. */
+export function coastDistance(map: GlobeMap, seaLevel: number, adjacency: number[][]): Int32Array {
+  return waterHopDistance(map, seaLevel, adjacency, (i) => map.elevation[i] < seaLevel);
+}
+
+/** Per-cell flag (1/0): is this cell part of a LARGE water body? The single biggest water component
+ *  always counts (these worlds always have an ocean); others count once they clear LARGE_WATER_FRAC. */
+function largeWaterMask(map: GlobeMap, seaLevel: number, adjacency: number[][]): Uint8Array {
+  const mask = new Uint8Array(map.cellCount);
+  const water = detectComponents(map, seaLevel, adjacency).filter((c) => c.cls === "water");
+  if (water.length === 0) return mask;
+  const threshold = LARGE_WATER_FRAC * map.cellCount;
+  const largest = water.reduce((a, b) => (b.cells.length > a.cells.length ? b : a));
+  for (const comp of water) {
+    if (comp === largest || comp.cells.length >= threshold) {
+      for (const cell of comp.cells) mask[cell] = 1;
+    }
+  }
+  return mask;
 }
 
 /** Per-cell cap on the biggest city a cell may host: 2 = any, 1 = small only (HIGH ground), 0 = none

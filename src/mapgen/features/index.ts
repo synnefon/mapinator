@@ -77,6 +77,10 @@ export function computeMapFeatures(
 ): MapFeatures {
   const adjacency = buildAdjacency(map);
   const components = detectComponents(map, seaLevel, adjacency);
+  // Start a clean uniqueness namespace for this generation: countries claim names first, then cities,
+  // then features (all via `namer`), so no two named things anywhere share a name. Resetting each call
+  // keeps it deterministic — a fixed seed re-derives the same names instead of drifting across regens.
+  namer.resetUniqueness();
   const countryData = assignCountries(
     map,
     seaLevel,
@@ -114,7 +118,7 @@ export function computeMapFeatures(
     for (const region of subdivideOcean(ocean.cells, map, adjacency)) {
       features.push({
         kind: region.kind,
-        name: nameFeature(region.kind, mapSeed, region.anchorCell, waterLang(region.anchorCell), namer),
+        name: nameFeature(region.kind, mapSeed, region.anchorCell, waterLang(region.anchorCell), namer, true),
         anchor: siteVec(map, region.anchorCell),
         cellCount: Math.round(region.extent * map.cellCount), // size proxy for declutter priority
         extent: region.extent,
@@ -132,7 +136,7 @@ export function computeMapFeatures(
     const lang = minor.kind === "LAKE" ? waterLang(anchorCell) : landLang(anchorCell);
     features.push({
       kind: minor.kind,
-      name: nameFeature(minor.kind, mapSeed, minor.repCell, lang, namer),
+      name: nameFeature(minor.kind, mapSeed, minor.repCell, lang, namer, true),
       anchor: siteVec(map, anchorCell),
       cellCount: minor.cellCount,
       extent: angularExtent(anchorCell, comp.cells, map.sites),
@@ -149,7 +153,7 @@ export function computeMapFeatures(
     const anchorCell = poleOfInaccessibility(t.cells, adjacency);
     features.push({
       kind: t.kind,
-      name: nameFeature(t.kind, mapSeed, repCell, landLang(anchorCell), namer),
+      name: nameFeature(t.kind, mapSeed, repCell, landLang(anchorCell), namer, true),
       anchor: siteVec(map, anchorCell),
       cellCount: t.cells.length,
       extent: angularExtent(anchorCell, t.cells, map.sites),

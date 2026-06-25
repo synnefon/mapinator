@@ -2,7 +2,7 @@ import { randomChoice, type RNG } from "../../common/random";
 
 export type Government = { type: string; densityFactor: number; govType: GovType };
 
-enum Authority {
+export enum Authority {
   Civic = "civic",
   Monarchic = "monarchic",
   Imperial = "imperial",
@@ -14,7 +14,7 @@ enum Authority {
   Militaristic = "militaristic",
 }
 
-enum Structure {
+export enum Structure {
   Federal = "federal",
   Local = "local",
   Urban = "urban",
@@ -23,14 +23,14 @@ enum Structure {
   Minor = "minor",
 }
 
-enum Society {
+export enum Society {
   Scholastic = "scholastic",
   Industrial = "industrial",
   Agrarian = "agrarian",
   Maritime = "maritime",
 }
 
-enum Trait {
+export enum Trait {
   Expansionist = "expansionist",
   Stable = "stable",
   Fragmented = "fragmented",
@@ -49,7 +49,7 @@ enum ModifierType {
   Identity = "identity",
 }
 
-type Tags = {
+export type Tags = {
   authority?: Authority[];
   structure?: Structure[];
   society?: Society[];

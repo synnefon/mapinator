@@ -11,27 +11,77 @@ export interface CountryGenOptions {
   seed?: string | number;
   lang?: Language;
   government?: Government;
+  /** Guarantee the name is new for this generator since the last resetUniqueness() — on a collision
+   *  it re-rolls (a fresh same-language draw off a salted seed). Default false keeps generate() a pure
+   *  function of (seed, lang). */
+  unique?: boolean;
 }
+
+// On a unique-name collision, this many distinct re-rolls are tried before falling back to a numeric
+// suffix. A language yields far more names than any one map needs, so the fallback is effectively dead.
+const MAX_NAME_REROLLS = 64;
 
 // const NUMBERS = [...Array(100)].map((_, i) => i.toString());
 // const LETTERS = [...Array(26)].map((_, i) => String.fromCharCode(65 + i)).map((letter) => letter.toUpperCase());
 
 export class NameGenerator {
   private rng: RNG;
+  // Names already minted by THIS generator since the last reset — the global dedup set when opts.unique
+  // is used (see generate). Keyed by lower-cased name so casing never sneaks a duplicate through. Reset
+  // per map generation (resetUniqueness) so the same seed re-derives the same names — never accumulates
+  // across regens (which would make a fixed seed drift). Instance state, deliberately not static: one
+  // generator owns one map's namespace, and tests stay isolated.
+  private readonly taken = new Set<string>();
 
   constructor(seed: string) {
     this.rng = makeRNG(seed);
   }
 
-  /** Generate a single country name */
+  /** Start a fresh uniqueness namespace — call once at the top of a map generation so that generation's
+   *  unique names are deduped together and reproducibly, independent of any prior generation. */
+  public resetUniqueness(): void {
+    this.taken.clear();
+  }
+
+  /** Generate a single proper name. Pure in (seed, lang) by default; pass `unique: true` to dedupe it
+   *  against every other unique name minted since the last resetUniqueness() (re-rolling on collision). */
   public generate(opts: CountryGenOptions = {}): string {
-    // Honor an explicit seed (reproducible name); otherwise keep drawing from the
-    // constructor-seeded stream, which advances per call so successive names differ.
-    if (opts.seed !== undefined) this.rng = makeRNG(`${opts.seed}`);
     const lang = opts.lang ?? this.pickLanguage();
-    const rawName = this.calcName(lang);
-    const cleanedName = rawName.trim().replace(/\s+/g, " ");
-    return this.titleCase(cleanedName);
+    // Seed the draw: an explicit seed is reproducible; salting it (attempt > 0) re-rolls a different
+    // name; no seed keeps drawing from the constructor stream, which advances per call on its own.
+    const seedDraw = (attempt: number): void => {
+      if (opts.seed === undefined) return;
+      this.rng = makeRNG(attempt === 0 ? `${opts.seed}` : `${opts.seed}|retry-${attempt}`);
+    };
+
+    if (!opts.unique) {
+      seedDraw(0);
+      return this.roll(lang);
+    }
+
+    for (let attempt = 0; attempt < MAX_NAME_REROLLS; attempt++) {
+      seedDraw(attempt);
+      const name = this.roll(lang);
+      if (!this.taken.has(name.toLowerCase())) {
+        this.taken.add(name.toLowerCase());
+        return name;
+      }
+    }
+    // Every distinct re-roll collided (astronomically unlikely): disambiguate with a counter so a
+    // unique name is always returned and we always terminate.
+    const base = this.roll(lang);
+    for (let n = 2; ; n++) {
+      const name = `${base} ${n}`;
+      if (!this.taken.has(name.toLowerCase())) {
+        this.taken.add(name.toLowerCase());
+        return name;
+      }
+    }
+  }
+
+  /** One raw draw: build, clean, and title-case a name in the given language. */
+  private roll(lang: Language): string {
+    return this.titleCase(this.calcName(lang).trim().replace(/\s+/g, " "));
   }
 
   private calcName(lang: Language): string {

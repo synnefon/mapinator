@@ -23,6 +23,7 @@ function testMap(parts: {
     ringOffsets: new Uint32Array(parts.ringOffsets),
     ringVerts: new Float32Array(parts.ringVerts),
     elevation: new Float32Array(parts.elevation),
+    reportElevation: new Float32Array(cellCount),
     moisture: new Float32Array(cellCount),
     ice: new Float32Array(cellCount),
     shade: new Float32Array(cellCount),

@@ -148,6 +148,11 @@ export const LOD = {
 
   // --- ladder shape ---
   COARSEST_PATCH_POINTS: 250_000, // coarsest patch — a gentle step above the global mesh
+  // Whole-globe GPU overlay density, shown at the zoomed-OUT view (level 0) so its coastline matches
+  // the detail patches instead of the coarse base hexes (the "connectivity reverses on zoom" fix).
+  // It's a one-time whole-globe mesh (goldbergGlobeOverlayLevel clamps it to ≈ level 7–8), so raising
+  // it sharpens the zoomed-out coast at a higher one-time build cost; the base mesh is unaffected.
+  GLOBE_OVERLAY_POINTS: 300_000,
   DENSITY_STEP_RATIO: 2, // density ratio between levels; smaller = more, finer-spaced bands
   PATCH_PRELOAD_MARGIN: 1.5, // patch cap radius ÷ view radius (pan preload)
   RECENTER_FRACTION: 0.12, // regen when the view center moves this fraction of the cap

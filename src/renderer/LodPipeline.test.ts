@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Quat } from "../common/3DMath";
 import type { GlobeMap } from "../common/map";
-import { MAP_DEFAULTS } from "../common/settings";
+import { LOD, MAP_DEFAULTS } from "../common/settings";
 import { globePointCount } from "../mapgen/MapGenerator";
 import {
   buildLodLevels,
@@ -21,7 +21,7 @@ const BASE_VIEW: Omit<LodView, "zoom"> = {
 // resolve by hand (so we can observe "one job at a time" and test the staleness discard). Detail
 // rungs come back with a cap centred on the request that comfortably covers the view; the globe
 // (halfAngle ≥ π) has no cap. Only `.cap` is read by the pipeline, so the rest is a stub.
-function harness(view: LodView) {
+function harness(view: LodView, opts?: { detailGeometryOnly?: boolean }) {
   const requests: GenRequest[] = [];
   const resolvers: Array<() => void> = [];
   let renders = 0;
@@ -41,6 +41,7 @@ function harness(view: LodView) {
     onReady: () => {
       renders++;
     },
+    detailGeometryOnly: opts?.detailGeometryOnly,
   });
   const tick = () => new Promise<void>((r) => setTimeout(r, 0)); // flush the .then microtask chain
   const drainOne = async () => {
@@ -124,6 +125,31 @@ describe("LodPipeline cache", () => {
     }
     expect(h.pipeline.cachedKeys().length).toBeLessThanOrEqual(18); // LOD_CACHE_CAP
     expect(h.pipeline.cachedKeys().length).toBeGreaterThan(0);
+  });
+});
+
+describe("LodPipeline fine whole-globe overlay (GPU path)", () => {
+  it("at zoom 0, builds a mesh-only fine whole-globe overlay and shows it", async () => {
+    const h = harness({ ...BASE_VIEW, zoom: 0 }, { detailGeometryOnly: true });
+    expect(h.pipeline.overlay()).toBe(null); // nothing built yet
+
+    h.pipeline.sync();
+    // Requested out-of-band of the rung queue: a whole-globe (halfAngle ≥ π), MESH-ONLY rung at the
+    // overlay density — distinct from the coarse base, which is whole-globe but fully sampled.
+    const fine = h.requests.find((r) => r.halfAngle >= Math.PI && r.geometryOnly === true);
+    expect(fine).toBeDefined();
+    expect(fine?.points).toBe(LOD.GLOBE_OVERLAY_POINTS);
+
+    await h.drain();
+    expect(h.pipeline.overlay()).not.toBe(null); // shown at the zoomed-OUT view
+  });
+
+  it("is NOT built when the GPU path is off — the coarse base shows, as before", async () => {
+    const h = harness({ ...BASE_VIEW, zoom: 0 }); // detailGeometryOnly defaults off
+    h.pipeline.sync();
+    await h.drain();
+    expect(h.requests.some((r) => r.geometryOnly === true)).toBe(false);
+    expect(h.pipeline.overlay()).toBe(null);
   });
 });
 

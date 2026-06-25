@@ -98,6 +98,17 @@ describe("feature pipeline on a real globe", () => {
     expect(borders.length % 6).toBe(0); // flat [x0,y0,z0, x1,y1,z1, …] segment pairs
   });
 
+  it("gives every named thing (country, city, feature) a globally unique name", () => {
+    const { features, countries, cities } = run(buildMap());
+    const names = [
+      ...countries.map((c) => c.name),
+      ...cities.map((c) => c.name),
+      ...features.map((f) => f.name),
+    ].map((n) => n.toLowerCase());
+    expect(names.length).toBeGreaterThan(0);
+    expect(new Set(names).size).toBe(names.length); // no two share a name, across all kinds
+  });
+
   it("computes features + countries deterministically", () => {
     const map = buildMap();
     const a = run(map);

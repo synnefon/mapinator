@@ -13,10 +13,19 @@ export type PopupSource = "country" | "city";
 
 type Anchored = { source: PopupSource; anchor: Vec3; minLevel: number };
 
+/** Set an optional text line, hiding the element entirely when there's nothing to show (so popups
+ *  that don't use it — e.g. the country popup — get no empty gap). */
+const setOptional = (el: HTMLElement, text: string | undefined): void => {
+  el.textContent = text ?? "";
+  el.style.display = text ? "block" : "none";
+};
+
 export class InfoPopup {
   private readonly root: HTMLElement;
   private readonly titleEl: HTMLElement;
+  private readonly subtitleEl: HTMLElement;
   private readonly bodyEl: HTMLElement;
+  private readonly footerEl: HTMLElement;
   private anchored: Anchored | null = null;
 
   constructor() {
@@ -29,9 +38,13 @@ export class InfoPopup {
     close.addEventListener("click", () => this.close());
     this.titleEl = document.createElement("h3");
     this.titleEl.className = "info-popup-title";
+    this.subtitleEl = document.createElement("div"); // e.g. "(capital of …)" — hidden when unused
+    this.subtitleEl.className = "info-popup-subtitle";
     this.bodyEl = document.createElement("div");
     this.bodyEl.className = "info-popup-body";
-    this.root.append(close, this.titleEl, this.bodyEl);
+    this.footerEl = document.createElement("div"); // free-text line (wraps) — e.g. a city's fun fact
+    this.footerEl.className = "info-popup-footer";
+    this.root.append(close, this.titleEl, this.subtitleEl, this.bodyEl, this.footerEl);
     document.body.append(this.root);
     // Dismiss on any press outside the popup (a press on another marker re-opens it afterward).
     document.addEventListener("pointerdown", (e) => {
@@ -41,9 +54,10 @@ export class InfoPopup {
 
   /** Open (or move) the popup, anchored to a globe point. `minLevel` is the lowest LOD zoom level the
    *  tagged thing shows at, so the popup closes when you zoom out below it (0 = no lower bound). */
-  open(opts: { source: PopupSource; anchor: Vec3; title: string; rows: PopupRow[]; minLevel?: number; at: { x: number; y: number } }): void {
+  open(opts: { source: PopupSource; anchor: Vec3; title: string; subtitle?: string; rows: PopupRow[]; footer?: string; minLevel?: number; at: { x: number; y: number } }): void {
     this.anchored = { source: opts.source, anchor: opts.anchor, minLevel: opts.minLevel ?? 0 };
     this.titleEl.textContent = opts.title;
+    setOptional(this.subtitleEl, opts.subtitle);
     // Two cells per row feed the body's 2-col grid: keys form one column, values another.
     this.bodyEl.replaceChildren(
       ...opts.rows.flatMap(([label, value]) => {
@@ -56,6 +70,7 @@ export class InfoPopup {
         return [key, val];
       })
     );
+    setOptional(this.footerEl, opts.footer);
     this.root.style.display = "block";
     // Position at the click point right away so it never flashes top-left before the first follow frame.
     this.place(opts.at.x, opts.at.y);

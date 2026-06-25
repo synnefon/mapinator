@@ -20,17 +20,19 @@ const TEMPLATES: Record<FeatureKind, readonly string[]> = {
 /**
  * Deterministic name for one feature: the same (mapSeed, kind, repCell) always yields the same
  * name, so labels are stable across regen, reload, and rotation. The stem is drawn in the map's
- * language; the descriptor template is picked from an independent seeded stream.
+ * language; the descriptor template is picked from an independent seeded stream. Pass `unique` so the
+ * namer re-rolls a colliding stem — the descriptor always wraps, so a unique stem means a unique label.
  */
 export function nameFeature(
   kind: FeatureKind,
   mapSeed: string,
   repCell: number,
   language: Language,
-  namer: NameGenerator
+  namer: NameGenerator,
+  unique = false
 ): string {
   const featureSeed = `${mapSeed}|${kind}|${repCell}`;
-  const stem = namer.generate({ seed: featureSeed, lang: language });
+  const stem = namer.generate({ seed: featureSeed, lang: language, unique });
   const template = randomChoice(TEMPLATES[kind] as string[], makeRNG(`${featureSeed}|tmpl`));
   return template.replace("{X}", stem).toLowerCase();
 }
