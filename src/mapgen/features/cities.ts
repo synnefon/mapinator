@@ -63,10 +63,6 @@ const SPREAD2 = 0.0025; // squared-chord spacing (~0.07 rad ≈ 450 km) the spre
 // city one hop from a pond isn't "coastal". Resolution-independent (a fraction of the cell count).
 const LARGE_WATER_FRAC = 0.01;
 
-// A coastal city's marker slides this fraction from its cell centre toward the bordering sea, so it sits
-// on the shore rather than a hex-centre inland. The shared land/water edge is ~halfway, so <0.5 stays on land.
-const SHORE_PULL = 0.45;
-
 const tierOf = (population: number, isCapital: boolean): CityTier =>
   isCapital || population >= BIG_POP ? "big" : population >= MEDIUM_POP ? "medium" : "small";
 
@@ -76,24 +72,31 @@ const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
   z: map.sites[3 * cell + 2],
 });
 
-/** A city marker position: a coastal cell's centre nudged toward its bordering large-water cells (so the
- *  marker sits on the shore, not a hex-centre inland); a cell that touches no large water keeps its centre. */
+/** A city marker position: a sea-shore cell SNAPS to the coast — the midpoint of the arc to its NEAREST
+ *  bordering large-water cell. That midpoint lies on the shared Voronoi edge (the land/water boundary), so
+ *  the marker sits right at the coastline, touching the sea and never drifting over open water. Snapping to
+ *  the single nearest sea cell (not the mean of all) is what makes this exact: averaging several sea cells
+ *  aims past any one shared edge, so a fractional pull toward it could overshoot into the water. A cell that
+ *  borders no large water keeps its centre. */
 const coastAnchor = (map: GlobeMap, adjacency: number[][], cell: number, largeWater: Uint8Array): Vec3 => {
   const c = siteVec(map, cell);
-  let sx = 0, sy = 0, sz = 0, n = 0;
+  let best = -1;
+  let bestDot = -Infinity;
   for (const nb of adjacency[cell]) {
     if (largeWater[nb] !== 1) continue;
-    sx += map.sites[3 * nb];
-    sy += map.sites[3 * nb + 1];
-    sz += map.sites[3 * nb + 2];
-    n++;
+    const dot = c.x * map.sites[3 * nb] + c.y * map.sites[3 * nb + 1] + c.z * map.sites[3 * nb + 2];
+    if (dot > bestDot) {
+      bestDot = dot; // largest dot ⇒ smallest angle ⇒ nearest sea cell
+      best = nb;
+    }
   }
-  if (n === 0) return c; // not on a large-water shore — keep the cell centre
-  // Lerp the centre toward the mean of the bordering sea cells (≈ the shoreline), then re-project to the sphere.
+  if (best < 0) return c; // not on a large-water shore — keep the cell centre
+  // normalize(a + b) is the midpoint of the arc between unit vectors a and b — here, the point on the
+  // land/water boundary between this cell and its nearest sea cell.
   return Vec3.normalize({
-    x: c.x + SHORE_PULL * (sx / n - c.x),
-    y: c.y + SHORE_PULL * (sy / n - c.y),
-    z: c.z + SHORE_PULL * (sz / n - c.z),
+    x: c.x + map.sites[3 * best],
+    y: c.y + map.sites[3 * best + 1],
+    z: c.z + map.sites[3 * best + 2],
   });
 };
 
