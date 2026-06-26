@@ -3,9 +3,15 @@ import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
 import { Languages, type Language } from "./common/language";
-import { applyTuning, LOD, OCEAN, snapshotParams } from "./common/settings";
+import { applyTuning, LOD, OCEAN, RIVERS, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
 import { computeMapFeatures, type MapFeatures } from "./mapgen/features";
+import {
+  computeRivers,
+  EMPTY_RIVERS,
+  type RiverData,
+  type RiverFieldSampler,
+} from "./mapgen/features/rivers";
 import { NameGenerator } from "./mapgen/NameGenerator";
 import { recommendedWorkerCount, WorkerPool } from "./mapgen/WorkerPool";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
@@ -16,8 +22,9 @@ import { CityMarkers } from "./CityMarkers";
 import { CountryLabels } from "./CountryLabels";
 import { InfoPopup } from "./InfoPopup";
 import { drawCountries } from "./renderer/countryLayer";
-import { drawFeatureLabels } from "./renderer/featureLabels";
+import { drawFeatureLabels, type LabelItem } from "./renderer/featureLabels";
 import { drawPlateArrows } from "./renderer/plateArrows";
+import { drawRivers } from "./renderer/rivers";
 import { createGlobeRenderer, WebGLGlobeRenderer, type GpuFieldInputs } from "./renderer/WebGLGlobeRenderer";
 import { buildPermTextureData } from "./mapgen/gpu/permTable";
 import { buildPlateData } from "./mapgen/gpu/plateData";
@@ -58,6 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // A dedicated namer for feature labels: every call passes an explicit per-feature seed (so names
   // are deterministic), which keeps the title namer's stream above untouched.
   const featureNamer = new NameGenerator("features");
+  const riverNamer = new NameGenerator("rivers"); // separate stream so river names don't perturb feature naming
 
   // The map's language: ONE per map, used for both the title and the feature labels (so they match).
   // Picked from the selected languages — all of them by default. Stored on appState + saved in the
@@ -124,6 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // UI Elements (main keeps the canvas + the north overlay; the rest live in the menu).
   const {
     map: canvas,
+    rivers: riverCanvas,
     plateArrows: arrowCanvas,
     featureLabels: labelCanvas,
     countries: countryCanvas,
@@ -150,6 +159,7 @@ document.addEventListener("DOMContentLoaded", () => {
       key !== "viewCountries" &&
       key !== "viewCities" &&
       key !== "viewCountryColors" &&
+      key !== "viewRivers" &&
       sliderKeys.has(key)
     ) {
       // viewPlates/viewLabels are render-only view flags, not numeric sliders — skip them here (their
@@ -196,6 +206,8 @@ document.addEventListener("DOMContentLoaded", () => {
       labelCanvas.height = h;
       countryCanvas.width = w; // and the country overlay
       countryCanvas.height = h;
+      riverCanvas.width = w; // and the river overlay
+      riverCanvas.height = h;
       return true;
     }
     return false;
@@ -291,6 +303,52 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
+  // --- Rivers ---
+  // Routed downhill on a dedicated fine mesh (features/rivers.ts): the heavy field sampling runs on the
+  // GPU, the serial flow graph on the CPU. Recompute is DEBOUNCED (heavier than feature detection) and
+  // keyed on the seed + terrain dials (lastParamsKey, which covers sea level) + the gen-time river dials,
+  // so a regen or relevant dial change refreshes it; between recomputes the last network re-projects each
+  // frame for free. GPU-only for now: no float RT ⇒ no rivers (a rare, graceful degradation).
+  let rivers: RiverData = EMPTY_RIVERS;
+  let riverSig: string | null = null;
+  let riverTimer: ReturnType<typeof setTimeout> | null = null;
+  const RIVER_DEBOUNCE_MS = 200;
+
+  const sampleRiverField: RiverFieldSampler = (sites) =>
+    gpuPatches && webglRenderer && gpuFieldInputs
+      ? webglRenderer.computeRiverField(canvas, sites, gpuFieldInputs)
+      : null;
+
+  // Everything the routed network depends on (WIDTH_* are draw-time only, so deliberately absent).
+  const riverSignature = (): string =>
+    `${appState.mapName}|${lastParamsKey}|${RIVERS.MIN_DRAINAGE.value}|${RIVERS.MOISTURE_WEIGHT.value}|${RIVERS.SOURCE_MOISTURE.value}|${RIVERS.WATER_SCALING.value}|${RIVERS.ROUGHNESS.value}|${RIVERS.BRANCHING.value}|${RIVERS.MEANDER.value}|${RIVERS.MEANDER_DETAIL.value}`;
+
+  function recomputeRivers(): void {
+    riverTimer = null;
+    riverSig = riverSignature(); // capture before routing, so a change mid-route reschedules next frame
+    rivers = computeRivers(sampleRiverField, {
+      seaLevel: OCEAN.SEA_LEVEL.value,
+      minDrainage: RIVERS.MIN_DRAINAGE.value,
+      moistureWeight: RIVERS.MOISTURE_WEIGHT.value,
+      sourceMoisture: RIVERS.SOURCE_MOISTURE.value,
+      waterScaling: RIVERS.WATER_SCALING.value,
+      branching: RIVERS.BRANCHING.value,
+      meander: RIVERS.MEANDER.value,
+      meanderDetail: RIVERS.MEANDER_DETAIL.value,
+      namer: riverNamer,
+      mapSeed: appState.mapName,
+      language: appState.language,
+    });
+    scheduleRender();
+  }
+
+  function ensureRivers(): void {
+    if (riverSig === riverSignature()) return; // up to date
+    if (riverTimer !== null) return; // a recompute is already pending
+    rivers = EMPTY_RIVERS; // drop the stale network so old-map rivers never flash on a new map
+    riverTimer = setTimeout(recomputeRivers, RIVER_DEBOUNCE_MS);
+  }
+
   function render() {
     // Spin the 3D compass needle to point along north's direction in view space (x right,
     // y up, z toward camera) — a live compass that foreshortens as north tilts in/out and,
@@ -307,6 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const showCountries = appState.settings.viewCountries ?? false;
     const showCities = appState.settings.viewCities ?? false;
     const showCountryColors = appState.settings.viewCountryColors ?? false;
+    const showRivers = appState.settings.viewRivers ?? false;
     const clear = (c: HTMLCanvasElement) =>
       c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
 
@@ -381,19 +440,33 @@ document.addEventListener("DOMContentLoaded", () => {
       arrowCanvas.getContext("2d")?.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
     }
 
+    // Rivers: routed downhill, drawn under the annotation overlays. Independent of the feature set, so
+    // it sits outside the `entry` block below. ensureRivers schedules a (debounced) recompute when stale.
+    if (showRivers) {
+      ensureRivers();
+      drawRivers(
+        riverCanvas,
+        rivers,
+        appState.orientation,
+        appState.settings.zoom,
+        globeRenderer.horizontalOffsetFraction()
+      );
+    } else {
+      clear(riverCanvas);
+    }
+
     // 2D / DOM overlays over the globe: feature labels, country borders + names, city markers.
+    const offset = globeRenderer.horizontalOffsetFraction();
+    // Feature names (if shown) + river names (if shown) share the label canvas → ONE combined pass so
+    // they don't clear each other. River labels carry a high minLevel, so they surface only when zoomed in.
+    const labelItems: LabelItem[] = [];
+    if (showLabels && entry) labelItems.push(...entry.result.features);
+    if (showRivers) labelItems.push(...rivers.labels);
+    if (labelItems.length) {
+      drawFeatureLabels(labelCanvas, labelItems, appState.orientation, appState.settings.zoom, offset, viewLevel);
+    } else clear(labelCanvas);
+
     if (entry) {
-      const offset = globeRenderer.horizontalOffsetFraction();
-      if (showLabels) {
-        drawFeatureLabels(
-          labelCanvas,
-          entry.result.features,
-          appState.orientation,
-          appState.settings.zoom,
-          offset,
-          viewLevel
-        );
-      } else clear(labelCanvas);
       if (showCountries) {
         drawCountryOverlay();
         countryLabels.setVisible(true);
@@ -409,7 +482,6 @@ document.addEventListener("DOMContentLoaded", () => {
         cityMarkers.setVisible(false);
       }
     } else {
-      clear(labelCanvas);
       clear(countryCanvas);
       countryLabels.setVisible(false);
       cityMarkers.setVisible(false);

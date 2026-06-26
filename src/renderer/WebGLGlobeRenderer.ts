@@ -163,10 +163,10 @@ float applyContrast(float v, float contrast) {
 }
 void main() {
   float elev = vField.r, moist = vField.g, ice = vField.b, shade = vField.a;
-  vec3 biome = texture(uColorLut, vec2(applyContrast(elev, uElevationContrast), moist)).rgb;
-  vec3 col = mix(biome, uIceColor, ice);
   vec3 dir = normalize(vWorldDir);
   vec2 uv = vec2(atan(dir.z, dir.x) * 0.15915494 + 0.5, asin(clamp(dir.y, -1.0, 1.0)) * 0.31830989 + 0.5);
+  vec3 biome = texture(uColorLut, vec2(applyContrast(elev, uElevationContrast), moist)).rgb;
+  vec3 col = mix(biome, uIceColor, ice);
   if (uChoropleth > 0.5) {
     vec4 cc = texture(uCountryTex, uv);
     if (elev >= uSeaLevel) {
@@ -229,6 +229,7 @@ type GLState = {
   // GPU detail-patch path (lazy: `undefined` = not tried yet, `null` = unavailable on this device).
   patch?: PatchProgram | null;
   gpuField?: GpuField | null;
+  riverField?: GpuField | null; // separate field sampler for river routing (readback) — keeps the patch texture undisturbed
   colorLutTex: WebGLTexture | null;
   colorLutKey: string | null;
   patchGeom: Map<GlobeMap, PatchGeomEntry>; // pos + fan idx + per-vertex cell index, LRU by count
@@ -308,6 +309,24 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
   /** WebGL shifts the globe right by LOD.GLOBE_OFFSET_FRACTION (the uOffsetX uniform). */
   public horizontalOffsetFraction(): number {
     return LOD.GLOBE_OFFSET_FRACTION;
+  }
+
+  /**
+   * Sample the river routing field on the GPU (elevation + moisture + reportElevation) for an arbitrary
+   * set of cell `sites`, with one readback. The rivers feature routes flow on a dedicated fine mesh; this
+   * is the heavy multi-octave sampling, kept on the GPU. Returns null if the GPU field path is
+   * unavailable here or the mesh exceeds one render strip. Owns a GpuField separate from the patch one,
+   * so the per-frame patch texture is never disturbed.
+   */
+  public computeRiverField(
+    canvas: HTMLCanvasElement,
+    sites: Float32Array,
+    inputs: GpuFieldInputs
+  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; reportElevation: Float32Array } | null {
+    const st = this.getState(canvas);
+    if (st.riverField === undefined) st.riverField = GpuField.create(st.gl);
+    if (!st.riverField || !st.riverField.fits(sites.length / 3)) return null;
+    return st.riverField.computeRiverField(sites, inputs.params, inputs.perm, inputs.plate);
   }
 
   public draw(

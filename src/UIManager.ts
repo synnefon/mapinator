@@ -29,6 +29,7 @@ export type BoundSlider = {
 export type UIElements = {
   // Core elements
   map: HTMLCanvasElement;
+  rivers: HTMLCanvasElement; // 2D overlay for river polylines (layered over #map, below the annotations)
   plateArrows: HTMLCanvasElement; // 2D overlay for the plate-motion arrows (layered over #map)
   featureLabels: HTMLCanvasElement; // 2D overlay for feature name labels (layered over #map)
   countries: HTMLCanvasElement; // 2D overlay for country borders + names (layered over #map)
@@ -76,6 +77,7 @@ export class UIManager {
   private initializeElements(): UIElements {
     const elementIds = [
       "map",
+      "rivers",
       "plateArrows",
       "featureLabels",
       "countries",

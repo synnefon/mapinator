@@ -14,7 +14,7 @@ export const vertexKey = (x: number, y: number, z: number): string =>
  * two ring corners share an edge and are neighbours; a single shared corner (cells meeting only at
  * a point) is not adjacency. O(total ring vertices). Used to flood-fill cells into features.
  */
-export function buildAdjacency(map: GlobeMap): number[][] {
+export function buildAdjacency(map: Pick<GlobeMap, "cellCount" | "ringOffsets" | "ringVerts">): number[][] {
   const { cellCount, ringOffsets, ringVerts } = map;
 
   // corner key -> cells touching that corner
@@ -50,4 +50,47 @@ export function buildAdjacency(map: GlobeMap): number[][] {
     }
   }
   return neighbors;
+}
+
+/** Multi-source BFS over LAND cells: each land cell's hops to the nearest water cell flagged by
+ *  `isSourceWater` (a land cell touching such water is 0). Water cells stay -1, as do land cells that
+ *  reach no flagged water. Land is `elevation ≥ seaLevel`. Shared by country population (the coastal
+ *  density bonus) and city placement (the coast pull). */
+export function waterHopDistance(
+  map: GlobeMap,
+  seaLevel: number,
+  adjacency: number[][],
+  isSourceWater: (i: number) => boolean
+): Int32Array {
+  const { cellCount, elevation } = map;
+  const isLand = (i: number): boolean => elevation[i] >= seaLevel;
+  const dist = new Int32Array(cellCount).fill(-1);
+  const queue: number[] = [];
+  for (let i = 0; i < cellCount; i++) {
+    if (!isLand(i)) continue;
+    for (const nb of adjacency[i]) {
+      if (isSourceWater(nb)) {
+        dist[i] = 0;
+        queue.push(i);
+        break;
+      }
+    }
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const c = queue[head];
+    const next = dist[c] + 1;
+    for (const nb of adjacency[c]) {
+      if (isLand(nb) && dist[nb] === -1) {
+        dist[nb] = next;
+        queue.push(nb);
+      }
+    }
+  }
+  return dist;
+}
+
+/** Each land cell's distance, in graph hops, to the nearest water of ANY kind (lake or sea) — a
+ *  multi-source BFS out from the coastline (a land cell touching water is 0). Water cells stay -1. */
+export function coastDistance(map: GlobeMap, seaLevel: number, adjacency: number[][]): Int32Array {
+  return waterHopDistance(map, seaLevel, adjacency, (i) => map.elevation[i] < seaLevel);
 }

@@ -21,6 +21,8 @@ const FIELD_GLSL = /* glsl */ `
 // --- fixed (non-dial) constants, mirroring fbm.ts / ElevationCalculator / Tectonics ---
 const float MIN_OCTAVE_AMPLITUDE = 0.006;
 const float LAND_HAIR = 0.02;
+const float REPORT_INLAND_RISE = 0.07;                // ElevationCalculator: coast→interior rise restored for reportElevation
+const float RIVER_ROUGH_WL = 0.06;                    // wavelength of the river routing-height micro-relief (uRiverRoughAmp scales it)
 const float NEUTRAL = 0.5;
 const int   MAX_OCTAVES = 16;
 const vec3  WARP_OFF = vec3(5.2, 1.7, 9.3);          // continent domain-warp offsets
@@ -53,6 +55,8 @@ uniform float uIceCoverage, uIceWobble, uIceFill, uIceBlend;
 uniform vec3  uLight;                 // hillshade light in (east, north, up)
 uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeMinLandE;
 uniform float uMountainsOn, uClimateOn, uIceOn;   // feature switches (1 = on)
+uniform float uEmitReport;            // rivers: 1 = write reportElevation (routing height) into .a instead of shade
+uniform float uRiverRoughAmp;         // rivers: micro-relief amplitude folded into the routing height (so trunk flow converges)
 uniform int   uPlateCount;
 uniform highp sampler2D uPlateTex;    // (uPlateCount x 2): row 0 = plate seeds.xyz, row 1 = Euler poles.xyz
 
@@ -194,6 +198,16 @@ float elevationAt(vec3 pos, float C) {
   return clamp(max(land + mountains, uSeaLevel), 0.0, 1.0);
 }
 
+// ElevationCalculator.reportElevationAt — the routing height for rivers. The rendered elevation
+// caps non-mountain land flat (one green band), so flow has no gradient to follow there; this restores
+// a continentalness-driven coast-to-interior rise (+ the real mountain relief) so water runs seaward.
+float reportElevationAt(float C, float renderedElevation) {
+  if (renderedElevation < uSeaLevel) return renderedElevation; // ocean: keep its depth (a flow sink)
+  float inland = smoothstep(uShelf.y, 1.0, C);
+  float mtn = max(0.0, renderedElevation - (uSeaLevel + LAND_HAIR));
+  return clamp(uSeaLevel + inland * REPORT_INLAND_RISE + mtn, 0.0, 1.0);
+}
+
 // ElevationCalculator.moistureAt
 float moistureAt(vec3 site, float cont, float broadCont) {
   if (uClimateOn < 0.5) return NEUTRAL;
@@ -250,10 +264,20 @@ vec4 field(vec3 site) {
   float full, broad;
   continentalness(site, full, broad);
   float elev = elevationAt(site, full);
-  float shade = hillshadeAt(site, full, elev);
   float moist = moistureAt(site, full, broad);
   float ice = iceAt(site, elev);
-  return vec4(elev, moist, ice, shade);
+  // .a carries shade for the renderer, OR the river routing height (reportElevation) when sampling
+  // for rivers — an if (not ?:) so the unused branch's work is skipped and the render path is unchanged.
+  float a;
+  if (uEmitReport > 0.5) {
+    a = reportElevationAt(full, elev);
+    // Micro-relief on LAND so trunk flow CONVERGES into a dendritic network instead of running parallel
+    // down the smooth continental ramp (the "lined-up" look). Ocean stays a clean sink.
+    if (elev >= uSeaLevel) a += uRiverRoughAmp * fbm3(site, RIVER_ROUGH_WL, 1.0, 5.0, 0.55, 2.0);
+  } else {
+    a = hillshadeAt(site, full, elev);
+  }
+  return vec4(elev, moist, ice, a);
 }
 `;
 

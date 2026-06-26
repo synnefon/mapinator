@@ -97,6 +97,10 @@
   <div id="mapContainer">
     <div id="mapFrame">
       <canvas id="map" width="1000" height="1000"></canvas>
+      <!-- Rivers: a transparent 2D overlay layered over the map, drawn in main.ts when the "rivers"
+           layer is on. Below the annotation overlays (it's terrain, not an annotation); pointer-through,
+           and a separate canvas so it never lands in the PNG export. -->
+      <canvas id="rivers" width="1000" height="1000"></canvas>
       <!-- Plate-motion arrows: a transparent 2D canvas layered over the (WebGL) map canvas,
            drawn in main.ts when "tectonic plates" is on. Pointer-through, so orbit drags hit #map.
            Like the compass, it's a separate canvas so it never lands in the PNG export. -->

@@ -106,6 +106,7 @@ export class CityMarkers {
   }
 
   private formatElevation(meters: number): string {
-    return `${meters.toLocaleString()} m`;
+    const feet = Math.round((meters * 3.28084) / 100) * 100;
+    return `${feet.toLocaleString()} ft`;
   }
 }

@@ -4,8 +4,8 @@ import { CITY, OCEAN, snapshotParams, type MapSettings } from "../../common/sett
 import { terrainClassOf } from "../../renderer/BiomeColor";
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
-import { buildAdjacency } from "./adjacency";
-import { assignCities, coastDistance, type City } from "./cities";
+import { buildAdjacency, coastDistance } from "./adjacency";
+import { assignCities, type City } from "./cities";
 import { assignCountries } from "./countries";
 
 const PARAMS = snapshotParams();

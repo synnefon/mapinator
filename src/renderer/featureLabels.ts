@@ -1,6 +1,8 @@
-import { Quat } from "../common/3DMath";
-import type { MapFeature } from "../mapgen/features";
+import { Quat, type Vec3 } from "../common/3DMath";
 import { globeRadiusPx } from "./GlobeRenderer";
+
+/** The minimal label shape this draws — satisfied by MapFeature (seas, continents…) AND river labels. */
+export type LabelItem = { name: string; anchor: Vec3; extent: number; minLevel: number; cellCount: number };
 
 // A "geographic labels" annotation drawn on a 2D overlay canvas layered over the globe (the WebGL map
 // canvas can't share a 2D context) — same pattern as plateArrows. Anchors are projected each frame;
@@ -23,7 +25,7 @@ const CORE = "rgba(255,255,255,0.96)";
  */
 export function drawFeatureLabels(
   canvas: HTMLCanvasElement,
-  features: MapFeature[],
+  features: LabelItem[],
   orientation: Quat,
   zoom: number,
   offsetFraction: number,

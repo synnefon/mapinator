@@ -1,5 +1,5 @@
 import { ELEVATION_BAND_BREAKS } from "../../common/elevationBands";
-import { HILLSHADE, type TerrainParams } from "../../common/settings";
+import { HILLSHADE, RIVERS, type TerrainParams } from "../../common/settings";
 import { fieldTextureDims } from "./gpuFieldLayout";
 import type { PlateData } from "./plateData";
 import { FIELD_FRAG_SRC, FIELD_VERT_SRC } from "./terrainShader";
@@ -121,6 +121,38 @@ export class GpuField {
   }
 
   /**
+   * Sample just the fields RIVER ROUTING needs at `sites`, with readback: `elevation` (land/water +
+   * flow sinks), `moisture` (per-cell water yield) and `reportElevation` (the routing height — the
+   * rendered elevation is flat on non-mountain land, so flow needs this continentalness-driven rise).
+   * Sets uEmitReport so the field shader writes reportElevation into .a in place of shade. One-time per
+   * map / dial change (not per frame), so the readback cost is fine — the renderer's hot path stays
+   * no-readback. The mesh + flow graph live on the CPU; only this multi-octave sampling is on the GPU.
+   */
+  computeRiverField(
+    sites: Float32Array,
+    params: TerrainParams,
+    perm: Float32Array,
+    plate: PlateData
+  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; reportElevation: Float32Array } {
+    const gl = this.gl;
+    const { width, height, count } = this.render(sites, params, perm, plate, true);
+    const dst = this.dstBuf!;
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
+    const elevation = new Float32Array(count);
+    const moisture = new Float32Array(count);
+    const ice = new Float32Array(count);
+    const reportElevation = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      elevation[i] = dst[4 * i];
+      moisture[i] = dst[4 * i + 1];
+      ice[i] = dst[4 * i + 2]; // .b — ice mask (rivers aren't drawn over it)
+      reportElevation[i] = dst[4 * i + 3]; // .a — reportElevation under uEmitReport
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { elevation, moisture, ice, reportElevation };
+  }
+
+  /**
    * Compute the full field and LEAVE IT on the GPU as a texture (no readback) — the renderer's path.
    * Returns the RGBA32F field texture (texel = one cell's [elevation, moisture, ice, shade]) plus the
    * texture width and cell count, so the draw shader can map a cell index → texel. The texture is
@@ -143,7 +175,8 @@ export class GpuField {
     sites: Float32Array,
     params: TerrainParams,
     perm: Float32Array,
-    plate: PlateData
+    plate: PlateData,
+    emitReport = false
   ): { width: number; height: number; count: number; upload: number; render: number } {
     const gl = this.gl;
     const n = (sites.length / 3) | 0;
@@ -176,7 +209,7 @@ export class GpuField {
     gl.bindTexture(gl.TEXTURE_2D, this.permTex);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.plateTex);
-    this.setUniforms(params, plate.count, width, n);
+    this.setUniforms(params, plate.count, width, n, emitReport);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.finish();
     gl.bindVertexArray(null);
@@ -245,7 +278,7 @@ export class GpuField {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, k, 2, 0, gl.RGBA, gl.FLOAT, buf);
   }
 
-  private setUniforms(p: TerrainParams, plateCount: number, width: number, count: number): void {
+  private setUniforms(p: TerrainParams, plateCount: number, width: number, count: number, emitReport: boolean): void {
     const gl = this.gl;
     const u = (name: string): WebGLUniformLocation | null =>
       (this.loc[name] ??= gl.getUniformLocation(this.program, name));
@@ -314,6 +347,8 @@ export class GpuField {
     f("uMountainsOn", p.features.mountains ? 1 : 0);
     f("uClimateOn", p.features.climate ? 1 : 0);
     f("uIceOn", p.features.ice ? 1 : 0);
+    f("uEmitReport", emitReport ? 1 : 0); // rivers: emit reportElevation in .a instead of shade
+    f("uRiverRoughAmp", RIVERS.ROUGHNESS.value); // rivers: routing-height micro-relief (unused unless uEmitReport)
     // samplers + layout
     gl.uniform1i(u("uSites"), 0);
     gl.uniform1i(u("uPerm"), 1);

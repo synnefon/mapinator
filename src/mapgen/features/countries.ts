@@ -3,12 +3,12 @@ import { Languages, type Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
 import { COUNTRY } from "../../common/settings";
-import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { NameGenerator } from "../NameGenerator";
-import { vertexKey } from "./adjacency";
+import { coastDistance, vertexKey } from "./adjacency";
 import { angularExtent, poleOfInaccessibility } from "./detect";
 import { generateGovernment, type GovType } from "./government";
-import { climateHabitability, estimatePopulation } from "./population";
+import { estimatePopulation } from "./population";
+import { cellSlope, cellSuitability, coastBonus } from "./suitability";
 
 // The globe is rendered as a unit sphere; we size it to Earth EXACTLY so areas read in real units.
 // Earth's published total surface area is the anchor, and the planet radius is derived from it (via
@@ -122,7 +122,7 @@ export function assignCountries(
   languagePool: Language[],
   namer: NameGenerator
 ): CountryData {
-  const { cellCount, sites, elevation, moisture, ice, rainfall } = map;
+  const { cellCount, sites, elevation, reportElevation, moisture, ice } = map;
   const countryOf = new Int32Array(cellCount).fill(-1);
 
   const land: number[] = [];
@@ -229,6 +229,13 @@ export function assignCountries(
   const countries: Country[] = [];
   let assignedMapLang = false;
 
+  // Per-cell inputs to the suitability model, computed once over the whole globe: local relief
+  // (ruggedness) and hops to the nearest water (the coastal density bonus). Each land cell's area is
+  // the planet's surface split evenly across cells — the same equal-area basis as countryAreaKm2.
+  const slope = cellSlope(elevation, adjacency);
+  const coastDist = coastDistance(map, seaLevel, adjacency);
+  const areaPerCellKm2 = EARTH_SURFACE_AREA_KM2 / cellCount;
+
   for (let k = 0; k < seeds.length; k++) {
     const cells = cellsBySeed[k];
     if (cells.length === 0) continue;
@@ -241,27 +248,31 @@ export function assignCountries(
     }
     const anchorCell = poleOfInaccessibility(cells, adjacency);
 
-    // Government + population, deterministic per country. Latitude is the anchor's (north = +y).
+    // Government + population, deterministic per country.
     const polityRng = makeRNG(`${mapSeed}|polity|${k}`);
     const government = generateGovernment(polityRng);
     const areaKm2 = countryAreaKm2(cells.length, cellCount);
-    const latitudeDeg =
-      (Math.asin(Math.max(-1, Math.min(1, sites[3 * anchorCell + 1]))) * 180) / Math.PI;
-    // Mean biome habitability over the country's land: greener cells lift density, desert / ice /
-    // mountain cells drop it (same biome classes the renderer draws — see terrainClassOf).
-    let climateSum = 0;
+    // Carrying capacity = Σ over the country's OWN land cells of (cell area × per-cell suitability ×
+    // coastal bonus) — a SUM, not an average, so a thin Nile-like ribbon of rich land through an empty
+    // desert counts its few habitable cells at full weight instead of being diluted to the country
+    // mean. Latitude is per cell (north = +y), feeding the lapse-rate temperature in the suitability.
+    let effectiveAreaKm2 = 0;
     for (const cell of cells) {
-      const tc = terrainClassOf(elevation[cell], moisture[cell], rainfall);
-      if (tc) climateSum += climateHabitability(tc.band, tc.family, ice[cell]);
+      const latitudeDeg =
+        (Math.asin(Math.max(-1, Math.min(1, sites[3 * cell + 1]))) * 180) / Math.PI;
+      const suitability = cellSuitability(
+        {
+          latDeg: latitudeDeg,
+          reportElevation: reportElevation[cell],
+          moisture: moisture[cell],
+          ice: ice[cell],
+          slope: slope[cell],
+        },
+        seaLevel
+      );
+      effectiveAreaKm2 += areaPerCellKm2 * suitability * coastBonus(coastDist[cell]);
     }
-    const climate = climateSum / cells.length; // cells is non-empty (guarded above)
-    const population = estimatePopulation({
-      areaKm2,
-      latitudeDeg,
-      government,
-      climate,
-      jitter: polityRng(),
-    });
+    const population = estimatePopulation({ effectiveAreaKm2, government, jitter: polityRng() });
 
     // Globally unique across the whole map (the namer re-rolls on collision; reset per generation).
     const name = namer.generate({ seed: `${mapSeed}|country|${k}`, lang: language, government, unique: true });

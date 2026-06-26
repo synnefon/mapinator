@@ -22,6 +22,7 @@ export interface MapSettings {
   viewCountries?: boolean; // render overlay: dotted red country borders + country names. Optional like viewPlates.
   viewCities?: boolean; // render overlay: clickable city markers (capitals + towns), sized + zoom-gated by tier. Optional like viewPlates.
   viewCountryColors?: boolean; // render overlay: 4-colour choropleth tinting each country (50% opacity). Optional like viewPlates.
+  viewRivers?: boolean; // render overlay: blue river polylines, routed downhill on a fine mesh + drawn over the globe. Optional like viewPlates.
 }
 
 // Settings whose value is a number — the keys the numeric sliders + URL parsing drive (excludes
@@ -34,7 +35,7 @@ export type NumericSettingKey = {
  *  single source of truth for a layer's default state, read by the panel (sort + reset) AND by the
  *  derived runtime defaults below. A FEATURE flips a generation switch (FEATURES; regen on change);
  *  a VIEW flips a render-overlay MapSettings flag (re-render only). */
-export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries" | "viewCities" | "viewCountryColors";
+export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries" | "viewCities" | "viewCountryColors" | "viewRivers";
 export type Layer =
   | { kind: "feature"; key: keyof Features; label: string; doc: string; defaultOn: boolean }
   | { kind: "view"; key: ViewLayerKey; label: string; doc: string; defaultOn: boolean };
@@ -91,6 +92,13 @@ export const LAYERS: Layer[] = [
     key: "viewCities",
     label: "cities",
     doc: "display city markers",
+    defaultOn: false,
+  },
+  {
+    kind: "view",
+    key: "viewRivers",
+    label: "rivers",
+    doc: "trace rivers downhill from the highlands to the sea",
     defaultOn: false,
   },
   {
@@ -242,6 +250,143 @@ export const DIALS = {
       max: 1,
       step: 0.05,
       doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10); higher = more and larger cities",
+    },
+  },
+  // POPULATION — per-cell carrying-capacity model (features/suitability.ts) summed into each country's
+  // head count. Read LIVE like COUNTRY/CITY (not part of the terrain snapshot). BASE_DENSITY is the
+  // master scale; the rest weight the terrain factors the suitability surface grounds in ~1400 truth.
+  POPULATION: {
+    BASE_DENSITY: {
+      value: 2.6,
+      min: 0.5,
+      max: 20,
+      step: 0.5,
+      doc: "master people/km² scale before terrain factors — the single dial to scale every world's population up or down (Earth ~1400 land average ≈ 2.5)",
+    },
+    COAST_STRENGTH: {
+      value: 1.6,
+      min: 0,
+      max: 5,
+      step: 0.1,
+      doc: "extra population right on the coast or lakeshore (trade + fishing); 0 = water access doesn't change density",
+    },
+    COAST_FALLOFF: {
+      value: 3,
+      min: 1,
+      max: 12,
+      step: 0.5,
+      doc: "how many cells inland the coastal population bonus reaches before fading away",
+    },
+    MONSOON_STRENGTH: {
+      value: 1,
+      min: 0,
+      max: 1.5,
+      step: 0.05,
+      doc: "weight of the hot-and-wet rice-paddy density mode that makes monsoon lands the most crowded; 0 = temperate climates only",
+    },
+    ARIDITY: {
+      value: 1,
+      min: 0.3,
+      max: 3,
+      step: 0.1,
+      doc: "how sharply dry land sheds population toward desert emptiness; higher = a faster collapse just past the well-watered band",
+    },
+    RUGGEDNESS: {
+      value: 1,
+      min: 0,
+      max: 3,
+      step: 0.1,
+      doc: "how much steep, broken terrain suppresses farming/population independent of altitude; 0 = slope is ignored",
+    },
+  },
+  // RIVERS — coarse flow-routed skeleton + grown tributaries + fractal meander (NOT terrain gen, so
+  // absent from snapshotParams). The skeleton routes on a FIXED coarse mesh (SKELETON_LEVEL in
+  // features/rivers.ts — not a dial); MIN_DRAINAGE/MOISTURE_WEIGHT/BRANCHING/MEANDER* drive the one-time
+  // routing (recompute on change); ZOOM_REVEAL/WIDTH_* are read live at draw time. See renderer/rivers.ts.
+  RIVERS: {
+    MIN_DRAINAGE: {
+      value: 10,
+      min: 4,
+      max: 200,
+      step: 2,
+      doc: "min upstream cells draining through a point before it seeds a trunk river; lower = more trunks (tributaries are grown separately, see BRANCHING)",
+    },
+    MOISTURE_WEIGHT: {
+      value: 1,
+      min: 0,
+      max: 1,
+      step: 0.1,
+      doc: "how much rainfall weights a cell's water yield (0 = every cell equal, 1 = dry cells feed less) → deserts get fewer rivers",
+    },
+    SOURCE_MOISTURE: {
+      value: 0.15,
+      min: 0,
+      max: 0.9,
+      step: 0.05,
+      doc: "minimum moisture a cell needs to GENERATE flow — rivers only start in zones at least this wet, then flow freely through drier land. Gentle by default (only true desert is cut); raise to confine sources to the wettest regions. 0 = anywhere",
+    },
+    WATER_SCALING: {
+      value: 0.7,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "how strongly a river's size tracks the water body it drains into (0 = ignore, 1 = full): big seas get big rivers, small lakes get small ones",
+    },
+    ROUGHNESS: {
+      value: 0.02,
+      min: 0,
+      max: 0.1,
+      step: 0.005,
+      doc: "fractal micro-relief on the routing height so trunk flow CONVERGES into a dendritic network instead of running parallel down the smooth continental ramp — the key knob against 'lined-up' rivers; too high = chaotic ponding",
+    },
+    BRANCHING: {
+      value: 0.6,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "tributary density grown off the trunks (0 = bare trunks, 1 = dense dendritic network); the small ones surface as you zoom in",
+    },
+    MEANDER: {
+      value: 0.3,
+      min: 0,
+      max: 0.6,
+      step: 0.02,
+      doc: "fractal meander amplitude — how much each river wiggles off a straight path",
+    },
+    MEANDER_DETAIL: {
+      value: 3,
+      min: 0,
+      max: 5,
+      step: 1,
+      doc: "fractal meander levels; higher = finer wiggle that resolves deeper into zoom (≈ ×2 vertices each)",
+    },
+    ZOOM_REVEAL: {
+      value: 0.1,
+      min: 0,
+      max: 0.8,
+      step: 0.05,
+      doc: "how aggressively small tributaries are hidden when zoomed out (0 = always show all; higher = only trunks until you zoom in)",
+    },
+    WIDTH_MIN: {
+      value: 0.2,
+      min: 0.2,
+      max: 4,
+      step: 0.1,
+      doc: "thinnest river stroke in px (the smallest channels)",
+    },
+    WIDTH_MAX: {
+      value: 1.5,
+      min: 0.5,
+      max: 12,
+      step: 0.5,
+      doc: "thickest river stroke in px at the zoomed-out view (the largest trunk rivers)",
+    },
+    WIDTH_ZOOM_BOOST: {
+      value: 0.5,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "how much rivers thicken as you zoom in (0 = fixed px, 1 = grow with the globe)",
     },
   },
 
@@ -481,6 +626,8 @@ export const DIALS = {
 export const {
   COUNTRY,
   CITY,
+  POPULATION,
+  RIVERS,
   CONTINENT,
   OCEAN,
   COAST,

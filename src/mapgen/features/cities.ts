@@ -4,6 +4,7 @@ import { makeRNG, type RNG } from "../../common/random";
 import { CITY } from "../../common/settings";
 import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { NameGenerator } from "../NameGenerator";
+import { coastDistance, waterHopDistance } from "./adjacency";
 import { cityProfile } from "./cityStats";
 import type { Country } from "./countries";
 import { detectComponents } from "./detect";
@@ -34,6 +35,10 @@ export type City = {
 const BIG_POP = 75_000;
 const MEDIUM_POP = 20_000;
 const MIN_CITY_POP = 5_000;
+// The small market town at the BOTTOM of the urban hierarchy — where the rank-size tail bottoms out. The
+// largest city ≈ urbanPop / H(urbanPop / TYPICAL_TOWN_POP), so LOWER ⇒ a more primate (bigger) capital,
+// higher ⇒ a flatter spread. ~1400 market towns ran a few thousand people.
+const TYPICAL_TOWN_POP = 4_000;
 const TIER_MIN_LEVEL: Record<CityTier, number> = { big: 1, medium: 2, small: 3 };
 
 const MAX_CITIES_PER_COUNTRY = 16;
@@ -49,8 +54,8 @@ const CAPITAL_RANK_WEIGHTS = [0.5, 0.25, 0.125, 0.125];
 // ~4% of land), so cities cluster hard by the sea. We weight a cell's chance of hosting a city by its
 // distance — in cell hops — to the nearest water, decaying over COAST_FALLOFF hops. SPREAD2 then pushes
 // chosen cities apart so they string along the coast instead of stacking on the single best spot.
-const COASTAL_PULL = 8; // a shore cell is up to ~9× as likely to host a city as the deep interior
-const COAST_FALLOFF = 1.5; // hops over which the coastal pull decays
+const COASTAL_PULL = 8; // a shore cell is up to X times as likely to host a city as the deep interior
+const COAST_FALLOFF = 1.2; // hops over which the coastal pull decays (tighter ⇒ cities hug the water)
 const SPREAD2 = 0.0025; // squared-chord spacing (~0.07 rad ≈ 450 km) the spread suppression falls off over
 
 // A water body counts as "large" (a sea/ocean, not a lake/pond) if it's the biggest water body OR spans
@@ -187,48 +192,6 @@ export function assignCities(
   return cities;
 }
 
-/** Multi-source BFS over LAND cells: each land cell's hops to the nearest water cell flagged by
- *  `isSourceWater` (a land cell touching such water is 0). Water cells stay -1, as do land cells that
- *  reach no flagged water. Land is `elevation ≥ seaLevel`. */
-function waterHopDistance(
-  map: GlobeMap,
-  seaLevel: number,
-  adjacency: number[][],
-  isSourceWater: (i: number) => boolean
-): Int32Array {
-  const { cellCount, elevation } = map;
-  const isLand = (i: number): boolean => elevation[i] >= seaLevel;
-  const dist = new Int32Array(cellCount).fill(-1);
-  const queue: number[] = [];
-  for (let i = 0; i < cellCount; i++) {
-    if (!isLand(i)) continue;
-    for (const nb of adjacency[i]) {
-      if (isSourceWater(nb)) {
-        dist[i] = 0;
-        queue.push(i);
-        break;
-      }
-    }
-  }
-  for (let head = 0; head < queue.length; head++) {
-    const c = queue[head];
-    const next = dist[c] + 1;
-    for (const nb of adjacency[c]) {
-      if (isLand(nb) && dist[nb] === -1) {
-        dist[nb] = next;
-        queue.push(nb);
-      }
-    }
-  }
-  return dist;
-}
-
-/** Each land cell's distance, in graph hops, to the nearest water of ANY kind — a multi-source BFS out
- *  from the coastline (a land cell touching water is 0). Water cells stay -1. Biases cities to coasts. */
-export function coastDistance(map: GlobeMap, seaLevel: number, adjacency: number[][]): Int32Array {
-  return waterHopDistance(map, seaLevel, adjacency, (i) => map.elevation[i] < seaLevel);
-}
-
 /** Per-cell flag (1/0): is this cell part of a LARGE water body? The single biggest water component
  *  always counts (these worlds always have an ocean); others count once they clear LARGE_WATER_FRAC. */
 function largeWaterMask(map: GlobeMap, seaLevel: number, adjacency: number[][]): Uint8Array {
@@ -288,8 +251,15 @@ function sampleWeighted(w: number[], skip: Set<number>, rng: RNG): number {
   return -1;
 }
 
+// Harmonic number Hₘ = Σ_{k=1}^{m} 1/k, closed-form via the Euler–Maclaurin asymptotic (γ = Euler–
+// Mascheroni constant); O(1) and exact enough above m=1, so the rank-size normaliser scales to a huge
+// settlement hierarchy without a giant loop.
+const harmonicNumber = (m: number): number =>
+  m <= 1 ? m : Math.log(m) + 0.5772156649 + 1 / (2 * m) - 1 / (12 * m * m);
+
 /**
- * Place one country's cities and size them by rank-size (city k gets urbanPop / (k · Hₙ)). Each slot is
+ * Place one country's cities and size them by rank-size (city k gets urbanPop / (k · H), H the harmonic
+ * number of the FULL settlement hierarchy — not just the emitted n — so sizes stay period-realistic). Each slot is
  * sampled coastal-weighted, then gated by elevation — a big/medium city needs LOW/MEDIUM ground (cap 2),
  * a small one may sit on HIGH ground (cap 1), and VERY_HIGH never hosts a city. A slot rejects too-high
  * sites and retries up to MAX_PLACEMENT_TRIES distinct spots; if none is low enough, that city is dropped.
@@ -305,8 +275,13 @@ function placeCities(
   rng: RNG
 ): { cell: number; population: number }[] {
   const { sites } = map;
-  let harmonic = 0;
-  for (let i = 0; i < n; i++) harmonic += 1 / (i + 1);
+  // Rank-size (Zipf) over the FULL urban hierarchy, not just the n cities we emit: a country's urban
+  // population spreads across ~urbanPop/TYPICAL_TOWN_POP settlements down to small market towns, so we
+  // normalise by the harmonic number of THAT count. Emitting only the top n then gives realistic ~1400
+  // absolute sizes (the largest grows sub-linearly with country size) instead of cramming every urban
+  // dweller into ≤16 cities and inflating them.
+  const settlements = Math.max(n, Math.round(urbanPop / TYPICAL_TOWN_POP));
+  const harmonic = harmonicNumber(settlements);
   const w = cells.map((c) => coastWeight(coastDist[c]));
   const placed: { cell: number; population: number }[] = [];
   for (let rank = 0; rank < n; rank++) {

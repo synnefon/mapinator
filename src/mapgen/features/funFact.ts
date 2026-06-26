@@ -667,7 +667,7 @@ const sizeCentralityPatterns: FunFactPattern[] = [
 const climatePatterns: FunFactPattern[] = [
   {
     when: { biomes: ["desert"] },
-    template: "everyone knows where the shade will be an hour from now",
+    template: "water sellers can be heard all across the city",
     slots: {},
   },
   {
@@ -677,22 +677,22 @@ const climatePatterns: FunFactPattern[] = [
   },
   {
     when: { maxElevationMeters: 30, nearWater: true, coastal: false },
-    template: "the river reminds everyone each spring who owns the floodplain",
+    template: "bridges are built especially high to protect them from the frequent floods",
     slots: {},
   },
   {
     when: { bands: ["WET"], minElevationMeters: 600 },
-    template: "people talk about the weeks when it *isn't* raining",
+    template: "the locals have 100 different words for different kinds of rain",
     slots: {},
   },
   {
     when: { anyTags: { society: [Society.Maritime] } },
-    template: "half the calendar is set by the tides",
+    template: "the tides are the only clock the locals need",
     slots: {},
   },
   {
     when: { anyTags: { authority: [Authority.Elite] } },
-    template: "family names carry farther than raised voices",
+    template: "the local aritocracy are know for their unusual taste in fashion",
     slots: {},
   },
   {
@@ -702,7 +702,7 @@ const climatePatterns: FunFactPattern[] = [
   },
   {
     when: { nearWater: true, coastal: false },
-    template: "the river is everyone's favorite landmark and least favorite neighbor",
+    template: "the river is widely revered and reviled in equal measure",
     slots: {},
   },
   {
@@ -712,12 +712,12 @@ const climatePatterns: FunFactPattern[] = [
   },
   {
     when: { nearWater: true, bands: ["WET"] },
-    template: "some mornings the opposite bank is only a rumor",
+    template: "on especially rainy days, the entire town seems caked in a rind of mud.",
     slots: {},
   },
   {
     when: { biomes: WINTRY_BIOMES, nearWater: true },
-    template: "once winter settles in, the river gains a main street",
+    template: "once winter settles in, the river becomes a main street",
     slots: {},
   },
 ];
@@ -726,27 +726,27 @@ const climatePatterns: FunFactPattern[] = [
 const biomePatterns: FunFactPattern[] = [
   {
     when: { biomes: ["forest"] },
-    template: "the forest begins where the last fence loses confidence",
+    template: "many locals build their homes in the canopy",
     slots: {},
   },
   {
     when: { biomes: ["woodland"] },
-    template: "every winter starts with a bigger woodpile than the last",
+    template: "timber is king here, and those who fell it are heroes",
     slots: {},
   },
   {
     when: { biomes: ["grassland"] },
-    template: "you can watch tomorrow's weather coming all afternoon",
+    template: "the endless sky is said to have driven more than one local mad",
     slots: {},
   },
   {
     when: { biomes: ["steppe"] },
-    template: "everyone points at things too distant for visitors to see",
+    template: "the city doubles in size every summer when the herders come to town",
     slots: {},
   },
   {
     when: { biomes: ["wetland"] },
-    template: "the frogs are loud enough to interrupt conversations",
+    template: "outsiders are warned to sleep beneath nets to fend off mosquitoes",
     slots: {},
   },
   {
@@ -756,7 +756,7 @@ const biomePatterns: FunFactPattern[] = [
   },
   {
     when: { biomes: ["montane forest"] },
-    template: "the fog sometimes arrives before breakfast and leaves after supper",
+    template: "the locals beleve that the forest is alive, and it protects them from their enemies",
     slots: {},
   },
   {
@@ -771,7 +771,7 @@ const biomePatterns: FunFactPattern[] = [
   },
   {
     when: { elevations: ["HIGH", "VERY_HIGH"] },
-    template: "everyone keeps one eye on the mountain passes",
+    template: "the locals take turns maintaining the steep mountain passes",
     slots: {},
   },
 ];

@@ -20,12 +20,6 @@ const WARP_OFFSET_Z = 9.3;
 // sitting exactly at the waterline below it → rendered as ocean. ~0.02 lands at the contrast pivot.
 const LAND_HAIR = 0.02;
 
-// DISPLAY ONLY (reportElevationAt): how far above the waterline the deepest continental interior reads,
-// in raw-elevation units, before the colour cap flattens it. The rendered field pins all non-mountain
-// land to LAND_HAIR above the waterline (one green band → one elevation), so this restores a plausible
-// coast→interior rise purely for stats/labels. ~0.07 ≈ a ~1 km interior plateau; never feeds rendering.
-const REPORT_INLAND_RISE = 0.07;
-
 // Range-envelope noise (#3 — along-strike variation): a low-frequency wave that swells, pinches,
 // and gaps each range along its length so it doesn't read as a uniform arc. Wavelength sets how
 // often it pinches; the offset decorrelates it from the other fields.
@@ -104,7 +98,7 @@ export class ElevationCalculator {
    * the tectonic uplift already computed at `site` so the per-cell sampler doesn't re-derive it;
    * omit it elsewhere (the hillshade slope samples at offset points compute their own).
    */
-  public elevationAt(site: Vec3, C: number, upliftOverride?: number): number {
+  public elevationAt(site: Vec3, C: number, upliftOverride?: number): { elevation: number; reportElevation: number } {
     const { CONTINENT, OCEAN, COAST, TECTONIC } = this.params;
     const { x, y, z } = site;
     const coastWavelength = COAST.WAVELENGTH;
@@ -150,7 +144,7 @@ export class ElevationCalculator {
     }
     const continent = clamp(base + detail);
     // Ocean: the continent decides outright — mountains never raise islands out of the sea.
-    if (continent < OCEAN.SEA_LEVEL) return continent;
+    if (continent < OCEAN.SEA_LEVEL) return { elevation: continent, reportElevation: continent };
 
     // Cap the LAND base to just above the waterline so the CONTINENT + COAST surface alone stays in
     // the lowest (green) band — ONLY the MOUNTAIN wave lifts land into the brown/grey/white bands
@@ -168,24 +162,14 @@ export class ElevationCalculator {
     const landMask = smoothstep(OCEAN.SHELF[0], OCEAN.SHELF[1], C);
     const mountainWeight = landMask * (1 - TECTONIC.COAST_BIAS * inland);
     const mountains = mountainWeight * this.mountainRelief(x, y, z, upliftOverride);
-    return clamp(Math.max(land + mountains, OCEAN.SEA_LEVEL));
-  }
-
-  /**
-   * DISPLAY-ONLY elevation (see GlobeMap.reportElevation): the rendered `elevation` caps every
-   * non-mountain land cell at LAND_HAIR above the waterline so flat land stays one green band — which
-   * means all flat-land cells share ONE elevation (city cards then show the same metres everywhere off
-   * the mountains). Here we restore a plausible coast→interior rise from the continentalness carrier `C`
-   * (the only signal that varies across flat land) using the SAME `inland` ramp elevationAt uses, then
-   * add the REAL mountain relief (`rendered − cap`) back on top. NOT used by rendering or land/water.
-   */
-  public reportElevationAt(C: number, renderedElevation: number): number {
-    const { OCEAN } = this.params;
-    if (renderedElevation < OCEAN.SEA_LEVEL) return renderedElevation; // ocean: leave depth as-is
-    const inland = smoothstep(OCEAN.SHELF[1], 1, C); // 0 at the shoreline → 1 deep inland (matches elevationAt)
-    const mountainRelief = Math.max(0, renderedElevation - (OCEAN.SEA_LEVEL + LAND_HAIR)); // height above the flat cap
-    // Coast reads ~waterline (≈ 0 m) and rises with the carrier into the interior; mountains add on top.
-    return clamp(OCEAN.SEA_LEVEL + inland * REPORT_INLAND_RISE + mountainRelief);
+    const rendered = clamp(Math.max(land + mountains, OCEAN.SEA_LEVEL));
+    // REPORT ignores the rendering cap — but NOT by restoring `continent`, which carries the big
+    // COAST/OCEAN detail wave (that's horizontal coastline SHAPE, not altitude; the cap exists to flatten
+    // it off the land). The cap merely pins every non-mountain land cell at LAND_HAIR above the waterline;
+    // report strips that pedestal back off, so flat land — the ENTIRE coast included — reads sea level
+    // (0 m) and only genuine MOUNTAIN relief rises above it. Used by display / stats / population.
+    const reportElevation = clamp(OCEAN.SEA_LEVEL + Math.max(0, rendered - (OCEAN.SEA_LEVEL + LAND_HAIR)));
+    return { elevation: rendered, reportElevation };
   }
 
   /**
@@ -235,8 +219,8 @@ export class ElevationCalculator {
     const ez = x * ny - y * nx;
 
     const e = HILLSHADE.EPSILON;
-    const hE = this.elevationAt({ x: x + ex * e, y: y + ey * e, z: z + ez * e }, C);
-    const hN = this.elevationAt({ x: x + nx * e, y: y + ny * e, z: z + nz * e }, C);
+    const hE = this.elevationAt({ x: x + ex * e, y: y + ey * e, z: z + ez * e }, C).elevation;
+    const hN = this.elevationAt({ x: x + nx * e, y: y + ny * e, z: z + nz * e }, C).elevation;
 
     // Surface normal in (east, north, up): the up vector tilted opposite the uphill slope,
     // exaggerated. Dot with the fixed light; FLOOR lifts shadows off pure black.
@@ -383,9 +367,8 @@ export class ElevationCalculator {
     // Tectonics.upliftAndPlateAt); pass uplift into elevationAt so it isn't re-sampled. Drops a
     // redundant warp + scan per land cell; bit-identical to the old separate upliftAt + plateAt.
     const { uplift, plate } = this.tectonics.upliftAndPlateAt(site.x, site.y, site.z);
-    const elevation = this.elevationAt(site, continentalness, uplift);
-    // Display-only elevation (varies across flat land where `elevation` is pinned flat) — for stats/labels.
-    const reportElevation = this.reportElevationAt(continentalness, elevation);
+    // Rendered (capped → flat green band) + report (uncapped real height, ~0 at the coast). See elevationAt.
+    const { elevation, reportElevation } = this.elevationAt(site, continentalness, uplift);
     // Relief shading from the SAME field — reuses continentalness, only re-samples the relief twice
     // (for the slope). Baked per cell → a free colour multiply at draw time.
     const shade = this.hillshadeAt(site, continentalness, elevation);

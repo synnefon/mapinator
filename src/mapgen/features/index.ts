@@ -12,6 +12,7 @@ import {
   largestBorderingCountry,
 } from "./countries";
 import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
+import { applyInlandRise } from "./inlandElevation";
 import { nameFeature } from "./name";
 import { subdivideOcean } from "./ocean";
 import { detectTerrainFeatures } from "./terrain";
@@ -77,6 +78,9 @@ export function computeMapFeatures(
 ): MapFeatures {
   const adjacency = buildAdjacency(map);
   const components = detectComponents(map, seaLevel, adjacency);
+  // Bake the continental inland rise into reportElevation (once per map) BEFORE countries/cities read it,
+  // so a coast→interior elevation gradient feeds both city cards and the population lapse rate.
+  applyInlandRise(map, seaLevel, adjacency, components);
   // Start a clean uniqueness namespace for this generation: countries claim names first, then cities,
   // then features (all via `namer`), so no two named things anywhere share a name. Resetting each call
   // keeps it deterministic — a fixed seed re-derives the same names instead of drifting across regens.
