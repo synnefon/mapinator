@@ -1,6 +1,8 @@
 import type { Vec3 } from "../../common/3DMath";
 import type { Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
+import type { TerrainParams } from "../../common/settings";
+import { buildCpuCalc } from "../gpu/cpuField";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
 import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
@@ -12,12 +14,13 @@ import {
   largestBorderingCountry,
 } from "./countries";
 import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
-import { applyInlandRise } from "./inlandElevation";
+import { inlandRisenElevation } from "./inlandElevation";
 import { nameFeature } from "./name";
 import { subdivideOcean } from "./ocean";
+import type { RiverData } from "./rivers";
 import { detectTerrainFeatures } from "./terrain";
 
-export type { City, CityTier } from "./cities";
+export type { City, CityTier, CityWaterKind } from "./cities";
 export { CLASSIFY, type FeatureKind } from "./classify";
 export { OCEAN_NAMING } from "./ocean";
 
@@ -74,19 +77,23 @@ export function computeMapFeatures(
   language: Language,
   mapSeed: string,
   namer: NameGenerator,
-  languagePool: Language[]
+  languagePool: Language[],
+  params: TerrainParams,
+  rivers: RiverData
 ): MapFeatures {
   const adjacency = buildAdjacency(map);
   const components = detectComponents(map, seaLevel, adjacency);
-  // Bake the continental inland rise into reportElevation (once per map) BEFORE countries/cities read it,
-  // so a coast→interior elevation gradient feeds both city cards and the population lapse rate.
-  applyInlandRise(map, seaLevel, adjacency, components);
+  // The continental inland rise as an explicit display-elevation field (pure — no map mutation), computed
+  // BEFORE countries/cities, which take it as a named input so the coast→interior gradient that feeds the
+  // city cards + population lapse rate can't be reordered away.
+  const reportElevation = inlandRisenElevation(map, seaLevel, adjacency, components);
   // Start a clean uniqueness namespace for this generation: countries claim names first, then cities,
   // then features (all via `namer`), so no two named things anywhere share a name. Resetting each call
   // keeps it deterministic — a fixed seed re-derives the same names instead of drifting across regens.
   namer.resetUniqueness();
   const countryData = assignCountries(
     map,
+    reportElevation,
     seaLevel,
     adjacency,
     mapSeed,
@@ -95,7 +102,11 @@ export function computeMapFeatures(
     namer
   );
   const { countryOf, countries } = countryData;
-  const cities = assignCities(map, seaLevel, adjacency, countryOf, countries, mapSeed, namer);
+  // Re-derive the generator's FINE field on this thread (the base map was built in a worker) so coastal
+  // city markers can snap to the rendered waterline (`elev >= seaLevel`), not the coarse cell boundary.
+  const { calc } = buildCpuCalc(mapSeed, params);
+  const fineLandAt = (p: Vec3): boolean => calc.sampleCell(p).elevation >= seaLevel;
+  const cities = assignCities(map, reportElevation, seaLevel, adjacency, countryOf, countries, mapSeed, namer, fineLandAt, rivers);
   const countryColors = fourColorCountries(countryOf, adjacency, countries.length);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of

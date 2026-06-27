@@ -1,13 +1,11 @@
-import { Quat } from "./common/3DMath";
 import { languageName } from "./common/language";
 import type { InfoPopup } from "./InfoPopup";
 import type { CountryInfo } from "./mapgen/features";
-import { globeRadiusPx } from "./renderer/GlobeRenderer";
+import type { Projector } from "./renderer/projection";
 
 // Country names are interactive DOM elements (so hover/click come for free) layered over the globe,
 // repositioned each frame by projecting their anchor — same projection as the canvas overlays. Clicking
 // opens the shared InfoPopup (land area, language, population); the popup then follows the country.
-const MIN_FRONT_Z = 0.04; // hide labels at/behind the visible limb
 const FONT_FRAC = 0.5; // font px as a fraction of the country's on-screen radius
 const MIN_FONT_PX = 13;
 const MAX_FONT_PX = 42;
@@ -72,24 +70,20 @@ export class CountryLabels {
 
   /** Reproject + reposition every label. The canvas is in 1:1 px with the frame, so its projected
    *  coordinates place the divs directly. Labels behind the limb are hidden. */
-  update(canvas: HTMLCanvasElement, countries: CountryInfo[], orientation: Quat, zoom: number, offsetFraction: number): void {
+  update(countries: CountryInfo[], proj: Projector): void {
     if (!this.visible) return;
-    const radius = globeRadiusPx(canvas, zoom);
-    const offX = offsetFraction * canvas.width;
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const zoomScale = ZOOM_OUT_SCALE + (1 - ZOOM_OUT_SCALE) * Math.min(1, zoom / ZOOM_FULL);
+    const zoomScale = ZOOM_OUT_SCALE + (1 - ZOOM_OUT_SCALE) * Math.min(1, proj.zoom / ZOOM_FULL);
     for (let i = 0; i < this.divs.length; i++) {
       const div = this.divs[i];
       const info = countries[i];
-      const r = Quat.rotate(orientation, info.anchor);
-      if (r.z < MIN_FRONT_Z) {
+      const r = proj.project(info.anchor);
+      if (!r.front) {
         div.style.display = "none";
         continue;
       }
-      const fontPx = Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, info.extent * radius * FONT_FRAC) * zoomScale);
-      div.style.left = `${cx + r.x * radius + offX}px`;
-      div.style.top = `${cy - r.y * radius}px`;
+      const fontPx = Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, info.extent * proj.radius * FONT_FRAC) * zoomScale);
+      div.style.left = `${r.x}px`;
+      div.style.top = `${r.y}px`;
       div.style.fontSize = `${fontPx}px`;
       div.style.display = "block";
     }

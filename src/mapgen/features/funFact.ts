@@ -3,1480 +3,450 @@ import { type CityCondition, matchesCondition } from "./cityCondition";
 import type { BiomeName, CityContext } from "./cityStats";
 import { Authority, Society, Structure, Trait } from "./government";
 
-// Biome collections — named groups so fun-fact gates read by terrain character rather than raw ice/elevation
-// thresholds (cold flavour keys off WINTRY_BIOMES, not minIce). A city's biome is exactly one of these values.
+// ===================== Fun facts: the oddity engine =====================
+// One register only: a fun fact is a concrete, surprising, SPECIFIC claim — something that sounds TRUE of
+// one particular place. The bar every line must clear is that it adds something NON-OBVIOUS beyond the
+// popup's stat rows (population / industries / elevation): "smells of fish" in a fishing town fails (you
+// already knew it); "more of the dead lie in the hill beyond the walls than the living within them" passes.
+//
+// Shapes are borrowed from real-world city trivia and recast for a pre-modern world: superlatives scoped to
+// {country}, concrete counts, etymology twists, hidden/abandoned works, quirky laws, engineering oddities.
+// Most facts are whole authored one-liners (cityOddities). A handful use SLOTS — food, landmarks, signature
+// crafts — so one oddity-grade template yields many concrete facts and a country never runs dry of variety.
+// Every entry is gated (`when`) so the line FITS the city, but written so it never merely restates its type.
+
+// Biome groups — so gates read by terrain character rather than raw thresholds. A city's biome is one value.
 const WINTRY_BIOMES: BiomeName[] = ["tundra", "snowfields", "alpine", "barren peaks"];
 const ARID_BIOMES: BiomeName[] = ["desert", "steppe", "badlands"];
 const WOODED_BIOMES: BiomeName[] = ["forest", "woodland", "montane forest"];
 
-// ===================== Fun facts =====================
+type Conditional<T> = T & { when?: CityCondition };
 
-enum GrammaticalNumber {
-  Singular = "singular",
-  Plural = "plural",
-}
+// A slot option (cityOddities entry, or a noun in a food/landmark/craft pool). `when` gates it to the city.
+type FactPart = Conditional<{ text: string }>;
 
-// Grammatical-fit categories for the optional predicate→qualifier match. Plain tags, not an enum: a
-// qualifier declares the categories it IS (`fit`); a predicate the categories it ACCEPTS (`accepts`).
-// Both default OPEN — a predicate with no `accepts` takes any qualifier; a qualifier with no `fit`
-// follows any predicate. `accepts: []` is the explicit opt-out (predicate takes no qualifier).
-//
-// `condition` is a CIRCUMSTANTIAL condition (when the weather allows); `access` is an INSIDER one (if you
-// know who to ask). They're split so insider clauses trail only access predicates ("keeps odd hours if you
-// know who to ask"), never public/observable ones ("draws crowds … if you know who to ask" — nonsense).
-//
-// COVERAGE INVARIANT (keep this true so any city can reach any kind): every Fit below has at least one
-// un-gated (`when`-less) qualifier, and every required slot has at least one un-gated option. Add freely
-// — a new entry only widens coverage; just don't gate the LAST universal out of a category.
-type Fit = "seasonal" | "eventTime" | "condition" | "access" | "concession";
-
-// Semantic kind of a feature subject, for the predicate→subject match (the subject analogue of Fit). A
-// subject declares the kind it IS (`kind`); a predicate the kinds it ATTACHES TO (`attachTo`). It stops a
-// predicate that implies commerce / bustle / record-keeping from landing on the wrong feature ("its bell
-// tower anchors the local economy", "its foundries draw crowds"). `attachTo` omitted ⇒ any kind, so
-// stative/atmospheric predicates ("known throughout the region", "smells of salt and tar") still reach every
-// subject — including landmarks. cityWide subjects (the whole settlement) bypass the check.
-//   • market      — commerce / exchange, a crowd-drawing destination (markets, harbor, caravanserai, …)
-//   • industry    — production / extraction, busy but not a destination (mines, foundries, orchards, mills, …)
-//   • place       — public space people gather in or pass through (square, tavern, streets, baths, …)
-//   • institution — governance / learning / worship / military (courts, libraries, temples, barracks, …)
-//   • landmark    — civic sight or signal, admired not used (bell tower, lighthouse, clock tower, dawn bells)
-//   • rampart     — defensive work, storied and martial (walls, hill forts)
-type SubjectKind = "market" | "industry" | "place" | "institution" | "landmark" | "rampart";
-
-type Conditional<T> = T & {
-  when?: CityCondition;
-};
-
-type FactPart = Conditional<{
-  text: string;
-  number?: GrammaticalNumber; // subjects only: drives verb agreement in the following predicate/qualifier
-  fit?: Fit[]; // qualifiers only: the grammatical categories this clause is
-  accepts?: Fit[]; // predicates only: which qualifier categories may follow (omit ⇒ all; [] ⇒ none)
-  kind?: SubjectKind; // feature subjects only: its semantic kind (cityWide subjects omit it and bypass)
-  attachTo?: SubjectKind[]; // predicates only: which subject kinds may precede (omit ⇒ all kinds)
-  cityWide?: boolean; // subject: stands for the whole settlement. predicate: describes the town as a whole,
-  //                     so it needs a cityWide subject ("its orchards host more festivals" reads as nonsense).
-}>;
-
+// A fun-fact pattern: a template ("{landmark} is stamped on the town seal"), its slots, and an optional
+// city gate. Slotless patterns (slots: {}) are whole authored oddities; slotted ones fill from the pools.
 type FunFactPattern = Conditional<{
   template: string;
   slots: Record<string, FactPart[]>;
 }>;
 
-// Third-person singular of a regular English verb — the {v:base} token's singular form.
-function thirdPerson(base: string): string {
-  if (/(s|x|z|ch|sh)$/.test(base)) return base + "es";
-  if (/[^aeiou]y$/.test(base)) return base.slice(0, -1) + "ies";
-  if (/o$/.test(base)) return base + "es";
-  return base + "s";
-}
-
-// Expand verb-agreement tokens against the governing number: {cop}=is/are, {have}=has/have,
-// {v:base}=third-person-singular/base. A string with no tokens is returned unchanged, so inflection is
-// opt-in per entry — only subjects/predicates/qualifiers that need agreement carry tokens.
-function inflect(text: string, number: GrammaticalNumber): string {
-  const singular = number === GrammaticalNumber.Singular;
-  return text
-    .replace(/\{cop\}/g, singular ? "is" : "are")
-    .replace(/\{have\}/g, singular ? "has" : "have")
-    .replace(/\{v:([a-z]+)\}/g, (_, base: string) => (singular ? thirdPerson(base) : base));
-}
-
+// {country} → the country name; {slot} → the rendered slot value. No tokens ⇒ returned unchanged.
 function renderTemplate(template: string, slots: Record<string, string>, ctx: CityContext): string {
-  return template.replace(/\{(\w+)\}/g, (_, key: string) => {
-    if (key === "country") return ctx.countryName;
-    return slots[key] ?? "";
-  });
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => (key === "country" ? ctx.countryName : slots[key] ?? ""));
 }
 
-// Grammatical fit: may this qualifier follow this predicate? Default-open both ways; `accepts: []` opts out.
-function acceptsQualifier(predicate: FactPart | undefined, qualifier: FactPart): boolean {
-  const accepted = predicate?.accepts;
-  if (accepted && accepted.length === 0) return false; // explicit opt-out
-  if (!accepted) return true; // no list ⇒ accepts every qualifier
-  const fit = qualifier.fit;
-  if (!fit || fit.length === 0) return true; // unmarked qualifier ⇒ fits anywhere
-  return fit.some((f) => accepted.includes(f));
-}
+// ===================== The oddity corpus =====================
+// Whole authored fun facts, grouped by the axis they're gated to. Universal entries (no `when`) fit any
+// town and are always eligible, so every city — however plain — still leads with a concrete oddity.
+const cityOddities: FactPart[] = [
+  // — universal: civic oddities that fit any town —
+  { text: "no two clock towers in town agree on the time, and the council long ago gave up trying to fix it" },
+  { text: "the oldest tavern has burned down at least twice and reopened on the same spot both times" },
+  { text: "locals can't agree on where the city's name even came from, and three stories are told with equal certainty" },
+  { text: "the town clock has run five minutes fast for as long as anyone can remember, and no one will be the one to correct it" },
+  { text: "two streets share the exact same name, and neither district will be the one to rename" },
+  { text: "the city keeps a holiday whose origin everyone has forgotten, observed by closing every red door in town" },
+  { text: "the shortest street in {country} runs here, and two families have feuded over its paving for generations" },
+  { text: "every door in the old town is numbered by the year it was hung, so the lowest numbers mark the oldest houses" },
+  { text: "the founding charter survives with its first line torn away, and scholars have argued for two centuries over what it said" },
+  { text: "there are more statues of the founder in the squares than the founder lived years" },
+  { text: "the central well is older than the city; the first house was raised to be near it, not the other way around" },
+  { text: "the council still meets in the hall of a guild that dissolved before anyone now living was born" },
+  { text: "the tallest tower was built a storey too high and has leaned a little further every century since" },
+  { text: "a sealed door in the council hall has no known key, and no record survives of what was shut behind it" },
+  { text: "an older, smaller town lies bricked into the cellars beneath the market square" },
+  { text: "the city's name means something faintly rude in the neighboring tongue, and the neighbors have never let it go" },
+  { text: "the town crier's post is hereditary, and one family has held it for eleven generations" },
+  { text: "the oldest house in town is legally a public road, and carts still claim the right to pass through its great hall" },
+  { text: "the city keeps two calendars, one for taxes and one for festivals, and they have drifted a full week apart" },
+  { text: "a law no one has bothered to repeal still fixes the price of bread at a coin the mint stopped striking long ago" },
+  { text: "more of the city's dead lie in the hill beyond the walls than there are living souls within them" },
+  { text: "the main square is named for a market that was moved across town three reigns ago" },
+  { text: "every neighborhood swears it is the true heart of the city, and each has a monument to prove it", when: { tiers: ["medium", "big"] } },
+  { text: "big enough that the far quarter speaks with an accent the near quarter can barely follow", when: { tiers: ["big"] } },
 
-// Semantic fit: may this predicate attach to this subject? `attachTo` omitted ⇒ every kind. cityWide
-// subjects (the whole settlement encompasses every kind) bypass; otherwise the subject's kind must be listed.
-function acceptsSubject(predicate: FactPart, subject: FactPart | undefined): boolean {
-  if (!predicate.attachTo) return true; // no list ⇒ attaches to every kind
-  if (subject?.cityWide) return true; // the whole town stands in for works/place/institution/monument alike
-  return subject?.kind !== undefined && predicate.attachTo.includes(subject.kind);
-}
+  // — capital —
+  { text: "by old protocol no roof in the capital may rise above the throne room's, so the city spreads where it cannot climb", when: { capital: true } },
+  { text: "every distance in {country} is measured from a single brass stud set into the palace floor", when: { capital: true } },
+  { text: "the capital is reckoned its own province and owes taxes to itself, a debt it has never once paid", when: { capital: true } },
+  { text: "it has been {country}'s capital three times over, twice losing the honor to a rival and twice winning it back", when: { capital: true } },
+  { text: "every province keeps a house here, and each insists, loudly, that its own is the true heart of {country}", when: { capital: true } },
+  { text: "half of {country}'s letters pass through here on their way to somewhere else entirely", when: { capital: true } },
 
-// Subjects carry `number` (drives verb agreement) and `kind` (the predicate→subject match; see SubjectKind).
-const subject: FactPart[] = [
-  { text: "its harbor", kind: "market", number: GrammaticalNumber.Singular, when: { coastal: true } },
-  { text: "its docks", kind: "market", number: GrammaticalNumber.Plural, when: { coastal: true } },
-  {
-    text: "its shipyards",
-    kind: "industry",
-    number: GrammaticalNumber.Plural,
-    when: { coastal: true, anyTags: { society: [Society.Maritime] } },
-  },
-  { text: "its fish markets", kind: "market", number: GrammaticalNumber.Plural, when: { nearWater: true } },
+  // — coastal —
+  { text: "the lighthouse has burned so long that {country}'s oldest charts are dated by the keeper who tended its lamp", when: { coastal: true } },
+  { text: "at the lowest tide of the year a paved road surfaces on the seabed, leading to an island otherwise unreachable", when: { coastal: true } },
+  { text: "the great breakwater is built from the ballast of a thousand foreign ships and holds stone from coasts no local has seen", when: { coastal: true } },
+  { text: "by ancient right the first ship to make harbor each new year pays no toll at all", when: { coastal: true } },
+  { text: "not one street runs straight to the water; every one was bent to break the sea wind before it reaches the houses", when: { coastal: true } },
+  { text: "more of the town's men lie buried at sea than in its churchyard", when: { coastal: true } },
+  { text: "fishermen here swear the tide runs backwards once a year, and a fair is held to watch it", when: { coastal: true } },
+  { text: "the church keeps a ledger of every ship lost off the point, and the names are read aloud once a year", when: { coastal: true } },
+  { text: "the noon cannon on the headland sets every clock in town, weather permitting", when: { coastal: true } },
 
-  { text: "its grain markets", kind: "market", number: GrammaticalNumber.Plural, when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "its orchards", kind: "industry", number: GrammaticalNumber.Plural, when: { bands: ["MID", "WET"], maxElevationMeters: 1400 } },
-  { text: "its vineyards", kind: "industry", number: GrammaticalNumber.Plural, when: { bands: ["MID"], elevations: ["MEDIUM"], maxElevationMeters: 1200 } },
+  // — river —
+  { text: "the river is crossed by more bridges than the town has gates, and each bridge keeps its own little market", when: { water: ["river"] } },
+  { text: "the town stands on both banks and has never agreed which side is the real city; each keeps its own mayor", when: { water: ["river"] } },
+  { text: "a tunnel runs beneath the riverbed to the far shore, dug during a siege and sealed ever since", when: { water: ["river"] } },
+  { text: "the river changed course in a single night within memory, leaving the old harbor stranded half a mile inland", when: { water: ["river"] } },
+  { text: "spring floods are recorded as notches on the cathedral door, the highest of them well above a tall man's reach", when: { water: ["river"] } },
+  { text: "a merchant's standing here is read straight off the position of his wharf on the waterfront", when: { water: ["river"] } },
+  { text: "the river is technically illegal to swim in, and everyone does", when: { water: ["river"] } },
+  { text: "set so low the bridges are built high against the floods, and still the cellars drown each spring", when: { water: ["river"], maxElevationMeters: 40 } },
+  { text: "the great bridge has been rebuilt seven times and is still called the new bridge", when: { water: ["river"] } },
+  { text: "a stone set in the riverbed marks the lowest the water has ever fallen, and its showing is taken for a bad omen", when: { water: ["river"] } },
 
-  { text: "its mines", kind: "industry", number: GrammaticalNumber.Plural, when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "its quarries", kind: "industry", number: GrammaticalNumber.Plural, when: { elevations: ["HIGH"], bands: ["DRY", "MID"] } },
-  { text: "its mountain roads", kind: "place", number: GrammaticalNumber.Plural, when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "its steep streets", kind: "place", number: GrammaticalNumber.Plural, when: { minElevationMeters: 900 } },
+  // — lake —
+  { text: "on a windless dawn the lake mirrors the town so exactly that travelers have ridden into the water mistaking it for the road", when: { water: ["lake"] } },
+  { text: "the town draws its drinking water from one shore and floats its dead from the other, and the two are never confused", when: { water: ["lake"] } },
+  { text: "an island holds the town's oldest shrine, reached by a causeway that vanishes under the lake at every full moon", when: { water: ["lake"] } },
+  { text: "locals swear the lake has no bottom, and no one has ever volunteered to settle the question", when: { water: ["lake"] } },
+  { text: "the lake freezes thick enough to bear a loaded cart, and the first crossing each winter is half a holiday", when: { water: ["lake"], biomes: WINTRY_BIOMES } },
+  { text: "a drowned village is said to lie beneath the water, and on still nights some swear they hear its bell", when: { water: ["lake"] } },
 
-  { text: "its temples", kind: "institution", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "its pilgrim roads", kind: "place", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "its dawn bells", kind: "landmark", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Religious] } } },
+  // — desert / scarcity —
+  { text: "it has not rained here within living memory, and the year of the last rain is still spoken of as a kind of miracle", when: { biomes: ["desert"] } },
+  { text: "the main streets are roofed over, so one may cross the whole city without once standing in the sun", when: { biomes: ["desert", "badlands"] } },
+  { text: "every house is built around its own cistern, and a family's standing is judged by how long its water could outlast a siege", when: { biomes: ["desert", "badlands"] } },
+  { text: "water is sold by the cup in the market, and a brimming cistern is worth more than a brimming strongbox", when: { biomes: ["desert"] } },
+  { text: "a single old tree grows in the main square, watered by hand from the temple cistern, and it is older than the temple", when: { biomes: ["desert"] } },
+  { text: "every door and window in town faces the same way by law, turning the whole place against the wind", when: { biomes: ["desert", "badlands"] } },
 
-  { text: "its libraries", kind: "institution", number: GrammaticalNumber.Plural, when: { anyTags: { society: [Society.Scholastic] } } },
-  { text: "its academies", kind: "institution", number: GrammaticalNumber.Plural, when: { anyTags: { society: [Society.Scholastic] } } },
-  { text: "its public lectures", kind: "institution", number: GrammaticalNumber.Plural, when: { anyTags: { society: [Society.Scholastic] } } },
+  // — mountain / high elevation —
+  { text: "the town stands higher than the clouds that water it, so its people watch storms break on the valley far below", when: { minElevationMeters: 1800 } },
+  { text: "one of the highest towns in {country}, where newcomers spend their first day catching their breath", when: { minElevationMeters: 2000 } },
+  { text: "the only road in freezes shut for half the year, and the town spends each winter on what it laid by each summer", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "the upper and lower towns keep their clocks an hour apart, the upper quarter insisting the sun reaches it first", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "every stone of the place was carried up by mule, and the masons' guild forbids the wheel on the steepest streets", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "snow is packed into deep stone pits through summer and sold down to the lowlands at a profit", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "the two halves of town face each other across a gorge, joined by one bridge that charges a toll between neighbors", when: { elevations: ["HIGH", "VERY_HIGH"] } },
 
-  { text: "its barracks", kind: "institution", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "its walls", kind: "rampart", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "its parade grounds", kind: "place", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Militaristic] } } },
+  // — mining —
+  { text: "the hills beneath the town are more hollow than solid, and whole streets stand closed where old shafts gave way", when: { industries: ["mining"] } },
+  { text: "the mine runs deeper below the town than the highest tower stands above it", when: { industries: ["mining"] } },
+  { text: "the shift bell, not the temple bell, divides the day here, and it rings at hours that suit no prayer", when: { industries: ["mining"] } },
+  { text: "locals joke the mountain gets a little smaller every year, and they are not entirely wrong", when: { industries: ["mining"] } },
+  { text: "so much silver once left along this road that the brigands gave it up, sure the next cart could be no richer than the last", when: { industries: ["mining"] } },
 
-  { text: "its courts", kind: "institution", number: GrammaticalNumber.Plural, when: { capital: true } },
-  { text: "its ministry halls", kind: "institution", number: GrammaticalNumber.Plural, when: { capital: true, anyTags: { authority: [Authority.Bureaucratic] } } },
-  { text: "its noble houses", kind: "place", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Elite] } } },
+  // — religious —
+  { text: "there are more shrines in the old town than houses, and several streets hold nothing else", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "the great cathedral has been under construction for two hundred years and is forbidden by vow ever to be called finished", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "in the holy season pilgrims outnumber residents three to one, and the townsfolk let their own houses and leave for the month", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "the temple flame has not gone out within memory, kept burning in shifts by families who hold the duty their highest honor", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "no wedding and no funeral may fall on the same day, and a priest is kept whose sole task is to keep them apart", when: { anyTags: { authority: [Authority.Religious] } } },
 
-  { text: "its old market", kind: "market", number: GrammaticalNumber.Singular },
-  { text: "its central square", kind: "place", number: GrammaticalNumber.Singular },
-  { text: "its oldest tavern", kind: "place", number: GrammaticalNumber.Singular },
-  { text: "its narrow streets", kind: "place", number: GrammaticalNumber.Plural },
+  // — military —
+  { text: "the walls have been breached only once, and the breach was left unrepaired as a monument to what taking them cost", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "the gates are still shut each dusk to a horn older than the masonry, in a call unchanged for centuries", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "the streets were laid as a maze to baffle invaders, and they baffle visitors and tax-collectors to this day", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "the armory holds arms for ten times the town's strength, kept against an army expected a century ago that never came", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "every citizen holds a place on the wall by birth, and the muster roll is read aloud once a year so none forgets theirs", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "every map of the old town is drawn subtly wrong on purpose, a habit left over from a long-ago siege", when: { anyTags: { authority: [Authority.Militaristic] } } },
 
-  { text: "its foundries", kind: "industry", number: GrammaticalNumber.Plural, when: { industries: ["metalworking"] } },
-  { text: "its workshops", kind: "industry", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Technical] } } },
-  { text: "its assembly hall", kind: "institution", number: GrammaticalNumber.Singular, when: { anyTags: { authority: [Authority.Civic] } } },
-  { text: "its caravanserai", kind: "market", number: GrammaticalNumber.Singular, when: { biomes: ["desert", "steppe"] } },
-  { text: "its terraced fields", kind: "industry", number: GrammaticalNumber.Plural, when: { elevations: ["HIGH"], anyTags: { society: [Society.Agrarian] } } },
-  { text: "its governor's palace", kind: "institution", number: GrammaticalNumber.Singular, when: { anyTags: { structure: [Structure.Dependent], authority: [Authority.Imperial] } } },
-  { text: "its toll bridge", kind: "market", number: GrammaticalNumber.Singular, when: { nearWater: true, anyTags: { authority: [Authority.Commercial] } } },
-  { text: "its bell tower", kind: "landmark", number: GrammaticalNumber.Singular },
-  { text: "its bathhouses", kind: "place", number: GrammaticalNumber.Plural, when: { tiers: ["medium", "big"] } },
+  // — scholastic —
+  { text: "the great library is forbidden to lend a single book, so the scholars come to the books instead, and some never leave", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "in term the students outnumber the townsfolk, and the place falls half-empty the day they go home", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "a clock in the great hall has kept perfect time for three centuries, wound by a post handed down like an inheritance", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "the oldest lecture is still given on the same day each year, from notes copied so often no one knows who first set them down", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "the astronomers keep the town's official time, and have twice corrected the calendar by a whole day", when: { anyTags: { society: [Society.Scholastic] } } },
 
-  { text: "its riverfront", kind: "place", number: GrammaticalNumber.Singular, when: { nearWater: true, coastal: false } },
-  { text: "its granaries", kind: "industry", number: GrammaticalNumber.Plural, when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "its counting houses", kind: "market", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "its winter markets", kind: "market", number: GrammaticalNumber.Plural, when: { biomes: WINTRY_BIOMES } },
-  { text: "its festival grounds", kind: "place", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Religious], trait: [Trait.Traditional] } } },
-  { text: "its back alleys", kind: "place", number: GrammaticalNumber.Plural },
+  // — commercial —
+  { text: "a letter of credit drawn here is honored in cities the clerks who wrote it could not find on a map", when: { anyTags: { authority: [Authority.Commercial] } } },
+  { text: "the merchants' guild mints its own token, good across the whole market and worthless one step beyond the gates", when: { anyTags: { authority: [Authority.Commercial] } } },
+  { text: "the great market is said never to have closed; no hour in a century has passed without a sale somewhere within it", when: { anyTags: { authority: [Authority.Commercial] } } },
+  { text: "the richest street is the narrowest, where the counting-houses bought out their neighbors and built upward instead", when: { anyTags: { authority: [Authority.Commercial] } } },
 
-  { text: "its night market", kind: "market", number: GrammaticalNumber.Singular, when: { tiers: ["medium", "big"] } },
-  { text: "its lighthouse", kind: "landmark", number: GrammaticalNumber.Singular, when: { coastal: true } },
-  { text: "its clock tower", kind: "landmark", number: GrammaticalNumber.Singular },
-  { text: "its wool markets", kind: "market", number: GrammaticalNumber.Plural, when: { elevations: ["MEDIUM", "HIGH"] } },
-  { text: "its riverside mills", kind: "industry", number: GrammaticalNumber.Plural, when: { nearWater: true, coastal: false } },
-  { text: "its hill forts", kind: "rampart", number: GrammaticalNumber.Plural, when: { elevations: ["HIGH", "VERY_HIGH"], anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "its garden terraces", kind: "place", number: GrammaticalNumber.Plural, when: { anyTags: { authority: [Authority.Elite] } } },
-  { text: "its glassworks", kind: "industry", number: GrammaticalNumber.Plural, when: { industries: ["glassblowing"] } },
+  // — bureaucratic —
+  { text: "the town keeps a register of its registers, and a clerk is assigned each year to hunt down the ones gone missing", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "the archive is larger than the palace, and a petition filed a lifetime ago may still be working toward its answer", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "every cat in the city is recorded by name, color, and the household it permits to feed it; dogs go uncounted", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "the seal of office has been recut so often that no two centuries' documents bear quite the same mark", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "nothing here is official until three separate clerks have disagreed about it in writing", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "the town seal has carried the same spelling mistake for so long that correcting it is now considered forgery", when: { anyTags: { authority: [Authority.Bureaucratic, Authority.Civic] } } },
 
-  // City-wide subjects: stand for the whole settlement, so `cityWide` predicates (lodging, festivals,
-  // mazes…) attach here instead of to a lone feature. They also accept ordinary predicates.
-  { text: "the town", number: GrammaticalNumber.Singular, cityWide: true },
-  { text: "the old town", number: GrammaticalNumber.Singular, cityWide: true },
-  { text: "the whole place", number: GrammaticalNumber.Singular, cityWide: true },
+  // — agrarian —
+  { text: "by law the granary stands tallest in town, and the temple was built a hand shorter on purpose", when: { anyTags: { society: [Society.Agrarian] } } },
+  { text: "the year is counted from the first sheaf, so the new year falls in late summer, long after the rest of {country} has turned the page", when: { anyTags: { society: [Society.Agrarian] } } },
+  { text: "the whole town turns out for the harvest, and the courts and markets shut until the last field is in", when: { anyTags: { society: [Society.Agrarian] } } },
+  { text: "every household holds a key to the common granary, and the locks are changed the day anyone loses theirs", when: { anyTags: { society: [Society.Agrarian] } } },
+
+  // — cold / wintry —
+  { text: "the snow cuts the town off for so much of the year that its calendar marks only two seasons: the open road and the closed", when: { biomes: WINTRY_BIOMES } },
+  { text: "the dead are kept in a stone house all winter and buried only when the spring thaw softens the ground", when: { biomes: WINTRY_BIOMES } },
+  { text: "a house here is judged by how little smoke escapes its eaves, the warmth kept in by doubled windows packed with moss", when: { biomes: WINTRY_BIOMES } },
+  { text: "for the depth of winter the sun never clears the ridge, and the town lights its lamps at noon", when: { biomes: WINTRY_BIOMES } },
+  { text: "summer lasts barely six weeks up here, and the town crams a year's worth of festivals into it", when: { biomes: ["alpine"] } },
+  { text: "in winter the town finds its way by tall painted poles, once the snow has swallowed every landmark", when: { biomes: ["snowfields"] } },
+  { text: "the ground never fully thaws, so the dead are sealed away in cairns of stacked stone", when: { biomes: ["tundra"] } },
+  { text: "nothing grows this high, and every basket of soil in the terrace gardens was carried up on someone's back", when: { biomes: ["barren peaks"] } },
+
+  // — forest / woodland —
+  { text: "the oldest quarter is built up in the canopy, and its eldest streets are bridges strung between the great trees", when: { biomes: ["forest"] } },
+  { text: "by guild law every tree felled must be answered with three planted, and the forester who fails is forbidden the axe for a year", when: { biomes: WOODED_BIOMES } },
+  { text: "the town holds that it belongs to the forest as much as the forest to it, and no outsider may take so much as a fallen branch", when: { biomes: WOODED_BIOMES } },
+  { text: "the tallest tree in the wood is named, has its own keeper, and felling it is a hanging matter", when: { biomes: WOODED_BIOMES } },
+  { text: "cloud fills the valley most mornings, and the upper town looks out over a sea of white", when: { biomes: ["montane forest"] } },
+
+  // — grassland / steppe / wetland / badlands —
+  { text: "the horizon is so wide the town raised a watch-tower against no enemy but the weather, to spot the storms a day out", when: { biomes: ["grassland"] } },
+  { text: "the town keeps no walls, only distance, and reckons its safety by how far a rider must come to reach it", when: { biomes: ["steppe"] } },
+  { text: "the safe paths through the marsh are taught to children before the street names, and a stranger who strays from them is seldom found", when: { biomes: ["wetland"] } },
+  { text: "the whole town stands on pilings driven into the mud, and rises a finger's width each year as more are sunk beneath it", when: { biomes: ["wetland"] } },
+  { text: "nothing grows for a day's ride in any direction, and every green thing in town is watered by hand and watched like treasure", when: { biomes: ["badlands"] } },
+  { text: "the town doubles in size each summer when the herders bring their beasts to market, and empties again by autumn", when: { biomes: ["grassland", "steppe"] } },
+  { text: "grass fires are watched for from a tower, and the whole town can be behind stone within the hour", when: { biomes: ["grassland", "steppe"] } },
+  { text: "the cliffs are banded in color, and the houses are striped to match the rock they were cut from", when: { biomes: ["badlands"] } },
+  { text: "the dead are laid in raised tombs, since any grave dug here fills with water before the coffin is in", when: { biomes: ["wetland"] } },
+
+  // — government: structure & trait & authority (the enums the gates above don't reach) —
+  { text: "the town stands only half the year; in the other half its people and their very roofs move on, and the squares are left to the wind", when: { anyTags: { structure: [Structure.Nomadic] } } },
+  { text: "it has changed hands so often that the old families keep a flag of every ruler, ready to raise whichever is winning", when: { anyTags: { trait: [Trait.Fragmented] } } },
+  { text: "the town has rewritten its own founding story twice within living memory, and the official account is kept carefully vague", when: { anyTags: { trait: [Trait.Revolutionary] } } },
+  { text: "the old regime's statues still stand at the crossroads, kept only so the new one has something to throw stones at", when: { anyTags: { trait: [Trait.Revolutionary] } } },
+  { text: "half the street names honor battles fought somewhere else entirely", when: { anyTags: { trait: [Trait.Expansionist] } } },
+  { text: "the same families have held the same offices so long the titles have begun to feel hereditary", when: { anyTags: { trait: [Trait.Stable] } } },
+  { text: "old imperial standards still hang in halls no emperor has entered in living memory", when: { anyTags: { authority: [Authority.Imperial] } } },
+  { text: "the old imperial road runs through town dead straight, as though a ruler had been laid across the map", when: { anyTags: { authority: [Authority.Imperial] } } },
+  { text: "everyone in town can name the monarch, and far fewer can name the mayor", when: { anyTags: { authority: [Authority.Monarchic] } } },
+  { text: "the crown's portrait hangs in every tavern, watching over the unpaid tabs", when: { anyTags: { authority: [Authority.Monarchic] } } },
+  { text: "a handful of family names are carved on nearly every gate, plaque, and unpaid debt in town", when: { anyTags: { authority: [Authority.Elite] } } },
+  { text: "the local aristocracy change fashions so fast that last season's finery is already on the servants", when: { anyTags: { authority: [Authority.Elite] } } },
+  { text: "any decision here can be reopened by anyone willing to shout long enough in the square", when: { anyTags: { authority: [Authority.Civic] } } },
+  { text: "broken things are mended here so quickly that strangers find it faintly unnerving", when: { anyTags: { authority: [Authority.Technical] } } },
+  { text: "two flags fly over the town, and the argument over which should fly higher never quite ends", when: { anyTags: { structure: [Structure.Dependent] } } },
+  { text: "every tax is paid to the capital reluctantly, and every complaint about it for free", when: { anyTags: { structure: [Structure.Federal] } } },
+
+  // — industry-specific (salvaged gems + new); each fires only when the city actually has the trade —
+  { text: "now and then a strange creature is found whole inside the local amber", when: { industries: ["amber trade"] } },
+  { text: "the richest folk in town spend their lives holding their breath", when: { industries: ["pearling"] } },
+  { text: "more than one local fortune was staked on the cracking of a single mussel", when: { industries: ["freshwater pearling"] } },
+  { text: "a rice wine is brewed here the locals swear will never give a man a hangover", when: { industries: ["rice farming"] } },
+  { text: "some of the olive trees here were already old when the kingdom was young", when: { industries: ["olive farming"] } },
+  { text: "poets have written odes to the smell of the town when the dates come in", when: { industries: ["date farming"] } },
+  { text: "people come for the hot springs and leave knowing everyone else's secrets", when: { industries: ["hot springs"] } },
+  { text: "every clockmaker in town swears that all the others run fast", when: { industries: ["clockmaking"] } },
+  { text: "the whole town knows when a ship comes home heavy, long before it docks, by the smell on the wind", when: { industries: ["whaling"] } },
+  { text: "every respectable warehouse on the waterfront keeps one thoroughly disreputable back door", when: { industries: ["smuggling"] } },
+  { text: "the maps drawn here are out of date before the ink is dry, and sell briskly all the same", when: { industries: ["cartography"] } },
+  { text: "one lane has not a single straight wall left, and the alchemists are still blamed for it", when: { industries: ["alchemy"] } },
+  { text: "fortunes here are still reckoned in barrels of salt rather than coin", when: { industries: ["salt trade"] } },
+  { text: "the market air alone is said to be worth the journey, for the smell of it", when: { industries: ["spice trade"] } },
+  { text: "a single pamphlet printed here once unseated a governor, and the press is kept like a relic", when: { industries: ["printing"] } },
+  { text: "each spring the river all but vanishes beneath the rafts of floating logs", when: { industries: ["timber rafting"] } },
+  { text: "the bargemen swear the river shifts its channel on purpose, just to spite a newcomer", when: { industries: ["river trade"] } },
 ];
 
-// Single-form: the verb agrees with the chosen subject via {cop}/{have}/{v:base}.
-//  • `accepts` lists the qualifier categories that read well after this predicate. STATIVE predicates
-//    (timeless qualities) set `accepts: []` so no temporal clause trails them ("has stood for generations
-//    on market days" is nonsense). Dynamic/event-bearing ones list the categories that fit.
-//  • `cityWide: true` marks predicates that describe the whole settlement; they only attach to a cityWide
-//    subject (see the subject pool), never to a lone feature.
-const predicate: FactPart[] = [
-  // — dynamic / event-bearing: a temporal qualifier reads naturally. `attachTo` keeps the bustle/commerce
-  //   ones off inert monuments; `draw travelers` / `louder` stay open (a landmark is a sight, and can be loud) —
-  { text: "{v:draw} travelers from across {country}", accepts: ["seasonal", "condition", "concession"] },
-  { text: "{cop} louder than visitors expect", accepts: ["eventTime", "seasonal", "condition"] },
-  { text: "{v:draw} crowds from every village within a week's walk", attachTo: ["market", "place", "institution"], accepts: ["seasonal", "eventTime", "condition"] },
-  { text: "{cop} busier than its size has any right to be", attachTo: ["market", "industry", "place", "institution"], accepts: ["eventTime", "seasonal", "condition", "concession"] },
-  { text: "{v:fill} up with strangers", attachTo: ["market", "place"], accepts: ["seasonal", "eventTime", "condition"] },
-  { text: "{v:keep} odd hours", attachTo: ["market", "industry", "place", "institution"], accepts: ["eventTime", "condition", "access"] },
-  { text: "{v:trade} in everything and {v:apologize} for nothing", when: { anyTags: { authority: [Authority.Commercial] } }, attachTo: ["market", "place"], accepts: ["eventTime", "condition", "access"] },
+// ===================== Slotted oddities: one template, many concrete facts =====================
+// A few oddity-grade templates fill a noun from a gated pool, so a town's food, landmark, craft, festival,
+// founder, or signature beast supplies the specifics. matchesCondition keeps only options the city actually
+// has; if a pattern's slot has no eligible option for this city, the pattern simply doesn't fire (returns
+// null) and the flat oddities cover it. The tag-gated pools (festival / founder + the landmark/craft tag
+// entries) are how the government dimensions get combinatorial variety without one flat line per tag.
 
-  // — stative qualities (incl. self-contained climate): timeless, so no trailing qualifier (`accepts: []`) —
-  { text: "{cop} known throughout the region", accepts: [] },
-  { text: "{cop} the pride of the locals", accepts: [] },
-  { text: "{v:support} much of the surrounding countryside", when: { anyTags: { authority: [Authority.Commercial], society: [Society.Agrarian] } }, attachTo: ["market", "industry"], accepts: [] },
-  { text: "{have} stood for generations", accepts: [] },
-  { text: "{cop} older than the current government", when: { anyTags: { trait: [Trait.Traditional, Trait.Revolutionary] } }, accepts: [] },
-  { text: "{v:appear} in half the songs locals sing", when: { anyTags: { trait: [Trait.Traditional] } }, accepts: [] },
-  { text: "{v:keep} the city richer than it looks", when: { anyTags: { authority: [Authority.Commercial] } }, attachTo: ["market", "industry"], accepts: [] },
-  { text: "{v:anchor} the local economy", when: { anyTags: { authority: [Authority.Commercial] } }, attachTo: ["market", "industry"], accepts: [] },
-  { text: "{have} outlived three governments and counting", when: { anyTags: { trait: [Trait.Revolutionary, Trait.Fragmented] } }, accepts: [] },
-  { text: "{cop} older than the road that reaches it", accepts: [] },
-  { text: "{v:smell} of woodsmoke and wet stone", when: { bands: ["WET"] }, accepts: [] },
-  { text: "{v:smell} of salt and tar", when: { coastal: true }, accepts: [] },
-  { text: "{cop} half ruin and half rebuilding", when: { anyTags: { trait: [Trait.Revolutionary, Trait.Fragmented] } }, accepts: [] },
-  { text: "{cop} proud of a victory no one else remembers", when: { anyTags: { authority: [Authority.Militaristic] } }, accepts: [] },
-  { text: "{v:keep} better records than the capital", when: { anyTags: { authority: [Authority.Bureaucratic] } }, attachTo: ["institution"], accepts: [] },
-  { text: "{cop} colder than the maps admit", when: { biomes: WINTRY_BIOMES }, accepts: [] },
-  { text: "{cop} freezing for half the year", when: { biomes: WINTRY_BIOMES }, accepts: [] },
-  { text: "{cop} cooler than the lowlands all summer", when: { minElevationMeters: 1200 }, accepts: [] },
-
-  // — kind-specific statives: gated to a single subject kind via `attachTo` —
-  { text: "{have} never once been taken", attachTo: ["rampart"], accepts: [] },
-  { text: "{v:show} the scars of three different sieges", attachTo: ["rampart"], accepts: [] },
-  { text: "{v:keep} weights and measures older than the crown's", attachTo: ["market"], accepts: [] },
-  { text: "{v:appear} on every map and half the coins", attachTo: ["landmark"], accepts: [] },
-
-  // — city-wide: describe the whole settlement, so they need a cityWide subject —
-  { text: "{cop} impossible to find lodging in", cityWide: true, accepts: ["seasonal", "condition"] },
-  { text: "never really {v:close}", cityWide: true, accepts: ["seasonal", "concession"] },
-  { text: "{cop} where {country}'s arguments go to get louder", cityWide: true, accepts: ["eventTime", "seasonal"] },
-  { text: "{v:host} more festivals than working days", when: { anyTags: { authority: [Authority.Religious], trait: [Trait.Traditional] } }, cityWide: true, accepts: [] },
-  { text: "{v:throw} the best festivals in {country}", when: { anyTags: { trait: [Trait.Traditional] } }, cityWide: true, accepts: ["seasonal"] },
-  { text: "{v:welcome} more pilgrims than residents", when: { anyTags: { authority: [Authority.Religious] } }, cityWide: true, accepts: ["seasonal"] },
-  { text: "{v:hum} with looms from dawn to dusk", when: { industries: ["textiles", "silk weaving", "wool", "linen", "cotton"] }, cityWide: true, accepts: [] },
-  { text: "{v:guard} the only pass for a hundred miles", when: { elevations: ["HIGH", "VERY_HIGH"] }, cityWide: true, accepts: [] },
-  { text: "{v:wake} early and {v:gossip} late", cityWide: true, accepts: [] },
-  { text: "{cop} a maze even to its own children", cityWide: true, accepts: [] },
-  { text: "{v:run} on rumor as much as coin", cityWide: true, accepts: [] },
-  { text: "{cop} loud, crowded, and proud of both", cityWide: true, accepts: [] },
-  { text: "{cop} richer in stories than in coin", cityWide: true, accepts: [] },
-  { text: "{cop} stitched together from a dozen older villages", when: { tiers: ["big"] }, cityWide: true, accepts: [] },
-  { text: "{v:owe} its whole fortune to one good harbor", when: { coastal: true }, cityWide: true, accepts: [] },
-  { text: "{v:measure} wealth in granaries, not coin", when: { anyTags: { society: [Society.Agrarian] } }, cityWide: true, accepts: [] },
-  { text: "{v:guard} its old privileges jealously", when: { anyTags: { structure: [Structure.Local], authority: [Authority.Civic] } }, cityWide: true, accepts: [] },
-  { text: "{v:change} hands more often than its rulers would like", when: { anyTags: { trait: [Trait.Fragmented, Trait.Revolutionary] } }, cityWide: true, accepts: [] },
-  { text: "{cop} the last honest stop before the wild country", when: { anyTags: { structure: [Structure.Dependent, Structure.Minor] } }, cityWide: true, accepts: [] },
-];
-
-// Optional trailing clauses. `fit` tags pick which predicates they read well after; `when` gates on the
-// city. At least one per Fit category is un-gated (see COVERAGE INVARIANT above).
-const qualifier: FactPart[] = [
-  // seasonal
-  { text: "during the spring fair", fit: ["seasonal"] },
-  { text: "at midsummer", fit: ["seasonal"] },
-  { text: "after the harvest", fit: ["seasonal"], when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "during holy festivals", fit: ["seasonal"], when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "through the long winter", fit: ["seasonal", "concession"], when: { biomes: WINTRY_BIOMES } },
-  { text: "when the snow finally melts", fit: ["seasonal", "condition"], when: { biomes: WINTRY_BIOMES } },
-  // eventTime
-  { text: "on market days", fit: ["eventTime"] },
-  { text: "on festival nights", fit: ["eventTime"] },
-  { text: "long after the capital has gone to bed", fit: ["eventTime"], when: { tiers: ["big"], capital: false } },
-  { text: "between the temple bells", fit: ["eventTime"], when: { anyTags: { authority: [Authority.Religious] } } },
-  // condition
-  { text: "when the weather allows", fit: ["condition"] },
-  { text: "if you know who to ask", fit: ["access"] }, // insider access, not a circumstantial condition
-  { text: "whenever trade is good", fit: ["condition"] },
-  { text: "when the roads are passable", fit: ["condition"], when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "whenever the fleet comes in", fit: ["condition"], when: { coastal: true } },
-  { text: "as soon as the caravans arrive", fit: ["condition"], when: { biomes: ["desert", "steppe"] } },
-  // concession
-  { text: "in fat years and lean", fit: ["concession"] },
-  { text: "whatever the season", fit: ["concession"] },
-  { text: "even when times are hard", fit: ["concession"] },
-  { text: "even in the dry season", fit: ["concession"], when: { bands: ["DRY"] } },
-  { text: "despite the harsh winters", fit: ["concession"], when: { biomes: WINTRY_BIOMES } },
-  // — more —
-  { text: "as the leaves turn", fit: ["seasonal"] },
-  { text: "in the lambing season", fit: ["seasonal"], when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "on the rest day", fit: ["eventTime"] },
-  { text: "at the changing of the guard", fit: ["eventTime"], when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "when the river runs high", fit: ["condition"], when: { nearWater: true } },
-  { text: "the moment a ship is sighted", fit: ["condition"], when: { coastal: true } },
-  { text: "once the mountain passes open", fit: ["condition", "seasonal"], when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "no matter who is in charge", fit: ["concession"] },
-  { text: "good harvest or bad", fit: ["concession"], when: { anyTags: { society: [Society.Agrarian] } } },
-];
-
-const localHabit: FactPart[] = [
-  { text: "argue about which tavern is oldest" },
-  { text: "insist their bread is better than the capital's" },
-  { text: "give directions by landmarks that no longer exist" },
-  { text: "treat market gossip as a civic institution" },
-  { text: "name their streets after arguments, not heroes" },
-  { text: "start the day before sunrise", when: { bands: ["DRY"] } },
-  { text: "watch the sea before making plans", when: { coastal: true } },
-  { text: "know three different words for fog", when: { bands: ["WET"] } },
-  { text: "measure distance by how steep the walk is", when: { minElevationMeters: 800 } },
-  { text: "debate in public like it is a sport", when: { anyTags: { society: [Society.Scholastic] } } },
-  { text: "lower their voices near the temples", when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "keep old military songs alive", when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "trust a handshake more than a contract", when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "settle arguments at the same café table they always have" },
-  { text: "blame the neighboring town for any run of bad luck" },
-  { text: "still ring the old bell for reasons no one remembers" },
-  { text: "keep two clocks: the real time and the official time", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
-  { text: "refuse to admit the weather is ever truly bad" },
-  { text: "hold grudges longer than leases" },
-  { text: "bargain even when the price is already fair", when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "leave a lamp burning for late travelers", when: { biomes: WINTRY_BIOMES } },
-  { text: "rate the whole year by the quality of the wine", when: { bands: ["MID"], elevations: ["MEDIUM"] } },
-  { text: "queue for everything and complain about all of it", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
-];
-
-const reputation: FactPart[] = [
-  { text: "hard to conquer", when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "impossible to govern quietly", when: { anyTags: { trait: [Trait.Revolutionary] } } },
-  { text: "devout even by {country}'s standards", when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "smarter than is polite", when: { anyTags: { society: [Society.Scholastic] } } },
-  { text: "wealthier than it first appears", when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "older than anyone can prove", when: { anyTags: { trait: [Trait.Traditional] } } },
-  { text: "louder than it is large", when: { tiers: ["small", "medium"] } },
-  { text: "impossible to bribe and impossible to please", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
-  { text: "ungovernable except by its own consent", when: { anyTags: { authority: [Authority.Civic] } } },
-  { text: "always one bad winter from rebellion", when: { biomes: WINTRY_BIOMES } },
-  { text: "more loyal to itself than to {country}", when: { anyTags: { structure: [Structure.Local] } } },
-  { text: "the place that takes its festivals too seriously", when: { anyTags: { trait: [Trait.Traditional] } } },
-  { text: "a town where every family claims an ancient title", when: { anyTags: { authority: [Authority.Elite] } } },
-];
-
-const landscape: FactPart[] = [
-  // desert
-  { text: "desert flats", when: { biomes: ["desert"] } },
-  { text: "windswept dunes", when: { biomes: ["desert"] } },
-  { text: "sun-cracked hardpan", when: { biomes: ["desert"] } },
-  // grassland
-  { text: "open grassland", when: { biomes: ["grassland"] } },
-  { text: "rolling plains", when: { biomes: ["grassland"] } },
-  { text: "wind-combed prairie", when: { biomes: ["grassland"] } },
-  // wetland (no coastal req → inland marshes are covered too)
-  { text: "salt marshes", when: { coastal: true, biomes: ["wetland"] } },
-  { text: "reed-choked fens", when: { biomes: ["wetland"] } },
-  { text: "swamplands", when: { biomes: ["wetland"] } },
-  // steppe
-  { text: "steppe", when: { biomes: ["steppe"] } },
-  { text: "endless grass", when: { biomes: ["steppe"] } },
-  // woodland
-  { text: "scattered woodland", when: { biomes: ["woodland"] } },
-  { text: "oak and thornscrub", when: { biomes: ["woodland"] } },
-  // forest
-  { text: "deep forest", when: { biomes: ["forest"] } },
-  { text: "verdant woods", when: { biomes: ["forest"] } },
-  // badlands
-  { text: "badlands", when: { biomes: ["badlands"] } },
-  { text: "eroded gullies", when: { biomes: ["badlands"] } },
-  { text: "banded clay hills", when: { biomes: ["badlands"] } },
-  // highlands
-  { text: "highland slopes", when: { biomes: ["highlands"] } },
-  { text: "windy uplands", when: { biomes: ["highlands"] } },
-  { text: "rocky slopes", when: { biomes: ["highlands"] } },
-  // montane forest
-  { text: "misty pinewood", when: { biomes: ["montane forest"] } },
-  { text: "cloud-wrapped slopes", when: { biomes: ["montane forest"] } },
-  // barren peaks
-  { text: "barren peaks", when: { biomes: ["barren peaks"] } },
-  { text: "bare ridgelines", when: { biomes: ["barren peaks"] } },
-  { text: "scoured stone heights", when: { biomes: ["barren peaks"] } },
-  // alpine
-  { text: "alpine meadows", when: { biomes: ["alpine"] } },
-  { text: "snow-covered slopes", when: { biomes: ["alpine"] } },
-  // snowfields
-  { text: "snowfields", when: { biomes: ["snowfields"] } },
-  { text: "snowy plains", when: { biomes: ["snowfields"] } },
-  // tundra
-  { text: "frozen tundra", when: { biomes: ["tundra"] } },
-  { text: "ice fields", when: { biomes: ["tundra"] } },
-];
-
-const weirdDetail: FactPart[] = [
-  { text: "no two clock towers agree on the time" },
-  { text: "the oldest tavern has burned down at least twice" },
-  { text: "locals disagree about the origin of the city's name" },
-  { text: "the town clock has run five minutes fast for as long as anyone remembers" },
-  { text: "every neighborhood claims to be the true heart of the city", when: { tiers: ["medium", "big"] } },
-  { text: "sailors refuse to whistle near the harbor", when: { coastal: true } },
-  { text: "children dare each other to touch the old siege stones", when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "pilgrims leave ribbons tied to every roadside tree", when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "students have carved jokes into half the old lecture benches", when: { anyTags: { society: [Society.Scholastic] } } },
-  { text: "people claim the fog remembers faces", when: { bands: ["WET"] } },
-  { text: "the wind is blamed for everything from bad crops to bad marriages", when: { bands: ["DRY"], elevations: ["LOW", "MEDIUM"] } },
-  { text: "the city keeps a holiday whose origin everyone has forgotten" },
-  { text: "every household keeps a spare key to the granary", when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "the river is technically illegal to swim in, and everyone does", when: { nearWater: true } },
-  { text: "every map of the old town is subtly wrong on purpose", when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "the tallest building is, by old law, the granary", when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "two streets share the same name and no one will rename either" },
-  { text: "the town seal has a spelling mistake no one will fix", when: { anyTags: { authority: [Authority.Bureaucratic, Authority.Civic] } } },
-  { text: "cats are counted in the census and dogs are not", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
-  { text: "the oldest bridge is repaired only with stone from the original quarry", when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "fishermen swear the tide runs backwards once a year", when: { coastal: true } },
-  { text: "the festival always runs a day longer than the calendar allows", when: { anyTags: { trait: [Trait.Traditional], authority: [Authority.Religious] } } },
-];
-
-const origin: FactPart[] = [
-  { text: "a fishing village", when: { coastal: true } },
-  { text: "a river crossing", when: { nearWater: true, coastal: false } },
-  { text: "a frontier fort", when: { anyTags: { authority: [Authority.Militaristic] } } },
-  { text: "a roadside trading post", when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "a monastery and the town that fed it", when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "a mining camp", when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "a seasonal clan gathering", when: { anyTags: { structure: [Structure.Nomadic] } } },
-  { text: "a waystation that outgrew its inn", when: { biomes: ["desert", "steppe"] } },
-  { text: "a winter camp no one ever quite left", when: { biomes: WINTRY_BIOMES } },
-  { text: "a cluster of farms that never stopped growing" },
-  { text: "two villages that grew until they touched" },
-  { text: "a toll post on a road that no longer exists", when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "a hot spring the sick once came to visit", when: { elevations: ["MEDIUM", "HIGH"] } },
-  { text: "a shipwreck whose crew never left", when: { coastal: true } },
-];
-
-const nickname: FactPart[] = [
-  { text: "the old town" },
-  { text: "the waystation" },
-  { text: "the gray city", when: { industries: ["mining", "metalworking", "manufacturing", "charcoal burning"] } },
-  { text: "the iron city", when: { industries: ["metalworking", "mining"] } },
-  { text: "the city of bells", when: { anyTags: { authority: [Authority.Religious] } } },
-  { text: "the green city", when: { bands: ["WET"], elevations: ["LOW", "MEDIUM"] } },
-  { text: "the stubborn city", when: { anyTags: { trait: [Trait.Revolutionary, Trait.Fragmented] } } },
-  { text: "the high city", when: { minElevationMeters: 1500 } },
-  { text: "the white city", when: { biomes: WINTRY_BIOMES } },
-  { text: "the counting house of {country}", when: { anyTags: { authority: [Authority.Commercial] } } },
-  { text: "the crossroads" },
-  { text: "the lantern of the coast", when: { coastal: true } },
-  { text: "the granary of {country}", when: { anyTags: { society: [Society.Agrarian] } } },
-  { text: "the quiet capital", when: { capital: true } },
-  { text: "the last city", when: { anyTags: { structure: [Structure.Dependent, Structure.Minor] } } },
-];
-
+// Food. Drinks live here too, so templates avoid "a plate of" — they read for wine and stew alike.
 const dish: FactPart[] = [
   { text: "salt cod", when: { coastal: true } },
-  { text: "river eel", when: { nearWater: true, coastal: false } },
-  { text: "seal blubber", when: { biomes: WINTRY_BIOMES } },
-  { text: "spiced flatbread", when: { biomes: ["desert", "steppe"] } },
-  { text: "mare's milk", when: { anyTags: { structure: [Structure.Nomadic] } } },
-  { text: "honey cakes", when: { bands: ["MID", "WET"] } },
-  { text: "goat cheese", when: { biomes: ["montane forest"] } },
-  { text: "peppered sausage", when: { elevations: ["HIGH", "VERY_HIGH"] } },
   { text: "smoked herring", when: { coastal: true } },
-  { text: "mountain cheese", when: { elevations: ["HIGH", "VERY_HIGH"] } },
-  { text: "potato stew", when: { biomes: WINTRY_BIOMES } },
-  { text: "stuffed grape leaves", when: { bands: ["MID"], elevations: ["MEDIUM"] } },
-  { text: "roast chestnuts", when: { biomes: WOODED_BIOMES } },
-  { text: "fried trout", when: { nearWater: true, coastal: false } },
-  { text: "lamb stew", when: { anyTags: { structure: [Structure.Nomadic] } } },
-  { text: "spiced winter wine", when: { biomes: WINTRY_BIOMES } },
-  { text: "stewed lamb", when: { biomes: ["desert", "steppe"] } },
-  { text: "wild boar", when: { biomes: WOODED_BIOMES } },
-  { text: "spiced lentils", when: { biomes: ARID_BIOMES } },
-  { text: "blood pudding", when: { biomes: WINTRY_BIOMES } },
   { text: "oyster stew", when: { coastal: true } },
+  { text: "river eel", when: { water: ["river"] } },
+  { text: "fried trout", when: { water: ["river"] } },
+  { text: "lake perch", when: { water: ["lake"] } },
+  { text: "stewed carp", when: { water: ["lake"] } },
+  { text: "crayfish", when: { water: ["river", "lake"] } },
+  { text: "seal blubber", when: { biomes: WINTRY_BIOMES } },
+  { text: "potato stew", when: { biomes: WINTRY_BIOMES } },
+  { text: "blood pudding", when: { biomes: WINTRY_BIOMES } },
+  { text: "spiced winter wine", when: { biomes: WINTRY_BIOMES } },
+  { text: "spiced flatbread", when: { biomes: ["desert", "steppe"] } },
+  { text: "stewed lamb", when: { biomes: ["desert", "steppe"] } },
+  { text: "spiced lentils", when: { biomes: ARID_BIOMES } },
+  { text: "mare's milk", when: { anyTags: { structure: [Structure.Nomadic] } } },
+  { text: "lamb stew", when: { anyTags: { structure: [Structure.Nomadic] } } },
+  { text: "goat cheese", when: { biomes: ["montane forest"] } },
+  { text: "mountain cheese", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "peppered sausage", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "roast chestnuts", when: { biomes: WOODED_BIOMES } },
+  { text: "wild boar", when: { biomes: WOODED_BIOMES } },
+  { text: "honey cakes", when: { bands: ["MID", "WET"] } },
+  { text: "stuffed grape leaves", when: { bands: ["MID"], elevations: ["MEDIUM"] } },
 ];
 
-// Industry-specific flavour: 1+ one-liner per industry, fired ONLY when the city actually HAS that
-// industry (CityContext.industries) — so the flavour line always agrees with the shown industries, instead
-// of keying off the government's Society.Industrial tag (which let a silk-and-paper town claim "its furnaces
-// have not gone cold"). Every industry in INDUSTRY_RULES must appear here; funFactAudit.test guards it.
-const INDUSTRY_FLAVOR: Record<string, string[]> = {
-  // water & coast
-  fishing: ["the city smells of fish, but its people are well fed"],
-  shipping: ["the docks know tomorrow's news before the rest of the town"],
-  shipbuilding: ["half-finished hulls loom over the waterfront like sleeping giants"],
-  "river trade": ["the bargemen swear the river changes course just to spite newcomers"],
-  "salt trade": ["fortunes here are still measured in salt barrels"],
-  whaling: ["the whole town quickly knows when a ship comes home heavy, reeking of whale"],
-  pearling: ["the richest folk in town spend their lives holding their breath"],
-  "amber trade": ["sometimes strange creatures can be found trapped in the local amber"],
-  "spice trade": ["the air itself smells expensive"],
-  "sugar refining": ["everything carries a faint scent of burnt sugar"],
-  cartography: ["its maps are outdated almost as soon as they're finished"],
-  smuggling: ["every respectable warehouse has at least one disreputable entrance"],
-  privateering: ["the average life expectancy is lower here than in the rest of the country"],
-  pottery: ["the local potters are known for their unique glazes and shapes"],
-  "canal works": ["children here learn to pole a boat before they learn to walk"],
-
-  // farming & herding
-  herding: ["wealth grazes just beyond the walls"],
-  forestry: ["despite repeated fires, locals stubbornly mostly build wood houses"],
-  viticulture: ["for visitors who can afford it, the wine is as good as the locals say"],
-  "date farming": ["poets have composed odes to the perfume of the city when dates are in season"],
-  "rice farming": ["a unique rice wine is made here which locals swear won't give you a hangover"],
-  "olive farming": ["some of the olive groves have stood here longer than entire kingdoms"],
-  linen: ["on wash day, the riverbanks disappear beneath drying linen"],
-  cheesemaking: ["the oldest cheese cellars are treated almost like shrines"],
-  brewing: ["it's surprisingly difficult to find anyone here drinking plain water"],
-  distilling: ["the best casks are already spoken for years before they're opened"],
-  leatherworking: ["you can smell the tanneries long before you reach them"],
-  wool: ["bits of loose wool drift through the streets on windy days"],
-  tea: ["important conversations rarely begin before the tea is poured"],
-  cotton: ["fine white fibers cling to almost everyone's clothes"],
-
-  // climate-driven
-  "fur trapping": ["locals greet a harsh winter with surprising optimism"],
-  "ice harvesting": ["people here still cool their drinks with last winter's ice"],
-  "reindeer herding": ["it's said the reindeer know when spring is coming before anyone else"],
-  "caravan trade": ["the markets feel strangely empty the morning after a caravan departs"],
-  "incense trade": ["each neighborhood seems to have its own distinctive scent"],
-  "camel breeding": ["locals judge camels with the same scrutiny others reserve for horses"],
-  falconry: ["it's common to see hunting birds perched where other towns keep pigeons"],
-  "charcoal burning": ["a faint haze often hangs over the surrounding hills"],
-  "horse breeding": ["visitors quickly learn not to compliment the wrong horse"],
-
-  // mountain & mineral
-  mining: [
-    "the shift bell tells better time than the church bell",
-    "coal dust has a way of finding every doorstep",
-  ],
-  quarrying: ["stone from these quarries can be found in cities far beyond the horizon"],
-  metalworking: ["the sound of hammers carries across town from sunrise until dusk"],
-  gemcutting: ["some of the plainest workshops handle the region's greatest fortunes"],
-  glassblowing: ["the furnaces paint the night sky orange"],
-
-  // craft & industry
-  manufacturing: ["the factory whistles set the rhythm of daily life"],
-  textiles: ["bright cloth hangs drying from nearly every street"],
-  "silk weaving": ["the finest local silks hide patterns only another weaver would notice"],
-  papermaking: ["the river leaves town carrying a faint grey tint"],
-  clockmaking: ["every clockmaker insists everyone else's clocks run fast"],
-
-  // leisure & travel
-  "hot springs": ["people come for the hot springs and leave with everyone else's gossip"],
-  "holy festivals": ["the streets are almost always being decorated for the next celebration"],
-  tournaments: ["practice matches often draw bigger crowds than the real contests"],
-  "gaming houses": ["small fortunes change hands here every night"],
-  minstrelsy: ["every tavern claims to have launched at least one famous bard"],
-  gambling: ["people discuss luck here the way farmers discuss the weather"],
-
-  // trade, government & culture
-  banking: ["a letter of credit from here is accepted almost anywhere"],
-  scholarship: ["it's perfectly normal to overhear heated arguments about philosophy in taverns"],
-  astronomy: ["the rooftops become busier than the streets after sunset"],
-  alchemy: ["odd smells are usually blamed on the alchemists"],
-  printing: ["yesterday's rumors often become today's broadsheets"],
-  theater: ["the audience is often as entertaining as the performers"],
-  pilgrimage: ["the streets are always full of strangers searching for something"],
-  military: ["marching drills are as much a part of the soundscape as church bells"],
-  administration: ["locals say finding the right clerk is harder than finding buried treasure"],
-  diplomacy: ["more political deals are settled over dinner than in council chambers"],
-  "mercenary trade": ["it's easier to hire a sellsword than a mason"],
-
-  agriculture: ["the town's mood rises and falls with the harvest"],
-  armory: ["the ringing of hammers on steel echoes through the streets all day"],
-};
-
-// One slotless `{ when: { industries: [name] }, template }` pattern per flavour line. (The audit's
-// jointlySatisfiable ignores `industries`, so it over-approximates reachability for these — harmless.)
-const industryPatterns: FunFactPattern[] = Object.entries(INDUSTRY_FLAVOR).flatMap(([industry, lines]) =>
-  lines.map((template) => ({ when: { industries: [industry] }, template, slots: {} })),
-);
-
-// FUN_FACT_PATTERNS is composed at the bottom from these thematic groups + industryPatterns.
-const corePatterns: FunFactPattern[] = [
-  {
-    template: "{subject} {predicate}",
-    slots: { subject, predicate },
-  },
-  {
-    template: "{subject} {predicate} {qualifier}",
-    slots: { subject, predicate, qualifier },
-  },
-  {
-    template: "locals {habit}",
-    slots: { habit: localHabit },
-  },
-  {
-    template: "known across {country} as {reputation}",
-    slots: { reputation },
-  },
-  {
-    template: "set deep in {country}'s {landscape}",
-    slots: { landscape },
-  },
-  {
-    template: "{weirdDetail}",
-    slots: { weirdDetail },
-  },
-  {
-    when: { capital: true },
-    template: "the seat of {country}'s government",
-    slots: {},
-  },
-  {
-    when: { minElevationMeters: 2000 },
-    template: "one of the highest cities in {country}",
-    slots: {},
-  },
-  {
-    when: { biomes: WINTRY_BIOMES },
-    template: "winter shapes nearly every part of daily life",
-    slots: {},
-  },
-  {
-    when: { coastal: true, anyTags: { society: [Society.Maritime] } },
-    template: "its docks handle much of {country}'s sea trade",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Religious] } },
-    template: "pilgrims often outnumber merchants during holy festivals",
-    slots: {},
-  },
-  {
-    when: { anyTags: { society: [Society.Scholastic] } },
-    template: "students arrive from across {country} to study here",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Militaristic] } },
-    template: "grew up around an old frontier garrison",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Revolutionary] } },
-    template: "birthplace of more than one uprising",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Traditional] } },
-    template: "proud of customs older than {country} itself",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Nomadic] } },
-    template: "a seasonal meeting place for the surrounding clans",
-    slots: {},
-  },
-  {
-    template: "grew out of {origin}",
-    slots: { origin },
-  },
-  {
-    template: "locals call it {nickname}",
-    slots: { nickname },
-  },
-  {
-    template: "no visitor leaves without trying the {dish}",
-    slots: { dish },
-  },
+// Landmarks (the X form, so templates read cleanly). Templates are kept generic enough to fit any of them.
+const landmark: FactPart[] = [
+  { text: "the old bell tower" },
+  { text: "the clock tower" },
+  { text: "the market cross" },
+  { text: "the old gate" },
+  { text: "the lighthouse", when: { coastal: true } },
+  { text: "the great cathedral", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "the high granary", when: { anyTags: { society: [Society.Agrarian] } } },
+  { text: "the watchtower", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "the guildhall", when: { anyTags: { authority: [Authority.Commercial] } } },
+  { text: "the palace gate", when: { anyTags: { authority: [Authority.Monarchic] } } },
+  { text: "the assembly hall", when: { anyTags: { authority: [Authority.Civic] } } },
+  { text: "the old observatory", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "the imperial milestone", when: { anyTags: { authority: [Authority.Imperial] } } },
+  { text: "the records house", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "the great waterwheel", when: { water: ["river"] } },
+  { text: "the leaning spire" },
+  { text: "the plague column" },
+  { text: "the old mint" },
+  { text: "the triumphal arch", when: { anyTags: { authority: [Authority.Militaristic, Authority.Imperial] } } },
+  { text: "the great sundial", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "the hilltop beacon", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "the great bathhouse", when: { tiers: ["medium", "big"] } },
 ];
 
-// — size & centrality one-liners —
-const sizeCentralityPatterns: FunFactPattern[] = [
-  {
-    when: { tiers: ["big"] },
-    template: "big enough that the far quarter keeps its own accent",
-    slots: {},
-  },
-  {
-    when: { capital: true },
-    template: "half of {country}'s letters pass through on their way somewhere else",
-    slots: {},
-  },
+// Signature crafts (the city's renowned product), gated to the trade that makes them.
+const craft: FactPart[] = [
+  { text: "blue glass", when: { industries: ["glassblowing"] } },
+  { text: "watered steel", when: { industries: ["metalworking"] } },
+  { text: "figured silk", when: { industries: ["silk weaving"] } },
+  { text: "dyed cloth", when: { industries: ["textiles"] } },
+  { text: "fired porcelain", when: { industries: ["pottery"] } },
+  { text: "gilt leather", when: { industries: ["leatherworking"] } },
+  { text: "cut crystal", when: { industries: ["gemcutting"] } },
+  { text: "aged brandy", when: { industries: ["distilling"] } },
+  { text: "marbled paper", when: { industries: ["papermaking"] } },
+  { text: "carved amber", when: { industries: ["amber trade"] } },
+  { text: "estate wine", when: { industries: ["viticulture"] } },
+  { text: "blue-veined cheese", when: { industries: ["cheesemaking"] } },
+  { text: "smoked tea", when: { industries: ["tea"] } },
+  { text: "temple incense", when: { industries: ["incense trade"] } },
+  { text: "white furs", when: { industries: ["fur trapping"] } },
+  { text: "carved scrimshaw", when: { industries: ["whaling"] } },
+  { text: "pearl jewelry", when: { industries: ["pearling"] } },
+  { text: "spring-driven clocks", when: { industries: ["clockmaking"] } },
+  { text: "wheat beer", when: { industries: ["brewing"] } },
+  { text: "fine broadcloth", when: { industries: ["wool"] } },
+  { text: "bleached linen", when: { industries: ["linen"] } },
 ];
 
-// — climate / terrain one-liners —
-const climatePatterns: FunFactPattern[] = [
-  {
-    when: { biomes: ["desert"] },
-    template: "water sellers can be heard all across the city",
-    slots: {},
-  },
-  {
-    when: { elevations: ["VERY_HIGH"] },
-    template: "visitors spend their first day catching their breath",
-    slots: {},
-  },
-  {
-    when: { maxElevationMeters: 30, nearWater: true, coastal: false },
-    template: "bridges are built especially high to protect them from the frequent floods",
-    slots: {},
-  },
-  {
-    when: { bands: ["WET"], minElevationMeters: 600 },
-    template: "the locals have 100 different words for different kinds of rain",
-    slots: {},
-  },
-  {
-    when: { anyTags: { society: [Society.Maritime] } },
-    template: "the tides are the only clock the locals need",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Elite] } },
-    template: "the local aritocracy are know for their unusual taste in fashion",
-    slots: {},
-  },
-  {
-    when: { coastal: true },
-    template: "salt gets into the doors, the food, and the politics",
-    slots: {},
-  },
-  {
-    when: { nearWater: true, coastal: false },
-    template: "the river is widely revered and reviled in equal measure",
-    slots: {},
-  },
-  {
-    when: { bands: ["DRY"] },
-    template: "by midday the streets belong to the lizards",
-    slots: {},
-  },
-  {
-    when: { nearWater: true, bands: ["WET"] },
-    template: "on especially rainy days, the entire town seems caked in a rind of mud.",
-    slots: {},
-  },
-  {
-    when: { biomes: WINTRY_BIOMES, nearWater: true },
-    template: "once winter settles in, the river becomes a main street",
-    slots: {},
-  },
+// Festivals — the town's defining yearly event, gated across many tags so each kind of place gets its own.
+const festival: FactPart[] = [
+  { text: "founders' day" },
+  { text: "the midsummer fair" },
+  { text: "the lantern vigil", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "the day of the old kings", when: { anyTags: { authority: [Authority.Monarchic] } } },
+  { text: "the great audit", when: { anyTags: { authority: [Authority.Bureaucratic] } } },
+  { text: "the masters' disputation", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "the harvest feast", when: { anyTags: { society: [Society.Agrarian] } } },
+  { text: "the victory march", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "the guilds' parade", when: { anyTags: { authority: [Authority.Commercial] } } },
+  { text: "the boat-blessing", when: { coastal: true } },
+  { text: "the river fair", when: { water: ["river"] } },
+  { text: "the midwinter burning", when: { biomes: WINTRY_BIOMES } },
+  { text: "the running of the herds", when: { biomes: ["grassland", "steppe"] } },
 ];
 
-// — biome-specific terrain one-liners —
-const biomePatterns: FunFactPattern[] = [
-  {
-    when: { biomes: ["forest"] },
-    template: "many locals build their homes in the canopy",
-    slots: {},
-  },
-  {
-    when: { biomes: ["woodland"] },
-    template: "timber is king here, and those who fell it are heroes",
-    slots: {},
-  },
-  {
-    when: { biomes: ["grassland"] },
-    template: "the endless sky is said to have driven more than one local mad",
-    slots: {},
-  },
-  {
-    when: { biomes: ["steppe"] },
-    template: "the city doubles in size every summer when the herders come to town",
-    slots: {},
-  },
-  {
-    when: { biomes: ["wetland"] },
-    template: "outsiders are warned to sleep beneath nets to fend off mosquitoes",
-    slots: {},
-  },
-  {
-    when: { biomes: ["badlands"] },
-    template: "anything that grows here has earned the right",
-    slots: {},
-  },
-  {
-    when: { biomes: ["montane forest"] },
-    template: "the locals beleve that the forest is alive, and it protects them from their enemies",
-    slots: {},
-  },
-  {
-    when: { biomes: ["alpine"] },
-    template: "summer is celebrated with an almost suspicious urgency",
-    slots: {},
-  },
-  {
-    when: { biomes: ["tundra"] },
-    template: "graveyards here are built of stone instead of earth",
-    slots: {},
-  },
-  {
-    when: { elevations: ["HIGH", "VERY_HIGH"] },
-    template: "the locals take turns maintaining the steep mountain passes",
-    slots: {},
-  },
+// Founders — always a person or band (the statue template needs it), the figure the town credits its start to.
+const figure: FactPart[] = [
+  { text: "a pair of feuding brothers" },
+  { text: "a peddler who stopped to mend a wheel and never left" },
+  { text: "a wandering holy man", when: { anyTags: { authority: [Authority.Religious] } } },
+  { text: "a retired general", when: { anyTags: { authority: [Authority.Militaristic] } } },
+  { text: "a runaway prince", when: { anyTags: { authority: [Authority.Monarchic] } } },
+  { text: "a shrewd merchant", when: { anyTags: { authority: [Authority.Commercial] } } },
+  { text: "a disgraced scholar", when: { anyTags: { society: [Society.Scholastic] } } },
+  { text: "an imperial surveyor", when: { anyTags: { authority: [Authority.Imperial] } } },
+  { text: "a company of engineers", when: { anyTags: { authority: [Authority.Technical] } } },
+  { text: "a band of exiles", when: { anyTags: { trait: [Trait.Revolutionary, Trait.Fragmented] } } },
+  { text: "a wandering clan that stopped to winter", when: { anyTags: { structure: [Structure.Nomadic] } } },
+  { text: "a shipwrecked crew", when: { coastal: true } },
 ];
 
-// — cross-dimension one-liners (requires at least two independent city dimensions; `tags` requires every named tag at once) —
-const crossDimensionPatterns: FunFactPattern[] = [
-  {
-    when: { coastal: true, anyTags: { authority: [Authority.Militaristic] } },
-    template: "its harbor still bristles with cannon no one expects to fire again",
-    slots: {},
-  },
-  {
-    when: { tags: { society: [Society.Scholastic], authority: [Authority.Religious] } },
-    template: "its scholars and priests have argued so long they've started borrowing each other's arguments",
-    slots: {},
-  },
-  {
-    when: { biomes: ["desert"], anyTags: { authority: [Authority.Commercial] } },
-    template: "water is sold with the seriousness of fine jewelry",
-    slots: {},
-  },
-  {
-    when: {
-      nearWater: true,
-      industries: [
-        "leatherworking",
-        "textiles",
-        "metalworking",
-        "sugar refining",
-        "papermaking",
-      ],
-    },
-    template: "the river advertises the day's work better than any signboard",
-    slots: {},
-  },
-
-  // coast + commercial
-  {
-    when: {
-      coastal: true,
-      anyTags: { authority: [Authority.Commercial] },
-    },
-    template: "every arriving sail means someone's about to make or lose a fortune",
-    slots: {},
-  },
-
-  // coast + religious
-  {
-    when: {
-      coastal: true,
-      anyTags: { authority: [Authority.Religious] },
-    },
-    template: "the temple bells and harbor bells rarely stop answering each other",
-    slots: {},
-  },
-
-  // river + civic
-  {
-    when: {
-      nearWater: true,
-      anyTags: { authority: [Authority.Civic] },
-    },
-    template: "there's always another bridge being proposed",
-    slots: {},
-  },
-
-  // mountains + militaristic
-  {
-    when: {
-      elevations: ["HIGH", "VERY_HIGH"],
-      anyTags: { authority: [Authority.Militaristic] },
-    },
-    template: "every mountain pass has a story about the army that failed to cross it",
-    slots: {},
-  },
-
-  // mountains + mining
-  {
-    when: {
-      elevations: ["HIGH", "VERY_HIGH"],
-      industries: ["mining"],
-    },
-    template: "locals joke the mountain gets a little smaller every year",
-    slots: {},
-  },
-
-  // forest + forestry
-  {
-    when: {
-      biomes: ["forest"],
-      industries: ["forestry"],
-    },
-    template: "stumps are counted almost as carefully as trees",
-    slots: {},
-  },
-
-  // grassland + horse breeding
-  {
-    when: {
-      biomes: ["grassland"],
-      industries: ["horse breeding"],
-    },
-    template: "even the work horses walk with suspicious confidence",
-    slots: {},
-  },
-
-  // wetland + fishing
-  {
-    when: {
-      biomes: ["wetland"],
-      industries: ["fishing"],
-    },
-    template: "the fishermen navigate by memory more than landmarks",
-    slots: {},
-  },
-
-  // scholarly + printing
-  {
-    when: {
-      industries: ["printing"],
-      anyTags: { society: [Society.Scholastic] },
-    },
-    template: "yesterday's arguments become today's pamphlets",
-    slots: {},
-  },
-
-  // bureaucracy + administration
-  {
-    when: {
-      industries: ["administration"],
-      anyTags: { authority: [Authority.Bureaucratic] },
-    },
-    template: "finding the right clerk is treated like a practical survival skill",
-    slots: {},
-  },
-
-  // military + armory
-  {
-    when: {
-      industries: ["armory"],
-      anyTags: { authority: [Authority.Militaristic] },
-    },
-    template: "the sound of hammers is strangely reassuring",
-    slots: {},
-  },
-
-  // religious + pilgrimage
-  {
-    when: {
-      industries: ["pilgrimage"],
-      anyTags: { authority: [Authority.Religious] },
-    },
-    template: "locals can spot a pilgrim before they ask for directions",
-    slots: {},
-  },
-
-  // elite + banking
-  {
-    when: {
-      industries: ["banking"],
-      anyTags: { authority: [Authority.Elite] },
-    },
-    template: "fortunes here are inherited almost as often as they're earned",
-    slots: {},
-  },
-
-  // revolutionary + printing
-  {
-    when: {
-      industries: ["printing"],
-      anyTags: { trait: [Trait.Revolutionary] },
-    },
-    template: "pamphlets appear overnight with nobody admitting to writing them",
-    slots: {},
-  },
-
-  // traditional + brewing
-  {
-    when: {
-      industries: ["brewing"],
-      anyTags: { trait: [Trait.Traditional] },
-    },
-    template: "changing the local recipe is considered almost sacrilegious",
-    slots: {},
-  },
-
-  // federal + capital
-  {
-    when: {
-      capital: true,
-      anyTags: { structure: [Structure.Federal] },
-    },
-    template: "every province claims a little ownership of the capital",
-    slots: {},
-  },
-
-  // coast + shipbuilding
-  {
-    when: {
-      coastal: true,
-      industries: ["shipbuilding"],
-    },
-    template: "the waterfront is crowded with ships that aren't ships yet",
-    slots: {},
-  },
-
-  // coast + privateering
-  {
-    when: {
-      coastal: true,
-      industries: ["privateering"],
-    },
-    template: "every tavern has a retired captain whose best story gets better every year",
-    slots: {},
-  },
-
-  // coast + fishing
-  {
-    when: {
-      coastal: true,
-      industries: ["fishing"],
-    },
-    template: "tomorrow's weather is debated more fiercely than today's politics",
-    slots: {},
-  },
-
-  // desert + caravan
-  {
-    when: {
-      biomes: ["desert"],
-      industries: ["caravan trade"],
-    },
-    template: "people measure the year by arriving caravans instead of seasons",
-    slots: {},
-  },
-
-  // desert + camel breeding
-  {
-    when: {
-      biomes: ["desert"],
-      industries: ["camel breeding"],
-    },
-    template: "a fine camel turns more heads than a fine horse",
-    slots: {},
-  },
-
-  // wet + forestry
-  {
-    when: {
-      bands: ["WET"],
-      industries: ["forestry"],
-    },
-    template: "the forest grows back faster than anyone can clear it",
-    slots: {},
-  },
-
-  // wet + papermaking
-  {
-    when: {
-      bands: ["WET"],
-      industries: ["papermaking"],
-    },
-    template: "the river always carries a faint grey tint downstream",
-    slots: {},
-  },
-
-  // alpine + quarrying
-  {
-    when: {
-      biomes: ["alpine"],
-      industries: ["quarrying"],
-    },
-    template: "half the mountain seems destined to become someone else's city",
-    slots: {},
-  },
-
-  // high elevation + religious
-  {
-    when: {
-      elevations: ["HIGH", "VERY_HIGH"],
-      anyTags: { authority: [Authority.Religious] },
-    },
-    template: "the holiest shrines always seem to require another climb",
-    slots: {},
-  },
-
-  // forest + military
-  {
-    when: {
-      biomes: ["forest"],
-      anyTags: { authority: [Authority.Militaristic] },
-    },
-    template: "the woods are patrolled as carefully as the city walls",
-    slots: {},
-  },
-
-  // forest + revolutionary
-  {
-    when: {
-      biomes: ["forest"],
-      anyTags: { trait: [Trait.Revolutionary] },
-    },
-    template: "more than one rebellion has vanished into these woods",
-    slots: {},
-  },
-
-  // grassland + militaristic
-  {
-    when: {
-      biomes: ["grassland"],
-      anyTags: { authority: [Authority.Militaristic] },
-    },
-    template: "you can spot an approaching army hours before it arrives",
-    slots: {},
-  },
-
-  // steppe + nomadic
-  {
-    when: {
-      biomes: ["steppe"],
-      anyTags: { structure: [Structure.Nomadic] },
-    },
-    template: "the horizon feels more like an invitation than a boundary",
-    slots: {},
-  },
-
-  // tundra + commercial
-  {
-    when: {
-      biomes: ["tundra"],
-      anyTags: { authority: [Authority.Commercial] },
-    },
-    template: "winter prices are negotiated even in midsummer",
-    slots: {},
-  },
-
-  // river + shipping
-  {
-    when: {
-      nearWater: true,
-      industries: ["shipping"],
-    },
-    template: "every late shipment is blamed on the current",
-    slots: {},
-  },
-
-  // river + brewing
-  {
-    when: {
-      nearWater: true,
-      industries: ["brewing"],
-    },
-    template: "everyone insists the river is the secret ingredient",
-    slots: {},
-  },
-
-  // maritime + fishing
-  {
-    when: {
-      anyTags: { society: [Society.Maritime] },
-      industries: ["fishing"],
-    },
-    template: "children learn the tides before they learn to read",
-    slots: {},
-  },
-
-  // maritime + military
-  {
-    when: {
-      tags: {
-        society: [Society.Maritime],
-        authority: [Authority.Militaristic],
-      },
-    },
-    template: "people still watch the horizon as though an enemy fleet might appear",
-    slots: {},
-  },
-
-  // scholastic + astronomy
-  {
-    when: {
-      anyTags: { society: [Society.Scholastic] },
-      industries: ["astronomy"],
-    },
-    template: "the observatories stay busy long after everyone else has gone to bed",
-    slots: {},
-  },
-
-  // scholastic + alchemy
-  {
-    when: {
-      anyTags: { society: [Society.Scholastic] },
-      industries: ["alchemy"],
-    },
-    template: "failed experiments become local legends",
-    slots: {},
-  },
-
-  // technical + manufacturing
-  {
-    when: {
-      anyTags: { authority: [Authority.Technical] },
-      industries: ["manufacturing"],
-    },
-    template: "no machine here is ever considered truly finished",
-    slots: {},
-  },
-
-  // bureaucracy + banking
-  {
-    when: {
-      anyTags: { authority: [Authority.Bureaucratic] },
-      industries: ["banking"],
-    },
-    template: "opening an account takes nearly as much paperwork as closing one",
-    slots: {},
-  },
-
-  // commercial + gambling
-  {
-    when: {
-      anyTags: { authority: [Authority.Commercial] },
-      industries: ["gambling"],
-    },
-    template: "the locals negotiate wagers faster than they explain the rules",
-    slots: {},
-  },
-
-  // elite + theater
-  {
-    when: {
-      anyTags: { authority: [Authority.Elite] },
-      industries: ["theater"],
-    },
-    template: "being seen at the theater is almost more important than the play",
-    slots: {},
-  },
-
-  // religious + holy festivals
-  {
-    when: {
-      anyTags: { authority: [Authority.Religious] },
-      industries: ["holy festivals"],
-    },
-    template: "the streets always seem to be preparing for another procession",
-    slots: {},
-  },
-
-  // stable + clockmaking
-  {
-    when: {
-      anyTags: { trait: [Trait.Stable] },
-      industries: ["clockmaking"],
-    },
-    template: "locals trust the clockmakers more than the sun",
-    slots: {},
-  },
-
-  // fragmented + diplomacy
-  {
-    when: {
-      anyTags: { trait: [Trait.Fragmented] },
-      industries: ["diplomacy"],
-    },
-    template: "diplomats spend more time memorizing old grudges than drafting new treaties",
-    slots: {},
-  },
+// Signature beasts — plural nouns (templates read with the plural), gated by terrain and trade.
+const beast: FactPart[] = [
+  { text: "camels", when: { biomes: ["desert", "steppe"] } },
+  { text: "reindeer", when: { biomes: WINTRY_BIOMES } },
+  { text: "horses", when: { biomes: ["grassland", "steppe"] } },
+  { text: "goats", when: { biomes: ["montane forest", "highlands"] } },
+  { text: "mules", when: { elevations: ["HIGH", "VERY_HIGH"] } },
+  { text: "hunting hounds", when: { biomes: WOODED_BIOMES } },
+  { text: "oxen", when: { anyTags: { society: [Society.Agrarian] } } },
+  { text: "falcons", when: { biomes: ["desert", "steppe"] } },
 ];
 
-// — government-dimension one-liners (the enums the slot pools never reach) —
-const governmentPatterns: FunFactPattern[] = [
-  {
-    when: { anyTags: { authority: [Authority.Imperial] } },
-    template: "old imperial standards still hang in halls that no emperor has visited in years",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Imperial] } },
-    template: "the old imperial road still cuts through town like a ruler laid on a map",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Civic] } },
-    template: "important decisions are still argued loudly enough for passersby to join in",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Civic] }, tiers: ["small", "medium"] },
-    template: "town politics can still be settled by fitting everyone angry into one room",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Technical] } },
-    template: "engineers are consulted before priests, poets, and sometimes doctors",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Bureaucratic] } },
-    template: "nothing here is official until three clerks have disagreed about it",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Dependent] } },
-    template: "the official flag flies high, though not always where locals can see it",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Dependent] } },
-    template: "two flags fly over town, and arguments about their order never really end",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Urban] } },
-    template: "the rooftops seem to continue long after the streets give up",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Local] } },
-    template: "the next town's laws are treated as a mildly interesting foreign custom",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Minor] } },
-    template: "small enough to be overlooked and old enough to resent it",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Minor] } },
-    template: "old grudges are preserved here with better care than public records",
-    slots: {},
-  },
-  {
-    when: { capital: false, anyTags: { structure: [Structure.Federal, Structure.Dependent] } },
-    template: "its delegates return from the capital with complaints already rehearsed",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Expansionist] } },
-    template: "half the street names commemorate battles fought somewhere else",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Stable] } },
-    template: "the same families have occupied the same offices for generations",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Fragmented] } },
-    template: "each quarter keeps its own holidays, grudges, and version of the truth",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Monarchic] } },
-    template: "everyone can name the monarch; far fewer can name the mayor",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Monarchic] } },
-    template: "the crown's portrait hangs in every tavern, watching the unpaid tabs",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Commercial] } },
-    template: "nearly every argument eventually turns into a negotiation",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Commercial] } },
-    template: "fortunes change hands here before gossip has time to catch up",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Religious] } },
-    template: "the bells decide the shape of the day whether or not anyone is grateful",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Militaristic] } },
-    template: "the walls are older than the town's oldest family and twice as respected",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Elite] } },
-    template: "a few family names appear on nearly every gate, plaque, and unpaid debt",
-    slots: {},
-  },
-  {
-    when: { anyTags: { society: [Society.Agrarian] } },
-    template: "the harvest changes the town's mood before any proclamation can",
-    slots: {},
-  },
-  {
-    when: { anyTags: { society: [Society.Scholastic] } },
-    template: "the libraries stay open later than the taverns and cause more arguments",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Federal] } },
-    template: "taxes are paid reluctantly and complaints about the capital are free",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Revolutionary] } },
-    template: "the old regime's statues are still used for target practice",
-    slots: {},
-  },
-  {
-    when: { anyTags: { trait: [Trait.Traditional] } },
-    template: "new customs are inspected here as if they might be carrying disease",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Bureaucratic] } },
-    template: "there is a register of registers, though nobody admits to keeping it",
-    slots: {},
-  },
-  {
-    when: { anyTags: { structure: [Structure.Nomadic] } },
-    template: "borders matter less here than weather, grazing, and good horses",
-    slots: {},
-  },
-  {
-    when: { anyTags: { authority: [Authority.Technical] } },
-    template: "broken things are repaired so quickly that people find it suspicious",
-    slots: {},
-  },
+const slottedOddityPatterns: FunFactPattern[] = [
+  // food
+  { template: "the recipe for the town's {dish} is a guild secret, and a cook was once run out of town for selling it", slots: { dish } },
+  { template: "by old custom no bargain is struck here until both sides have shared the local {dish}", slots: { dish } },
+  { template: "the autumn fair crowns whoever can put away the most {dish}, and past champions are remembered by name", slots: { dish } },
+  { template: "a stranger isn't counted a local until they can praise the {dish} and mean it", slots: { dish } },
+  { template: "exiles are said to weep at the smell of the town's {dish} cooking somewhere far from home", slots: { dish } },
+  { template: "an inn that serves poor {dish} does not stay open long, and its failures are remembered for years", slots: { dish } },
+  // landmarks
+  { template: "every road for miles is measured from {landmark}, down to the last worn milestone", slots: { landmark } },
+  { template: "{landmark} is stamped on the town seal, and on every coin the town has minted since", slots: { landmark } },
+  { template: "{landmark} has its own keeper, a post handed down in one family for longer than the records run", slots: { landmark } },
+  { template: "no building in town may rise higher than {landmark}, by a law older than the tallest of them", slots: { landmark } },
+  { template: "{landmark} turns up in every traveler's account of the town, its height always exaggerated", slots: { landmark } },
+  // crafts
+  { template: "the secret of the town's {craft} is held by a single family and has never once left it", slots: { craft } },
+  { template: "envoys send home for the town's {craft} and wait years for their turn", slots: { craft } },
+  { template: "a dozen cities have tried to copy the town's {craft}, and every copy falls short", slots: { craft } },
+  { template: "the town's {craft} once settled a royal debt, or so the story is told", slots: { craft } },
+  { template: "the crown taxes the town's {craft} at a rate set for nothing else in {country}", slots: { craft } },
+  // festivals
+  { template: "all work stops for three days each year for {festival}, and the town never quite agrees it was worth it", slots: { festival } },
+  { template: "{festival} festival is older than the town's charter and defended twice as fiercely", slots: { festival } },
+  { template: "strangers are warned not to pass through during {festival} unless they mean to join in", slots: { festival } },
+  { template: "the year here is reckoned in the weeks before and after {festival}", slots: { festival } },
+  // founders
+  { template: "the town traces its founding to {figure}, though no two tellings of the story agree", slots: { figure } },
+  { template: "a weathered statue of {figure} stands in the square, and locals still argue whether the likeness is fair", slots: { figure } },
+  { template: "{figure} is said to have founded the town on a bet, a story it has never quite lived down", slots: { figure } },
+  // beasts
+  { template: "{beast} turn more heads here than any carriage, and everyone keeps an opinion on which is finest", slots: { beast } },
+  { template: "the town counts its wealth in {beast}, and a poor year in the same", slots: { beast } },
+  { template: "by old law no {beast} may be struck within the walls, and the fine would ruin most men", slots: { beast } },
+  { template: "children here can judge {beast} long before they can read", slots: { beast } },
 ];
 
-// The shipped pool: every thematic group above, plus one flavour pattern per industry.
-const FUN_FACT_PATTERNS: FunFactPattern[] = [
-  ...corePatterns,
-  ...sizeCentralityPatterns,
-  ...climatePatterns,
-  ...biomePatterns,
-  ...crossDimensionPatterns,
-  ...governmentPatterns,
-  ...industryPatterns,
-];
+// The whole engine: every flat oddity as its own pattern (so the per-country `used` set dedupes and EXHAUSTS
+// them line by line), plus the slotted patterns (each yields many concrete facts as its slot varies).
+const flatOddityPatterns: FunFactPattern[] = cityOddities.map((o) => ({ when: o.when, template: o.text, slots: {} }));
+const FUN_FACT_PATTERNS: FunFactPattern[] = [...flatOddityPatterns, ...slottedOddityPatterns];
 
-function chooseSlotOption(
-  slotName: string,
-  options: FactPart[],
-  ctx: CityContext,
-  chosen: Record<string, FactPart>,
-): FactPart | null {
-  let candidates = options.filter((option) => matchesCondition(ctx, option.when));
-
-  // A predicate must fit the subject already chosen: a cityWide predicate needs a cityWide subject ("its
-  // orchards host more festivals" is nonsense), and a kind-restricted one needs a subject of that kind
-  // ("its bell tower anchors the local economy" is nonsense).
-  if (slotName === "predicate") {
-    candidates = candidates.filter(
-      (option) =>
-        (!option.cityWide || chosen.subject?.cityWide === true) && acceptsSubject(option, chosen.subject),
-    );
-  }
-
-  // A qualifier must also grammatically fit the predicate already chosen for this pattern.
-  if (slotName === "qualifier") {
-    candidates = candidates.filter((option) => acceptsQualifier(chosen.predicate, option));
-  }
-
-  if (candidates.length === 0) return null;
-  return randomChoice(candidates, ctx.rng);
+// Pick one option a city satisfies, at random; null if it has none (the slot — and so the pattern — can't fire).
+function chooseSlotOption(options: FactPart[], ctx: CityContext): FactPart | null {
+  const candidates = options.filter((o) => matchesCondition(ctx, o.when));
+  return candidates.length === 0 ? null : randomChoice(candidates, ctx.rng);
 }
 
+// Render one pattern for a city, or null if its gate fails or a slot has no eligible option.
 function generateFromPattern(pattern: FunFactPattern, ctx: CityContext): string | null {
   if (!matchesCondition(ctx, pattern.when)) return null;
-
-  const resolvedSlots: Record<string, string> = {};
-  const chosenParts: Record<string, FactPart> = {};
-
+  const resolved: Record<string, string> = {};
   for (const [slotName, options] of Object.entries(pattern.slots)) {
-    const chosen = chooseSlotOption(slotName, options, ctx, chosenParts);
+    const chosen = chooseSlotOption(options, ctx);
     if (!chosen) return null;
-
-    chosenParts[slotName] = chosen;
-    // The subject (resolved first, since slots iterate in insertion order) fixes the number every later
-    // verb agrees with; patterns without a subject default to singular and carry no verb tokens anyway.
-    const number = chosenParts.subject?.number ?? GrammaticalNumber.Singular;
-    resolvedSlots[slotName] = renderTemplate(inflect(chosen.text, number), resolvedSlots, ctx);
+    resolved[slotName] = renderTemplate(chosen.text, resolved, ctx);
   }
-
-  const number = chosenParts.subject?.number ?? GrammaticalNumber.Singular;
-  return renderTemplate(inflect(pattern.template, number), resolvedSlots, ctx);
+  return renderTemplate(pattern.template, resolved, ctx);
 }
 
 export function generateFunFact(ctx: CityContext, used?: Set<string>): string {
+  // Collect every oddity this city can show (one rendering per pattern), then prefer one the COUNTRY hasn't
+  // used yet — so a country's cities each get a distinct fact, falling back to a repeat only once it has
+  // genuinely spent its eligible oddities. Universal entries always match, so the stub is unreachable.
   const candidates: string[] = [];
   for (const pattern of FUN_FACT_PATTERNS) {
     const text = generateFromPattern(pattern, ctx);
     if (text !== null) candidates.push(text);
   }
-
   if (candidates.length === 0) return `set deep in ${ctx.countryName}'s ${ctx.biome}`;
 
-  // Prefer a fact this country hasn't used yet so two cities don't share a line; fall back to the full
-  // set only if every candidate is already taken. The chosen fact is recorded in `used`.
   const fresh = used ? candidates.filter((c) => !used.has(c)) : candidates;
-  const chosen = randomChoice(fresh.length > 0 ? fresh : candidates, ctx.rng);
+  const pool = fresh.length > 0 ? fresh : candidates;
+  const chosen = randomChoice(pool, ctx.rng);
   used?.add(chosen);
   return chosen;
 }
 
-// Exposed for the offline combo audit (funFactAudit.ts / .test.ts) — NOT part of the app's generation
-// path. The audit re-uses the real pools + rendering so its enumeration matches what ships exactly.
-export { FUN_FACT_PATTERNS, GrammaticalNumber, INDUSTRY_FLAVOR, acceptsQualifier, acceptsSubject, inflect, renderTemplate };
-export type { FactPart, Fit, FunFactPattern, SubjectKind };
+// Exposed for the offline combo audit (funFactAudit.ts / .test.ts) — NOT part of the app's generation path.
+// The audit re-uses the real patterns + rendering so its enumeration matches what ships exactly.
+export { FUN_FACT_PATTERNS, renderTemplate };
+export type { FactPart, FunFactPattern };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OCEAN, snapshotParams, type MapSettings } from "../common/settings";
+import { OCEANS, snapshotParams, type MapSettings } from "../common/settings";
 import { buildAdjacency } from "../mapgen/features/adjacency";
 import { assignCountries, fourColorCountries } from "../mapgen/features/countries";
 import { MapGenerator } from "../mapgen/MapGenerator";
@@ -12,10 +12,10 @@ describe("bakeCountryTexture", () => {
   it("bakes a full equirect RGBA texture of country hues over land and a dark sea", () => {
     const seed = "ctex-seed";
     const map = new MapGenerator(seed, snapshotParams()).generateMap(SETTINGS);
-    const seaLevel = OCEAN.SEA_LEVEL.value;
+    const seaLevel = OCEANS.SEA_LEVEL.value;
     const adjacency = buildAdjacency(map);
     const { countryOf, countries } = assignCountries(
-      map, seaLevel, adjacency, seed, "GREEK", ["LATIN"], new NameGenerator("c")
+      map, map.reportElevation, seaLevel, adjacency, seed, "GREEK", ["LATIN"], new NameGenerator("c")
     );
     const colors = fourColorCountries(countryOf, adjacency, countries.length);
     const tex = bakeCountryTexture(map, countryOf, colors);

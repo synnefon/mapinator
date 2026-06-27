@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type MapSettings, snapshotParams, TECTONIC } from "../common/settings";
+import { type MapSettings, snapshotParams, TECTONICS } from "../common/settings";
 import { MapGenerator } from "./MapGenerator";
 
 const SETTINGS: MapSettings = { resolution: 0, zoom: 0, theme: "lush" };
@@ -18,7 +18,7 @@ describe("MapGenerator.generateMap", () => {
 
   it("keeps every per-cell field within its documented range", () => {
     const map = new MapGenerator(SEED, PARAMS).generateMap(SETTINGS);
-    const plateCap = Math.max(2, Math.round(TECTONIC.PLATE_COUNT.value));
+    const plateCap = Math.max(2, Math.round(TECTONICS.PLATE_COUNT.value));
     for (let i = 0; i < map.cellCount; i++) {
       expect(map.elevation[i]).toBeGreaterThanOrEqual(0);
       expect(map.elevation[i]).toBeLessThanOrEqual(1);

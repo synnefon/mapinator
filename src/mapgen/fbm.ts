@@ -1,13 +1,8 @@
 import type { NoiseFunction3D } from "simplex-noise";
 import { smoothstep } from "../common/util";
-
-// An octave whose amplitude is below this contributes less than ~0.6% of a unit
-// field — well under the renderer's 5-bit colour quantization (~3.2% per channel),
-// so it can't move a pixel. Amplitude only shrinks (gain < 1), so once we're under
-// it every remaining octave is too. This trims only the deep tail of very-low-
-// amplitude waves (e.g. the gentle OCEAN swell) at high zoom; the base octave count
-// and all visible detail are untouched.
-const MIN_OCTAVE_AMPLITUDE = 0.006;
+// Fixed field constants shared with the GPU shader — see fieldConstants.ts (MIN_OCTAVE_AMPLITUDE skips
+// imperceptible octaves; RIDGE_* shape the ridged-multifractal crests).
+import { MIN_OCTAVE_AMPLITUDE, RIDGE_FEEDBACK, RIDGE_SHARPNESS } from "./fieldConstants";
 
 /**
  * Multi-octave fractal (fBm) noise over a 3D position, centered on 0 (the summed
@@ -56,14 +51,6 @@ export function fbm3(
   }
   return sum;
 }
-
-// Ridged-multifractal feedback gain: each octave is weighted by the PREVIOUS one, so fine
-// detail piles onto ridgelines and valleys stay smooth — the branched, dendritic crest
-// structure of real mountain ranges. Higher = sharper, more branched; ~1 = nearly plain.
-const RIDGE_FEEDBACK = 2.5;
-// Crest sharpness: (1 - |noise|) raised to this power. Higher = narrower, POINTIER peaks with
-// broader valleys; 2 = rounded ridges, 3–5 = increasingly spiky.
-const RIDGE_SHARPNESS = 3.5;
 
 /**
  * Ridged-multifractal noise (Musgrave) over a 3D position, in [0, amplitude]. Unlike fBm's

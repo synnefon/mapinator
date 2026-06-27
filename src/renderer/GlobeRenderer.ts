@@ -19,8 +19,10 @@ const HAIRLINE_PX = 1; // stroke each cell in its own color to close seams
 // ~1px AA seams between cells; above it cells are big enough to skip that pass.
 const SEAM_STROKE_MAX_CELL_PX = 10;
 
-/** Apparent globe radius in px for a zoom. zoom=0 fits the canvas; higher zooms in. */
-export function globeRadiusPx(canvas: HTMLCanvasElement, zoom: number): number {
+/** Apparent globe radius in px for a zoom. zoom=0 fits the canvas; higher zooms in. Takes just the
+ *  pixel dimensions (a canvas satisfies this structurally) so callers without a real canvas — the
+ *  Projector, the LOD view math — need no cast. */
+export function globeRadiusPx(canvas: { width: number; height: number }, zoom: number): number {
   // Geometric (not linear) zoom: equal zoom steps give equal radius RATIOS, so the
   // wheel feels uniform across the range instead of lurching near the whole-globe
   // view. Endpoints: zoom=0 → ×1 (whole globe), zoom=1 → ×GLOBE_MAX_ZOOM (deepest).

@@ -2,7 +2,7 @@ import { createNoise3D } from "simplex-noise";
 import { Languages, type Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
-import { COUNTRY } from "../../common/settings";
+import { COUNTRIES } from "../../common/settings";
 import type { NameGenerator } from "../NameGenerator";
 import { coastDistance, vertexKey } from "./adjacency";
 import { angularExtent, poleOfInaccessibility } from "./detect";
@@ -115,6 +115,8 @@ class MinHeap {
  */
 export function assignCountries(
   map: GlobeMap,
+  reportElevation: Float32Array, // the inland-risen display elevation (see inlandRisenElevation) — passed
+  // explicitly, not read off the map, so this function's dependency on the risen field is named, not implicit
   seaLevel: number,
   adjacency: number[][],
   mapSeed: string,
@@ -122,7 +124,7 @@ export function assignCountries(
   languagePool: Language[],
   namer: NameGenerator
 ): CountryData {
-  const { cellCount, sites, elevation, reportElevation, moisture, ice } = map;
+  const { cellCount, sites, elevation, moisture, ice } = map;
   const countryOf = new Int32Array(cellCount).fill(-1);
 
   const land: number[] = [];
@@ -130,15 +132,15 @@ export function assignCountries(
   if (land.length === 0) return { countryOf, countries: [], classify: () => -1 };
 
   // One seed per country — the raw count off the dial, clamped to the land available.
-  const n = Math.min(land.length, Math.max(2, Math.round(COUNTRY.NUM_COUNTRIES.value)));
+  const n = Math.min(land.length, Math.max(2, Math.round(COUNTRIES.NUM_COUNTRIES.value)));
 
   // --- seeds over land. Two knobs shape the constellation: CLUSTER_COUNT well-separated anchors go
   // down first (farthest-point), then COUNTRY_CLUSTERING decides how the rest fall in — toward those
   // anchors (clumped, 1) or evenly across the map (0). So clustering = clumpiness, cluster count =
   // how many clumps. ---
   const seedRng = makeRNG(`${mapSeed}|country-seeds`);
-  const clustering = COUNTRY.COUNTRY_CLUSTERING.value; // 1 = clumped toward the anchors, 0 = even
-  const clusterCount = Math.min(n, Math.max(1, Math.round(COUNTRY.CLUSTER_COUNT.value)));
+  const clustering = COUNTRIES.COUNTRY_CLUSTERING.value; // 1 = clumped toward the anchors, 0 = even
+  const clusterCount = Math.min(n, Math.max(1, Math.round(COUNTRIES.CLUSTER_COUNT.value)));
   const firstIdx = Math.floor(seedRng() * land.length);
   const seeds: number[] = [land[firstIdx]];
   const placed = new Uint8Array(land.length);
@@ -177,9 +179,9 @@ export function assignCountries(
   // landmass before spilling over the sea; water carries the wave (islands still get claimed across
   // narrow straits) but never keeps territory — only land cells are written into countryOf below. ---
   const warp = createNoise3D(makeRNG(`${mapSeed}|country-warp`));
-  const f = COUNTRY.WARP_FREQ.value;
-  const a = COUNTRY.WARP_AMP.value;
-  const waterCost = COUNTRY.WATER_COST.value;
+  const f = COUNTRIES.WARP_FREQ.value;
+  const a = COUNTRIES.WARP_AMP.value;
+  const waterCost = COUNTRIES.WATER_COST.value;
   // Each cell's warped position (decorrelated per axis), precomputed once. Stepping between these
   // rather than the raw sites is what bends the borders.
   const wpx = new Float64Array(cellCount);
@@ -347,7 +349,7 @@ export function largestBorderingCountry(
   seaLevel: number,
   adjacency: number[][],
   data: CountryData,
-  maxHops = COUNTRY.BORDER_HOPS.value
+  maxHops = COUNTRIES.BORDER_HOPS.value
 ): number {
   const { elevation } = map;
   const { countryOf, countries } = data;

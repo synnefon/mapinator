@@ -2,27 +2,22 @@ import type { NoiseFunction3D } from "simplex-noise";
 import { makeRNG, type RNG } from "../common/random";
 import type { TerrainParams } from "../common/settings";
 import { smoothstep } from "../common/util";
+// Fixed plate-collision + boundary-warp constants shared with the GPU shader — see fieldConstants.ts.
+import {
+  CONVERGENCE_SOFTNESS,
+  JUNCTION_FADE_WIDTH,
+  TECTONIC_WARP_OFFSET_X as WARP_OFFSET_X,
+  TECTONIC_WARP_OFFSET_Y as WARP_OFFSET_Y,
+  TECTONIC_WARP_OFFSET_Z as WARP_OFFSET_Z,
+  TECTONIC_WARP_WAVELENGTH as WARP_WAVELENGTH,
+} from "./fieldConstants";
 
 // Decorrelate the plate RNG stream from the terrain noise (same world seed, different stream).
 const TECTONIC_SEED_SUFFIX = "/tectonics";
 
-// Ramp width (in convergence units) above CONVERGENCE_THRESHOLD to a full-height range: nothing
-// rises below the threshold, the range is full by threshold + this, graded between (so stronger
-// collisions make taller ranges). Fixed — a second-order knob, not worth a dial.
-const CONVERGENCE_SOFTNESS = 0.4;
-
-// Width (in seed-dot units) over which a range FADES to nothing approaching a triple junction —
-// the seam where the 2nd- and 3rd-nearest plates tie, so the boundary's far side (and thus the
-// convergence) switches discontinuously. Ramping both sides to 0 at the seam turns the old hard
-// cut into a smooth gap. Fixed second-order knob.
-const JUNCTION_FADE_WIDTH = 0.06;
-
-// SINUOSITY warps the lookup position so plate boundaries meander instead of running as dead-straight
-// great-circle arcs. WARP_WAVELENGTH sets the meander scale; the offsets decorrelate the components.
-const WARP_WAVELENGTH = 0.7;
-const WARP_OFFSET_X = 8.3;
-const WARP_OFFSET_Y = 27.1;
-const WARP_OFFSET_Z = 53.9;
+// CONVERGENCE_SOFTNESS (ramp to a full-height range above the threshold), JUNCTION_FADE_WIDTH (the
+// smooth gap approaching a triple junction), and the boundary domain-warp (WARP_WAVELENGTH set by
+// SINUOSITY, decorrelated by WARP_OFFSET_*) are imported from fieldConstants.ts (shared with the GPU).
 
 // Plate-motion arrow sampling (the "tectonic plates" overlay) — a viz layer, so its own knobs.
 const ARROW_SAMPLES = 2400; // even fibonacci probes; the leading-edge subset become arrows
@@ -74,7 +69,7 @@ export class Tectonics {
    *  great-circle arcs, then re-project onto the unit sphere (the boundary-distance + convergence
    *  math assume |p| = 1). Shared by upliftAt + plateAt so the ranges and the plate overlay agree. */
   private warp(x: number, y: number, z: number): { x: number; y: number; z: number } {
-    const s = this.params.TECTONIC.SINUOSITY;
+    const s = this.params.TECTONICS.SINUOSITY;
     if (s <= 0) return { x, y, z };
     const wl = WARP_WAVELENGTH;
     const wx = x + s * this.noise3D(x / wl + WARP_OFFSET_X, y / wl + WARP_OFFSET_X, z / wl + WARP_OFFSET_X);
@@ -87,7 +82,7 @@ export class Tectonics {
   /** (Re)build the plate set when PLATE_COUNT changes — deterministic from the seed, so the same
    *  seed + count always yields the same plates. K is tiny, so the rebuild is cheap. */
   private ensureBuilt(): void {
-    const k = Math.max(2, Math.round(this.params.TECTONIC.PLATE_COUNT));
+    const k = Math.max(2, Math.round(this.params.TECTONICS.PLATE_COUNT));
     if (k === this.count) return;
     const rng = makeRNG(this.seed + TECTONIC_SEED_SUFFIX);
     this.count = k;
@@ -272,7 +267,7 @@ export class Tectonics {
     let nz = this.sz[iB] - this.sz[iA];
     const chordLen = Math.hypot(nx, ny, nz) || 1;
     const dist = Math.asin(Math.min(1, Math.abs(x * nx + y * ny + z * nz) / chordLen));
-    const reach = Math.max(0.5 * this.params.TECTONIC.RANGE_WIDTH, 1e-6);
+    const reach = Math.max(0.5 * this.params.TECTONICS.RANGE_WIDTH, 1e-6);
     const band = 1 - smoothstep(0, reach, dist);
     if (band <= 0) return { uplift: 0, plate: iA }; // plate interior → no range (skip the convergence math)
 
@@ -307,8 +302,8 @@ export class Tectonics {
     // the range out across its width.
     const uplift =
       smoothstep(
-        this.params.TECTONIC.CONVERGENCE_THRESHOLD,
-        this.params.TECTONIC.CONVERGENCE_THRESHOLD + CONVERGENCE_SOFTNESS,
+        this.params.TECTONICS.CONVERGENCE_THRESHOLD,
+        this.params.TECTONICS.CONVERGENCE_THRESHOLD + CONVERGENCE_SOFTNESS,
         convergence
       ) * band * junction;
     return { uplift, plate: iA };

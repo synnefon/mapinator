@@ -1,12 +1,11 @@
-import { Quat } from "./common/3DMath";
 import type { InfoPopup } from "./InfoPopup";
 import type { City } from "./mapgen/features";
-import { globeRadiusPx } from "./renderer/GlobeRenderer";
+import type { Projector } from "./renderer/projection";
 
 // City markers are interactive DOM dots layered over the globe (so hover/click come for free),
 // reprojected each frame with the same projection as the canvas overlays. A dot's tier sets the zoom
-// level it appears at and its population sets its size; clicking opens the shared InfoPopup.
-const MIN_FRONT_Z = 0.04; // hide markers at/behind the visible limb (matches the other overlays)
+// level it appears at and its population sets its size; clicking opens the shared InfoPopup. The limb
+// cull + projection are the Projector's (renderer/projection.ts).
 
 // Dot diameter encodes population: dot AREA ∝ population ⇒ diameter ∝ √population, clamped to a legible
 // range. Calibrated so a ~5k town (MIN_CITY_POP) reads small and a ≳250k metropolis hits the ceiling.
@@ -72,29 +71,18 @@ export class CityMarkers {
 
   /** Reproject + reposition every marker. A marker shows only if its tier's reveal level is reached, it
    *  faces the camera, and the layer is visible — so big cities/capitals appear first, the rest deeper. */
-  update(
-    canvas: HTMLCanvasElement,
-    cities: City[],
-    orientation: Quat,
-    zoom: number,
-    offsetFraction: number,
-    level: number
-  ): void {
+  update(cities: City[], proj: Projector, level: number): void {
     if (!this.visible) return;
-    const radius = globeRadiusPx(canvas, zoom);
-    const offX = offsetFraction * canvas.width;
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
     for (let i = 0; i < this.dots.length; i++) {
       const dot = this.dots[i];
       const city = cities[i];
-      const r = Quat.rotate(orientation, city.anchor);
-      if (city.minLevel > level || r.z < MIN_FRONT_Z) {
+      const r = proj.project(city.anchor);
+      if (city.minLevel > level || !r.front) {
         dot.style.display = "none";
         continue;
       }
-      dot.style.left = `${cx + r.x * radius + offX}px`;
-      dot.style.top = `${cy - r.y * radius}px`;
+      dot.style.left = `${r.x}px`;
+      dot.style.top = `${r.y}px`;
       dot.style.display = "block";
     }
   }

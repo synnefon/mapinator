@@ -1,7 +1,8 @@
 import type { ElevationFamily, MoistureBand } from "../../common/biomes";
-import type { CityTier } from "./cities";
+import type { CityTier, CityWaterKind } from "./cities";
 import type { BiomeName, CityContext } from "./cityStats";
 import { type Tags } from "./government";
+import type { IndustryTag } from "./industries";
 
 // ===================== City conditions =====================
 // A small declarative vocabulary for "does this city match?", shared by both industry rules and fun-fact
@@ -23,9 +24,11 @@ export type CityCondition = {
   bands?: MoistureBand[];
   biomes?: BiomeName[];
   industries?: string[]; // city has AT LEAST ONE of these derived industries (see industries.ts)
+  anyIndustryTags?: IndustryTag[]; // city has an industry carrying AT LEAST ONE of these semantic tags
 
   coastal?: boolean;
   nearWater?: boolean;
+  water?: CityWaterKind[]; // the specific water the city sits ON (ocean/river/lake/none) — finer than coastal/nearWater
 
   minElevationMeters?: number;
   maxElevationMeters?: number;
@@ -80,9 +83,11 @@ function matchesSingle(c: CityContext, when: CityCondition): boolean {
   if (when.bands && !when.bands.includes(c.band)) return false;
   if (when.biomes && !when.biomes.includes(c.biome)) return false;
   if (when.industries && !when.industries.some((n) => c.industries.includes(n))) return false;
+  if (when.anyIndustryTags && !when.anyIndustryTags.some((t) => c.industryTags.includes(t))) return false;
 
   if (when.coastal !== undefined && c.coastal !== when.coastal) return false;
   if (when.nearWater !== undefined && c.nearWater !== when.nearWater) return false;
+  if (when.water && !when.water.includes(c.waterKind)) return false;
 
   if (when.minElevationMeters !== undefined && c.elevationMeters < when.minElevationMeters) return false;
   if (when.maxElevationMeters !== undefined && c.elevationMeters > when.maxElevationMeters) return false;

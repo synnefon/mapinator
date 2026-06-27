@@ -197,7 +197,7 @@ export const DIALS = {
   // shrink per octave) — alongside its WAVELENGTH/AMPLITUDE, tuned per wave.
 
   // Tunables for the political layer (mirrors the DIALS convention; live-editable).
-  COUNTRY: {
+  COUNTRIES: {
     NUM_COUNTRIES: {
       value: 56,
       min: 2,
@@ -243,25 +243,67 @@ export const DIALS = {
       doc: "how far a water body looks out (over water) for its largest bordering country",
     },
   },
-  CITY: {
-    URBAN_FRACTION: {
-      value: 0.1,
+  // CITY — placement of city markers within each country (features/cities.ts). Read LIVE (not terrain gen),
+  // so a change re-places cities without a full regen. Each country's cities split into four buckets, each
+  // placed RIGHT ON its feature so the marker visibly sits there: a RIVER share (on drawn rivers, favouring
+  // big ones + their mouths), a SEA share (at a large-water shore — the dominant coastal kind), a LAKE share
+  // (at a medium/small-water shore), and the rest sprinkled across the interior. Earth ~1400: rivers the most
+  // common settlement water, the SEA a strong second (sea coasts vastly outnumber lake shores), lakes few.
+  CITIES: {
+    RIVER_FRACTION: {
+      value: 0.38,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      doc: "share of a country's cities placed ON a drawn river (favouring bigger rivers + their mouths)",
+    },
+    SEA_FRACTION: {
+      value: 0.3,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      doc: "share placed at a LARGE-water (sea/ocean) shore — most water-body cities sat here (ports)",
+    },
+    LAKE_FRACTION: {
+      value: 0.07,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      doc: "share placed at a MEDIUM/SMALL-water (lake/pond) shore — historically few. The remainder (1 − river − sea − lake) sprinkles across the interior. Earth ~1400 ≈ river .38 / sea .30 / lake .07 / interior .25",
+    },
+    RIVER_MIN_STRENGTH: {
+      value: 0.12,
+      min: 0.05,
+      max: 0.9,
+      step: 0.01,
+      doc: "min DRAWN-river flow strength (0–1, 1 = biggest trunk) for a cell to host a river city. The bucket weights by strength so big rivers + mouths win; this is just the floor below which a trickle doesn't count",
+    },
+    DESERT_AVERSION: {
+      value: 0.7,
       min: 0,
       max: 1,
       step: 0.05,
-      doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10); higher = more and larger cities",
+      doc: "how strongly DRY interior land repels cities. The penalty FADES TO NOTHING near a river or coast, so desert ports + oasis towns settle freely — only the deep, waterless interior is shunned (0 = deserts settle like anywhere; 1 = strongest avoidance, but never impossible)",
+    },
+    ICE_AVERSION: {
+      value: 0.8,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "how strongly polar-cap (iced) land repels cities, everywhere including coasts, scaled by how iced the cell is (0 = ice settles like anywhere; 1 = strongest avoidance — a city on the ice stays rare but still possible)",
     },
   },
   // POPULATION — per-cell carrying-capacity model (features/suitability.ts) summed into each country's
-  // head count. Read LIVE like COUNTRY/CITY (not part of the terrain snapshot). BASE_DENSITY is the
-  // master scale; the rest weight the terrain factors the suitability surface grounds in ~1400 truth.
+  // head count. Read LIVE like COUNTRY/CITY (not part of the terrain snapshot). GLOBAL_POPULATION_DENSITY is
+  // the master scale; the rest weight the terrain factors the suitability surface grounds in ~1400 truth.
+  // URBAN_FRACTION then splits that head count into city vs. countryside dwellers.
   POPULATION: {
-    BASE_DENSITY: {
+    GLOBAL_POPULATION_DENSITY: {
       value: 2.6,
       min: 0.5,
       max: 20,
       step: 0.5,
-      doc: "master people/km² scale before terrain factors — the single dial to scale every world's population up or down (Earth ~1400 land average ≈ 2.5)",
+      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land (Earth ~1400 land average ≈ 2.5/km²)",
     },
     COAST_STRENGTH: {
       value: 1.6,
@@ -278,7 +320,7 @@ export const DIALS = {
       doc: "how many cells inland the coastal population bonus reaches before fading away",
     },
     MONSOON_STRENGTH: {
-      value: 1,
+      value: 0.55,
       min: 0,
       max: 1.5,
       step: 0.05,
@@ -297,6 +339,13 @@ export const DIALS = {
       max: 3,
       step: 0.1,
       doc: "how much steep, broken terrain suppresses farming/population independent of altitude; 0 = slope is ignored",
+    },
+    URBAN_FRACTION: {
+      value: 0.1,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10); higher = more and larger cities",
     },
   },
   // RIVERS — coarse flow-routed skeleton + grown tributaries + fractal meander (NOT terrain gen, so
@@ -319,7 +368,7 @@ export const DIALS = {
       doc: "how much rainfall weights a cell's water yield (0 = every cell equal, 1 = dry cells feed less) → deserts get fewer rivers",
     },
     SOURCE_MOISTURE: {
-      value: 0.15,
+      value: 0.65,
       min: 0,
       max: 0.9,
       step: 0.05,
@@ -340,7 +389,7 @@ export const DIALS = {
       doc: "fractal micro-relief on the routing height so trunk flow CONVERGES into a dendritic network instead of running parallel down the smooth continental ramp — the key knob against 'lined-up' rivers; too high = chaotic ponding",
     },
     BRANCHING: {
-      value: 0.6,
+      value: 0.15,
       min: 0,
       max: 1,
       step: 0.05,
@@ -392,7 +441,7 @@ export const DIALS = {
 
   // CONTINENT — carrier wave: decides land vs water, then a shaping curve maps it
   // to a base height (abyss → shelf edge → inland).
-  CONTINENT: {
+  CONTINENTS: {
     OCTAVES: {
       value: 6,
       doc: "carrier octaves; more = more island sizes / richer coasts",
@@ -434,7 +483,7 @@ export const DIALS = {
   // ocean reads as smoothly deepening water, not noisy seabed. AMPLITUDE is the
   // damping knob: low = glassy, higher = rolling swells. Blends into COAST across
   // the shelf, so coast jaggedness only shows up near land.
-  OCEAN: {
+  OCEANS: {
     SEA_LEVEL: {
       value: 0.47,
       doc: "elevation below it renders as ocean, above it as land",
@@ -469,7 +518,7 @@ export const DIALS = {
   // COAST wave at the shore and a coarse MOUNTAIN wave deep inland. Decoupling the
   // wavelengths keeps coasts detailed even when the interior uses big, broad
   // mountains (and when zoomed in / at high res).
-  COAST: {
+  COASTS: {
     OCTAVES: {
       value: 4.5,
       doc: "detail layers; more = finer, costlier",
@@ -496,7 +545,7 @@ export const DIALS = {
   // K plates drift on the sphere; where two CONVERGE, a long, linear range rises along their shared
   // boundary — this is what makes CHAINS instead of round blobs. Only the additive mountain term is
   // placed here; land/water shape is untouched (ocean is gated out by continentalness upstream).
-  TECTONIC: {
+  TECTONICS: {
     PLATE_COUNT: {
       value: 22,
       doc: "number of drifting plates → how many / how long the ranges (more = more, shorter)",
@@ -526,7 +575,7 @@ export const DIALS = {
   // A range = sharp ridged PEAKS on a broad SWELL. The swell's HEIGHT comes from the plate
   // collision itself (the TECTONIC uplift), so harder/closer convergence lifts a taller range;
   // RIDGE_AMPLITUDE is the overall height and SWELL_FRACTION splits it between body and crests.
-  MOUNTAIN: {
+  MOUNTAINS: {
     OCTAVES: {
       value: 4.5,
       doc: "detail layers on the ridged peaks; more = finer, costlier",
@@ -624,15 +673,15 @@ export const DIALS = {
 // Familiar aliases so generation code keeps importing CONTINENT, OCEAN, … directly — the
 // SAME object refs DIALS holds, mutated in place by applyTuning (so every reader stays live).
 export const {
-  COUNTRY,
-  CITY,
+  COUNTRIES,
+  CITIES,
   POPULATION,
   RIVERS,
-  CONTINENT,
-  OCEAN,
-  COAST,
-  TECTONIC,
-  MOUNTAIN,
+  CONTINENTS,
+  OCEANS,
+  COASTS,
+  TECTONICS,
+  MOUNTAINS,
   MOISTURE,
   ICE,
 } = DIALS;
@@ -812,16 +861,26 @@ export const FEATURES: Features = { ...FEATURE_DEFAULTS };
  *  read the aliases above on the main thread. HILLSHADE / MESH / INVARIANTS are fixed constants, not
  *  params, so generation keeps importing them directly.
  *  ===================================================================== */
+// Which dial groups cross the worker seam into terrain GENERATION. This ONE list is the single
+// source for both the TerrainParams type and snapshotParams below, so a new generation group is a
+// single edit (the type + the snapshot derive from it and can't drift out of sync).
+//   GENERATION (here, snapshotted to the worker): the terrain-shape + climate fields.
+//   RENDER-LIVE (deliberately absent — read straight off the aliases on the main thread):
+//     COUNTRY / CITY / POPULATION (the cheap feature layer) and RIVERS (routed on the main thread).
+export const GENERATION_GROUPS = {
+  CONTINENTS,
+  OCEANS,
+  COASTS,
+  TECTONICS,
+  MOUNTAINS,
+  MOISTURE,
+  ICE,
+} as const;
+type GenGroups = typeof GENERATION_GROUPS;
+
 export type TerrainParams = {
-  CONTINENT: DialValues<typeof CONTINENT>;
-  OCEAN: DialValues<typeof OCEAN>;
-  COAST: DialValues<typeof COAST>;
-  TECTONIC: DialValues<typeof TECTONIC>;
-  MOUNTAIN: DialValues<typeof MOUNTAIN>;
-  MOISTURE: DialValues<typeof MOISTURE>;
-  ICE: DialValues<typeof ICE>;
-  features: Features;
-};
+  [K in keyof GenGroups]: DialValues<GenGroups[K]>;
+} & { features: Features };
 
 // The plain-value shape of a descriptor group: each leaf's `.value` (number or Range) — the form
 // generation consumes, never the descriptors themselves.
@@ -841,16 +900,14 @@ function dialValues<G extends Record<string, DialLeaf>>(group: G): DialValues<G>
  *  descriptor's `.value` is copied out (ranges deep-copied), so later tuning of the globals can't
  *  mutate a snapshot already handed to the generator. */
 export function snapshotParams(): TerrainParams {
-  return {
-    CONTINENT: dialValues(CONTINENT),
-    OCEAN: dialValues(OCEAN),
-    COAST: dialValues(COAST),
-    TECTONIC: dialValues(TECTONIC),
-    MOUNTAIN: dialValues(MOUNTAIN),
-    MOISTURE: dialValues(MOISTURE),
-    ICE: dialValues(ICE),
-    features: { ...FEATURES },
-  };
+  // Iterate the single GENERATION_GROUPS source instead of re-listing groups: adding a group there
+  // flows here for free. The one cast bridges the loop's per-key union back to the mapped shape.
+  const groups = Object.fromEntries(
+    (Object.keys(GENERATION_GROUPS) as (keyof GenGroups)[]).map(
+      (key) => [key, dialValues(GENERATION_GROUPS[key])] as const
+    )
+  ) as { [K in keyof GenGroups]: DialValues<GenGroups[K]> };
+  return { ...groups, features: { ...FEATURES } };
 }
 
 // (Layer definitions live above MAP_DEFAULTS now — `defaultOn` there is the single source that the

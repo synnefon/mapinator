@@ -1,5 +1,4 @@
-import { Quat } from "../common/3DMath";
-import { globeRadiusPx } from "./GlobeRenderer";
+import type { Projector } from "./projection";
 
 // The arrows are a "tectonic plates" annotation drawn on a 2D overlay canvas layered over the globe
 // (the WebGL map canvas can't share a 2D context). The arrow GEOMETRY — tail positions + tangent
@@ -8,7 +7,6 @@ import { globeRadiusPx } from "./GlobeRenderer";
 const SHAFT_PX = 22; // on-screen arrow length, FIXED px — so arrows never balloon as you zoom in
 const HEAD_FRAC = 0.42; // arrowhead length ÷ shaft length
 const HEAD_HALF = 0.5; // half-angle (rad) of the arrowhead barbs off the shaft
-const MIN_FRONT_Z = 0.04; // cull arrows whose tail sits at/behind the visible limb
 const DIR_EPSILON = 0.1; // skip arrows whose motion points ~straight at/away from camera (no 2D dir)
 const HEAD_LEN = SHAFT_PX * HEAD_FRAC;
 // Drawn twice for contrast over any terrain: a dark casing, then a light core on top.
@@ -27,48 +25,33 @@ export function drawPlateArrows(
   canvas: HTMLCanvasElement,
   positions: Float32Array,
   directions: Float32Array,
-  orientation: Quat,
-  zoom: number,
-  offsetFraction: number
+  proj: Projector
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const { width: W, height: H } = canvas;
-  ctx.clearRect(0, 0, W, H);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (positions.length === 0) return;
 
-  const radius = globeRadiusPx(canvas, zoom);
-  const offX = offsetFraction * W;
-  const cx = W / 2;
-  const cy = H / 2;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
   for (let i = 0; i < positions.length; i += 3) {
-    const tail = Quat.rotate(orientation, {
-      x: positions[i],
-      y: positions[i + 1],
-      z: positions[i + 2],
-    });
-    if (tail.z < MIN_FRONT_Z) continue; // back hemisphere / right at the limb
+    const tail = proj.project({ x: positions[i], y: positions[i + 1], z: positions[i + 2] });
+    if (!tail.front) continue; // back hemisphere / right at the limb
 
     // Project the tangent to screen space; skip arrows pointing nearly at/away from the camera
     // (their 2D direction is ill-defined there).
-    const rd = Quat.rotate(orientation, {
-      x: directions[i],
-      y: directions[i + 1],
-      z: directions[i + 2],
-    });
+    const rd = proj.projectDir({ x: directions[i], y: directions[i + 1], z: directions[i + 2] });
     let sdx = rd.x;
-    let sdy = -rd.y; // screen y is flipped
+    let sdy = rd.y; // projectDir already flips screen y
     const sl = Math.hypot(sdx, sdy);
     if (sl < DIR_EPSILON) continue;
     sdx /= sl;
     sdy /= sl;
 
     // Head at the boundary probe; shaft trails back into the owning plate (no overhang past it).
-    const hx = cx + tail.x * radius + offX;
-    const hy = cy - tail.y * radius;
+    const hx = tail.x;
+    const hy = tail.y;
     const tx = hx - sdx * SHAFT_PX;
     const ty = hy - sdy * SHAFT_PX;
 

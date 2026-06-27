@@ -1,7 +1,7 @@
 import { createNoise3D } from "simplex-noise";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeRNG, type RNG } from "../common/random";
-import { snapshotParams, TECTONIC } from "../common/settings";
+import { snapshotParams, TECTONICS } from "../common/settings";
 import { Tectonics } from "./Tectonics";
 
 // A uniform random point on the unit sphere (mirrors Tectonics' own randomUnit, for test points).
@@ -46,19 +46,19 @@ function trueBoundaryDistance(
 describe("Tectonics.upliftAt — boundary-distance correctness", () => {
   // Disable the domain warp so test points stay in raw sphere coords; pin a known plate count.
   const saved = {
-    sinuosity: TECTONIC.SINUOSITY.value,
-    plateCount: TECTONIC.PLATE_COUNT.value,
-    rangeWidth: TECTONIC.RANGE_WIDTH.value,
+    sinuosity: TECTONICS.SINUOSITY.value,
+    plateCount: TECTONICS.PLATE_COUNT.value,
+    rangeWidth: TECTONICS.RANGE_WIDTH.value,
   };
   beforeAll(() => {
-    TECTONIC.SINUOSITY.value = 0;
-    TECTONIC.PLATE_COUNT.value = 14;
-    TECTONIC.RANGE_WIDTH.value = 0.3;
+    TECTONICS.SINUOSITY.value = 0;
+    TECTONICS.PLATE_COUNT.value = 14;
+    TECTONICS.RANGE_WIDTH.value = 0.3;
   });
   afterAll(() => {
-    TECTONIC.SINUOSITY.value = saved.sinuosity;
-    TECTONIC.PLATE_COUNT.value = saved.plateCount;
-    TECTONIC.RANGE_WIDTH.value = saved.rangeWidth;
+    TECTONICS.SINUOSITY.value = saved.sinuosity;
+    TECTONICS.PLATE_COUNT.value = saved.plateCount;
+    TECTONICS.RANGE_WIDTH.value = saved.rangeWidth;
   });
 
   const make = () => {
@@ -70,7 +70,7 @@ describe("Tectonics.upliftAt — boundary-distance correctness", () => {
   it("never raises a range beyond half the RANGE_WIDTH belt (the ballooning bug)", () => {
     const tec = make();
     const seeds = tec.seeds();
-    const reach = Math.max(0.5 * TECTONIC.RANGE_WIDTH.value, 1e-6);
+    const reach = Math.max(0.5 * TECTONICS.RANGE_WIDTH.value, 1e-6);
     const rng = makeRNG("uplift-samples");
 
     let raised = 0;

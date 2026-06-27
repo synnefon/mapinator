@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Language } from "../../common/language";
-import { OCEAN, snapshotParams, type MapSettings } from "../../common/settings";
+import { OCEANS, snapshotParams, type MapSettings } from "../../common/settings";
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
 import { detectComponents } from "./detect";
 import { computeMapFeatures, type MapFeature } from "./index";
+import { EMPTY_RIVERS } from "./rivers";
 
 // Validity checks against a REAL generated globe (not synthetic fixtures): the feature pipeline runs
 // end to end and must hold these invariants.
@@ -14,9 +15,9 @@ const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
 const SEED = "feature-validity-seed";
 const POOL: Language[] = ["GREEK", "LATIN", "NORSE", "TAMIL"];
 const buildMap = () => new MapGenerator(SEED, PARAMS).generateMap(SETTINGS);
-const seaLevel = OCEAN.SEA_LEVEL.value;
+const seaLevel = OCEANS.SEA_LEVEL.value;
 const run = (map: ReturnType<typeof buildMap>) =>
-  computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"), POOL);
+  computeMapFeatures(map, seaLevel, "GREEK", SEED, new NameGenerator("f"), POOL, PARAMS, EMPTY_RIVERS);
 const isWaterKind = (k: MapFeature["kind"]) =>
   k === "OCEAN" || k === "SEA" || k === "BAY" || k === "LAKE";
 

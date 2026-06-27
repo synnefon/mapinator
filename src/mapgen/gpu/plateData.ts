@@ -5,7 +5,7 @@ import type { TerrainParams } from "../../common/settings";
 // extracted so the GPU can upload the SAME plate seeds + Euler poles the CPU uses → identical mountain
 // placement. K is tiny (PLATE_COUNT, ~22), uploaded as uniform vec3 arrays. A test pins this to
 // Tectonics.seeds() so the two builds can't drift.
-const TECTONIC_SEED_SUFFIX = "/tectonics";
+const TECTONICS_SEED_SUFFIX = "/tectonics";
 
 function randomUnit(rng: RNG): [number, number, number] {
   const z = 2 * rng() - 1;
@@ -23,8 +23,8 @@ export type PlateData = {
 /** Build the plate seed + Euler-pole set for `seed`/`params`, identical to Tectonics' internal build
  *  (same seeded RNG, same interleaving: per plate a seed `randomUnit` then a pole `randomUnit`). */
 export function buildPlateData(seed: string, params: TerrainParams): PlateData {
-  const count = Math.max(2, Math.round(params.TECTONIC.PLATE_COUNT));
-  const rng = makeRNG(seed + TECTONIC_SEED_SUFFIX);
+  const count = Math.max(2, Math.round(params.TECTONICS.PLATE_COUNT));
+  const rng = makeRNG(seed + TECTONICS_SEED_SUFFIX);
   const seeds = new Float32Array(3 * count);
   const poles = new Float32Array(3 * count);
   for (let i = 0; i < count; i++) {

@@ -284,41 +284,41 @@ export class GpuField {
       (this.loc[name] ??= gl.getUniformLocation(this.program, name));
     const f = (name: string, v: number): void => gl.uniform1f(u(name), v);
     // CONTINENT
-    f("uContWavelength", p.CONTINENT.WAVELENGTH);
-    f("uContAmplitude", p.CONTINENT.AMPLITUDE);
-    f("uContOctaves", p.CONTINENT.OCTAVES);
-    f("uContGain", p.CONTINENT.GAIN);
-    f("uContLacunarity", p.CONTINENT.LACUNARITY);
-    f("uContWarp", p.CONTINENT.WARP);
-    f("uBaseHeight", p.CONTINENT.BASE_HEIGHT);
-    f("uElevationContrast", p.CONTINENT.ELEVATION_CONTRAST);
+    f("uContWavelength", p.CONTINENTS.WAVELENGTH);
+    f("uContAmplitude", p.CONTINENTS.AMPLITUDE);
+    f("uContOctaves", p.CONTINENTS.OCTAVES);
+    f("uContGain", p.CONTINENTS.GAIN);
+    f("uContLacunarity", p.CONTINENTS.LACUNARITY);
+    f("uContWarp", p.CONTINENTS.WARP);
+    f("uBaseHeight", p.CONTINENTS.BASE_HEIGHT);
+    f("uElevationContrast", p.CONTINENTS.ELEVATION_CONTRAST);
     // OCEAN
-    f("uSeaLevel", p.OCEAN.SEA_LEVEL);
-    f("uOceanWavelength", p.OCEAN.WAVELENGTH);
-    f("uOceanAmplitude", p.OCEAN.AMPLITUDE);
-    f("uOceanOctaves", p.OCEAN.OCTAVES);
-    f("uOceanGain", p.OCEAN.GAIN);
-    f("uOceanLacunarity", p.OCEAN.LACUNARITY);
-    gl.uniform2f(u("uShelf"), p.OCEAN.SHELF[0], p.OCEAN.SHELF[1]);
+    f("uSeaLevel", p.OCEANS.SEA_LEVEL);
+    f("uOceanWavelength", p.OCEANS.WAVELENGTH);
+    f("uOceanAmplitude", p.OCEANS.AMPLITUDE);
+    f("uOceanOctaves", p.OCEANS.OCTAVES);
+    f("uOceanGain", p.OCEANS.GAIN);
+    f("uOceanLacunarity", p.OCEANS.LACUNARITY);
+    gl.uniform2f(u("uShelf"), p.OCEANS.SHELF[0], p.OCEANS.SHELF[1]);
     // COAST
-    f("uCoastWavelength", p.COAST.WAVELENGTH);
-    f("uCoastAmplitude", p.COAST.AMPLITUDE);
-    f("uCoastOctaves", p.COAST.OCTAVES);
-    f("uCoastGain", p.COAST.GAIN);
-    f("uCoastLacunarity", p.COAST.LACUNARITY);
+    f("uCoastWavelength", p.COASTS.WAVELENGTH);
+    f("uCoastAmplitude", p.COASTS.AMPLITUDE);
+    f("uCoastOctaves", p.COASTS.OCTAVES);
+    f("uCoastGain", p.COASTS.GAIN);
+    f("uCoastLacunarity", p.COASTS.LACUNARITY);
     // MOUNTAIN
-    f("uRidgeWavelength", p.MOUNTAIN.RIDGE_WAVELENGTH);
-    f("uRidgeAmplitude", p.MOUNTAIN.RIDGE_AMPLITUDE);
-    f("uMountainOctaves", p.MOUNTAIN.OCTAVES);
-    f("uMountainGain", p.MOUNTAIN.GAIN);
-    f("uMountainLacunarity", p.MOUNTAIN.LACUNARITY);
-    f("uSwellFraction", p.MOUNTAIN.SWELL_FRACTION);
-    // TECTONIC
-    f("uRangeWidth", p.TECTONIC.RANGE_WIDTH);
-    f("uSinuosity", p.TECTONIC.SINUOSITY);
-    f("uConvergenceThreshold", p.TECTONIC.CONVERGENCE_THRESHOLD);
-    f("uVariation", p.TECTONIC.VARIATION);
-    f("uCoastBias", p.TECTONIC.COAST_BIAS);
+    f("uRidgeWavelength", p.MOUNTAINS.RIDGE_WAVELENGTH);
+    f("uRidgeAmplitude", p.MOUNTAINS.RIDGE_AMPLITUDE);
+    f("uMountainOctaves", p.MOUNTAINS.OCTAVES);
+    f("uMountainGain", p.MOUNTAINS.GAIN);
+    f("uMountainLacunarity", p.MOUNTAINS.LACUNARITY);
+    f("uSwellFraction", p.MOUNTAINS.SWELL_FRACTION);
+    // TECTONICS
+    f("uRangeWidth", p.TECTONICS.RANGE_WIDTH);
+    f("uSinuosity", p.TECTONICS.SINUOSITY);
+    f("uConvergenceThreshold", p.TECTONICS.CONVERGENCE_THRESHOLD);
+    f("uVariation", p.TECTONICS.VARIATION);
+    f("uCoastBias", p.TECTONICS.COAST_BIAS);
     gl.uniform1i(u("uPlateCount"), plateCount);
     // MOISTURE
     f("uMoistWavelength", p.MOISTURE.WAVELENGTH);

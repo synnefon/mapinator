@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Language } from "../../common/language";
-import { OCEAN, snapshotParams, type MapSettings } from "../../common/settings";
+import { OCEANS, snapshotParams, type MapSettings } from "../../common/settings";
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
@@ -11,10 +11,10 @@ const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
 const SEED = "country-validity-seed";
 const MAP_LANG: Language = "GREEK";
 const POOL: Language[] = ["LATIN", "NORSE", "TAMIL", "RUSSIAN"]; // deliberately excludes the map language
-const seaLevel = OCEAN.SEA_LEVEL.value;
+const seaLevel = OCEANS.SEA_LEVEL.value;
 const buildMap = () => new MapGenerator(SEED, PARAMS).generateMap(SETTINGS);
 const assign = (map: ReturnType<typeof buildMap>) =>
-  assignCountries(map, seaLevel, buildAdjacency(map), SEED, MAP_LANG, POOL, new NameGenerator("c"));
+  assignCountries(map, map.reportElevation, seaLevel, buildAdjacency(map), SEED, MAP_LANG, POOL, new NameGenerator("c"));
 
 describe("assignCountries", () => {
   it("assigns every land cell to a country and leaves ocean cells country-less", () => {
@@ -70,7 +70,7 @@ describe("largestBorderingCountry", () => {
   it("returns a valid country for a coastal water cell", () => {
     const map = buildMap();
     const adjacency = buildAdjacency(map);
-    const data = assignCountries(map, seaLevel, adjacency, SEED, MAP_LANG, POOL, new NameGenerator("c"));
+    const data = assignCountries(map, map.reportElevation, seaLevel, adjacency, SEED, MAP_LANG, POOL, new NameGenerator("c"));
     // a water cell adjacent to land (a coast) must resolve to some bordering country
     let coastWater = -1;
     for (let i = 0; i < map.cellCount && coastWater < 0; i++) {

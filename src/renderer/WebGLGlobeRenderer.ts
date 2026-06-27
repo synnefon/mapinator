@@ -1,7 +1,7 @@
 import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { CONTINENT, LOD, type MapSettings, OCEAN, type TerrainParams } from "../common/settings";
+import { CONTINENTS, LOD, type MapSettings, OCEANS, type TerrainParams } from "../common/settings";
 import { GpuField } from "../mapgen/gpu/GpuField";
 import type { PlateData } from "../mapgen/gpu/plateData";
 import { computeCellColors, type ChoroplethTint } from "./BiomeColor";
@@ -505,8 +505,8 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.uniform1f(p.uDepthBias, PATCH_DEPTH_BIAS); // overlay: bias toward the camera over the base
     gl.uniform1f(p.uOffsetX, 2 * LOD.GLOBE_OFFSET_FRACTION);
     gl.uniform1f(p.uAmbient, AMBIENT);
-    gl.uniform1f(p.uElevationContrast, CONTINENT.ELEVATION_CONTRAST.value);
-    gl.uniform1f(p.uSeaLevel, OCEAN.SEA_LEVEL.value);
+    gl.uniform1f(p.uElevationContrast, CONTINENTS.ELEVATION_CONTRAST.value);
+    gl.uniform1f(p.uSeaLevel, OCEANS.SEA_LEVEL.value);
     gl.uniform1i(p.uFieldWidth, field.width);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, geom.posBuf);

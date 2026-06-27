@@ -142,10 +142,10 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
   let lodQueue: { key: string; level: number; center: Vec3 }[] = []; // missing rungs, coarse→fine
   const lodActive = new Set<string>(); // rung keys currently in flight (≤ maxInFlight at once)
 
-  // Orthographic globe radius (px) at a zoom — globeRadiusPx only reads width/height, so a plain
-  // {width,height} stands in for the canvas (keeps the pipeline DOM-free + testable).
+  // Orthographic globe radius (px) at a zoom — globeRadiusPx takes just {width,height}, so the view
+  // stands in for the canvas (keeps the pipeline DOM-free + testable).
   const radiusPx = (v: LodView, zoom: number): number =>
-    globeRadiusPx({ width: v.width, height: v.height } as HTMLCanvasElement, zoom);
+    globeRadiusPx({ width: v.width, height: v.height }, zoom);
 
   // Generation spec for a rung at a centre. Rung 0 (the globe) is the ONE place its "globe-ness"
   // lives: it spans the whole sphere (halfAngle π → full mesh in the worker) and takes its density

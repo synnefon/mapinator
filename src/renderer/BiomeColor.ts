@@ -21,7 +21,7 @@ import {
   quantizeColor,
 } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { CONTINENT, FEATURES, OCEAN } from "../common/settings";
+import { CONTINENTS, FEATURES, OCEANS } from "../common/settings";
 import { applyContrast, clamp } from "../common/util";
 
 /** ================================================
@@ -50,7 +50,7 @@ function shapeForRules(
   // SAME split generation made; thresholding against the RAW waterline only matched while WATERLINE ≈
   // the 0.5 contrast pivot, so lowering it painted generator-made land as ocean. Below → ocean depth
   // [-1,0], above → land height [0,1] — so land keeps its full band range.
-  const waterline = applyContrast(OCEAN.SEA_LEVEL.value, CONTINENT.ELEVATION_CONTRAST.value);
+  const waterline = applyContrast(OCEANS.SEA_LEVEL.value, CONTINENTS.ELEVATION_CONTRAST.value);
   let e =
     elevation < waterline
       ? elevation / Math.max(waterline, EPSILON) - 1
@@ -76,10 +76,10 @@ export function terrainClassOf(
   moisture: number,
   rainfall: number
 ): { family: ElevationFamily; band: MoistureBand } | null {
-  if (rawElevation < OCEAN.SEA_LEVEL.value) return null; // ocean — same waterline split as generation
+  if (rawElevation < OCEANS.SEA_LEVEL.value) return null; // ocean — same waterline split as generation
   const shapedRain = Math.max(RAINFALL_MIN, expCurve(1 - rainfall, EXP_CURVE_K) * RAINFALL_SCALE);
   const { elevation: e, moisture: m } = shapeForRules(
-    applyContrast(rawElevation, CONTINENT.ELEVATION_CONTRAST.value),
+    applyContrast(rawElevation, CONTINENTS.ELEVATION_CONTRAST.value),
     moisture,
     shapedRain
   );
@@ -198,7 +198,7 @@ export function computeColorsFromFields(
   return internPalette(count, (i) => {
     const biome = colorAt(
       theme,
-      applyContrast(elevation[i], CONTINENT.ELEVATION_CONTRAST.value),
+      applyContrast(elevation[i], CONTINENTS.ELEVATION_CONTRAST.value),
       moisture[i],
       rainfall
     );

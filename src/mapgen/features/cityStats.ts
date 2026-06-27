@@ -1,10 +1,10 @@
 import type { ElevationFamily, MoistureBand } from "../../common/biomes";
 import { type RNG } from "../../common/random";
 import { terrainClassOf } from "../../renderer/BiomeColor";
-import type { CityTier } from "./cities";
+import type { CityTier, CityWaterKind } from "./cities";
 import { generateFunFact } from "./funFact";
 import { type Tags } from "./government";
-import { deriveIndustries } from "./industries";
+import { deriveIndustries, industryTagsOf, type IndustryTag } from "./industries";
 
 
 // Mount Everest anchors the top of the scale: a cell at the maximum normalised elevation (1.0) reads
@@ -53,9 +53,11 @@ export type CityContext = {
   coastDist: number; // graph hops to the nearest water of any kind; -1 if the cell itself is water
   seaDist: number; // graph hops to the nearest LARGE body of water (sea/ocean); -1 if none reachable
   coastal: boolean; // the cell TOUCHES a large body of water (the sea) — gates maritime industry + flavour
-  nearWater: boolean; // the cell TOUCHES water of any kind (lakes, rivers included)
+  nearWater: boolean; // by water of any kind: the cell touches a lake/sea OR sits within reach of a LARGE river
+  waterKind: CityWaterKind; // the specific water the city sits ON (ocean/river/lake/none) — the river/lake flavour split
   govTags: Tags; // the owning country's government's semantic tags
   industries: string[]; // the city's derived industries; populated before generateFunFact so facts can gate on them
+  industryTags: IndustryTag[]; // the union of those industries' semantic tags — what `anyIndustryTags` gates on
   countryName: string;
   rng: RNG;
 };
@@ -75,6 +77,7 @@ export function cityProfile(args: {
   seaLevel: number;
   coastDist: number;
   seaDist: number;
+  waterKind: CityWaterKind; // the water the city sits ON (ocean/river/lake/none) — drives coastal/nearWater + the river/lake split
   population: number;
   tier: CityTier;
   isCapital: boolean;
@@ -100,16 +103,19 @@ export function cityProfile(args: {
     biome: biomeName(family, band, args.ice),
     coastDist: args.coastDist,
     seaDist: args.seaDist,
-    coastal: args.seaDist === 0,
-    nearWater: args.coastDist === 0,
+    coastal: args.waterKind === "ocean",
+    nearWater: args.waterKind !== "none",
+    waterKind: args.waterKind,
     govTags: args.govTags,
     industries: [],
+    industryTags: [],
     countryName: args.countryName,
     rng: args.rng,
   };
-  // Industries first, then fold them into the context so fun facts can gate on the city's ACTUAL trades
-  // (not just the government's Society.Industrial tag) — keeps the flavour line in step with the industries line.
+  // Industries first, then fold them (and their semantic tags) into the context so fun facts can gate on
+  // the city's ACTUAL trades — both by name (`industries`) and by category (`anyIndustryTags`).
   const industries = deriveIndustries(ctx);
   ctx.industries = industries;
+  ctx.industryTags = industryTagsOf(industries);
   return { elevationMeters: meters, industries, funFact: generateFunFact(ctx, args.usedFunFacts) };
 }

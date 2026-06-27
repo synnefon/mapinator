@@ -1,15 +1,20 @@
 import { Vec3 } from "../../common/3DMath";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, type RNG } from "../../common/random";
-import { CITY } from "../../common/settings";
+import { CITIES, POPULATION } from "../../common/settings";
 import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { NameGenerator } from "../NameGenerator";
 import { coastDistance, waterHopDistance } from "./adjacency";
 import { cityProfile } from "./cityStats";
 import type { Country } from "./countries";
 import { detectComponents } from "./detect";
+import type { RiverData } from "./rivers";
 
 export type CityTier = "big" | "medium" | "small";
+
+// The water a city sits on, by priority sea > large river > other water (lake/pond) > none. Drives the
+// riverside/coastal flavour split and (currently) a debug tint on the marker. See assignCities.
+export type CityWaterKind = "ocean" | "river" | "lake" | "none";
 
 /** A city marker: a point inside a country, sized + zoom-gated by tier, with a generated name and an
  *  estimated population (its slice of the country's urban total). `anchor` is a unit-sphere point.
@@ -27,6 +32,7 @@ export type City = {
   industries: string[]; // 1–3 leading industries (biome + government tags + size + water proximity)
   elevationMeters: number; // realistic elevation, Mount-Everest-anchored
   funFact: string; // short, deterministic flavour line
+  waterKind: CityWaterKind; // nearest water, by priority — for the flavour split + a debug marker tint
 };
 
 // Tiering grounded in ~1400 sizes: a handful of "great cities" (≳75k — Paris, Cairo, Hangzhou…), a
@@ -46,22 +52,50 @@ const CITY_COUNT_SCALE = 250_000; // city count ≈ √(urban population / scale
 // The urban fraction the count scale is calibrated at: at this fraction the count matches the original
 // √(country population / scale), so the default map is unchanged while raising URBAN_FRACTION adds cities.
 const URBAN_FRACTION_REF = 0.1;
-const MAX_PLACEMENT_TRIES = 5; // distinct sites a city slot tries before giving up (too-high ground)
 // The capital is one of the largest few cities, with these odds by size rank (biggest first).
 const CAPITAL_RANK_WEIGHTS = [0.5, 0.25, 0.125, 0.125];
 
-// Coastal pull: on Earth ~40% of people live within 100 km of the coast and ~15% within 10 km (on just
-// ~4% of land), so cities cluster hard by the sea. We weight a cell's chance of hosting a city by its
-// distance — in cell hops — to the nearest water, decaying over COAST_FALLOFF hops. SPREAD2 then pushes
-// chosen cities apart so they string along the coast instead of stacking on the single best spot.
-const COASTAL_PULL = 8; // a shore cell is up to X times as likely to host a city as the deep interior
-const COAST_FALLOFF = 1.2; // hops over which the coastal pull decays (tighter ⇒ cities hug the water)
+// Cities are placed in three buckets, each RIGHT ON its feature so the marker visibly sits there (rather
+// than near it): a river share, a coastal share, and an interior remainder (CITY.{RIVER,COASTAL}_FRACTION).
+// SPREAD2 then pushes the chosen sites apart so they string ALONG the water instead of stacking on one spot.
 const SPREAD2 = 0.0025; // squared-chord spacing (~0.07 rad ≈ 450 km) the spread suppression falls off over
 
 // A water body counts as "large" (a sea/ocean, not a lake/pond) if it's the biggest water body OR spans
 // at least this fraction of all cells. Maritime industry + flavour key off proximity to large water, so a
 // city one hop from a pond isn't "coastal". Resolution-independent (a fraction of the cell count).
 const LARGE_WATER_FRAC = 0.01;
+
+// River buckets work off the DRAWN network (rivers.ts) via a spatial hash, all in base cell-spacings: a
+// vertex within ON makes its cell river-eligible (the river runs through it); a placed river city snaps to
+// a vertex within SNAP; the hash bucket spans GRID (≥ SNAP, so the 3×3×3 scan never misses a near vertex).
+const RIVER_ON_CELLS = 0.6;
+const RIVER_SNAP_CELLS = 1.0;
+const RIVER_GRID_CELLS = 1.5;
+
+// === Habitability — cities avoid deserts + ice ===
+// A per-cell weight folded into EVERY placement pool, so cities prefer wetter, ice-free land. Both
+// penalties are MULTIPLIERS floored above 0, so a desert / ice city stays possible, just rarer — never
+// hard-excluded. Strength is dialled live by CITY.DESERT_AVERSION / CITY.ICE_AVERSION.
+const DRY_MOISTURE = 0.38; // moisture below this reads as "dry"; the dryness penalty ramps in below it (0 = bone dry)
+const DRY_WATER_REACH = 3; // hops to water within which the DRYNESS penalty is fully waived — desert coasts, riverbanks + oases settle freely
+export const HABITABILITY_FLOOR = 0.04; // a cell never drops below this weight: the bone-dry, fully-iced far interior is rare, not banned
+
+/** A cell's city-placement habitability ∈ [HABITABILITY_FLOOR, 1]. Two FLOORED multipliers, so neither
+ *  penalty is ever absolute: a DRYNESS penalty (moisture below DRY_MOISTURE) that `nearWater` ∈ [0,1]
+ *  waives toward water — a desert coast / riverbank / oasis settles freely — and an ICE penalty that
+ *  bites everywhere. Pure + exported so the placement weighting is unit-testable. */
+export function habitabilityWeight(
+  moisture: number,
+  ice: number,
+  nearWater: number,
+  desertAversion: number,
+  iceAversion: number
+): number {
+  const dryness = Math.max(0, 1 - moisture / DRY_MOISTURE); // 1 = bone dry, 0 = at/above the wet threshold
+  const desertFactor = 1 - desertAversion * dryness * (1 - nearWater); // dry FAR from water → penalised; near water → waived
+  const iceFactor = 1 - iceAversion * ice;
+  return Math.max(HABITABILITY_FLOOR, desertFactor * iceFactor);
+}
 
 const tierOf = (population: number, isCapital: boolean): CityTier =>
   isCapital || population >= BIG_POP ? "big" : population >= MEDIUM_POP ? "medium" : "small";
@@ -72,56 +106,182 @@ const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
   z: map.sites[3 * cell + 2],
 });
 
-/** A city marker position: a sea-shore cell SNAPS to the coast — the midpoint of the arc to its NEAREST
- *  bordering large-water cell. That midpoint lies on the shared Voronoi edge (the land/water boundary), so
- *  the marker sits right at the coastline, touching the sea and never drifting over open water. Snapping to
- *  the single nearest sea cell (not the mean of all) is what makes this exact: averaging several sea cells
- *  aims past any one shared edge, so a fractional pull toward it could overshoot into the water. A cell that
- *  borders no large water keeps its centre. */
-const coastAnchor = (map: GlobeMap, adjacency: number[][], cell: number, largeWater: Uint8Array): Vec3 => {
+// Marching the centre→sea arc to find the shore (fraction of the way to the sea cell's centre). The
+// COARSE shared edge sits at 0.5, but the RENDERED coast is the FINE field crossing sea level, which can
+// fall either side of it — so we scan out from the centre and stop at the first water sample (the coast
+// nearest the cell), refining the crossing by bisection. Capped short of the sea cell's open water.
+const COAST_MARCH_STEP = 0.04;
+const COAST_MARCH_MAX = 0.6; // a touch past the coarse edge (0.5) — allow a modest seaward fine-coast bulge
+const COAST_BISECT_STEPS = 5; // refine the land/water crossing to ≈ STEP/32 of the arc
+
+/** A city marker position at the SHORE: from the cell centre we march toward the nearest bordering WATER
+ *  cell (`isWaterTarget`) and stop just on the LAND side of where the FINE elevation field crosses sea level
+ *  — the exact waterline the renderer draws (`elev >= seaLevel` per fragment). So the marker sits right at
+ *  the water, never stranded out in it (the coarse cell edge often falls the wrong side of the fine coast).
+ *  `isWaterTarget` selects which neighbours to head for — the sea (large water) or any water (lake too). A
+ *  cell bordering no such water keeps its centre. */
+const coastAnchor = (
+  map: GlobeMap,
+  adjacency: number[][],
+  cell: number,
+  isWaterTarget: (nb: number) => boolean,
+  fineLandAt: (p: Vec3) => boolean
+): Vec3 => {
   const c = siteVec(map, cell);
   let best = -1;
   let bestDot = -Infinity;
   for (const nb of adjacency[cell]) {
-    if (largeWater[nb] !== 1) continue;
+    if (!isWaterTarget(nb)) continue;
     const dot = c.x * map.sites[3 * nb] + c.y * map.sites[3 * nb + 1] + c.z * map.sites[3 * nb + 2];
     if (dot > bestDot) {
-      bestDot = dot; // largest dot ⇒ smallest angle ⇒ nearest sea cell
+      bestDot = dot; // largest dot ⇒ smallest angle ⇒ nearest water cell
       best = nb;
     }
   }
-  if (best < 0) return c; // not on a large-water shore — keep the cell centre
-  // normalize(a + b) is the midpoint of the arc between unit vectors a and b — here, the point on the
-  // land/water boundary between this cell and its nearest sea cell.
-  return Vec3.normalize({
-    x: c.x + map.sites[3 * best],
-    y: c.y + map.sites[3 * best + 1],
-    z: c.z + map.sites[3 * best + 2],
-  });
+  if (best < 0) return c; // not on this kind of shore — keep the cell centre
+  const s: Vec3 = { x: map.sites[3 * best], y: map.sites[3 * best + 1], z: map.sites[3 * best + 2] };
+  // The point a fraction `t` from the cell centre toward the water cell's centre, re-projected to the sphere.
+  const at = (t: number): Vec3 =>
+    Vec3.normalize({ x: c.x + t * (s.x - c.x), y: c.y + t * (s.y - c.y), z: c.z + t * (s.z - c.z) });
+  if (!fineLandAt(c)) return c; // centre itself reads as water (a borderline cell) — leave it put
+  let lo = 0; // greatest t known to be on fine LAND
+  let hi = -1; // least t found on fine WATER (-1 ⇒ none within the cap)
+  for (let t = COAST_MARCH_STEP; t <= COAST_MARCH_MAX + 1e-9; t += COAST_MARCH_STEP) {
+    if (fineLandAt(at(t))) lo = t;
+    else {
+      hi = t;
+      break;
+    }
+  }
+  if (hi < 0) return at(lo); // no water within the cap — sit at the most-seaward land we verified
+  for (let k = 0; k < COAST_BISECT_STEPS; k++) {
+    const mid = (lo + hi) / 2;
+    if (fineLandAt(at(mid))) lo = mid;
+    else hi = mid;
+  }
+  return at(lo); // just on the land side of the fine waterline — at the coast, touching the water
 };
 
+// === Drawn-river lookup: a spatial hash of the rendered network's vertices (≥ the strength floor) ===
+// Cities are placed ON + snap to the rivers the renderer actually draws, so a river city visibly sits on a
+// visible river. A vertex counts once its flow strength ≥ CITY.RIVER_MIN_STRENGTH (widths ∈ [0,1]); the
+// river bucket then weights by strength, so big rivers + their (highest-strength) mouths win.
+type RiverGrid = { pos: Float32Array; width: Float32Array; inv: number; buckets: Map<string, number[]> };
+
+const gridKey = (gx: number, gy: number, gz: number): string => `${gx}|${gy}|${gz}`;
+
+/** Hash the drawn river vertices (strength ≥ the floor) into a cube grid of edge `cellSize`; null if none. */
+function buildRiverGrid(rivers: RiverData, cellSize: number): RiverGrid | null {
+  const { positions, widths } = rivers;
+  const minStrength = CITIES.RIVER_MIN_STRENGTH.value;
+  const inv = 1 / cellSize;
+  const buckets = new Map<string, number[]>();
+  for (let i = 0; i < widths.length; i++) {
+    if (widths[i] < minStrength) continue;
+    const k = gridKey(Math.round(positions[3 * i] * inv), Math.round(positions[3 * i + 1] * inv), Math.round(positions[3 * i + 2] * inv));
+    const b = buckets.get(k);
+    if (b) b.push(i);
+    else buckets.set(k, [i]);
+  }
+  return buckets.size ? { pos: positions, width: widths, inv, buckets } : null;
+}
+
+/** Nearest drawn large-river vertex to unit point `p` within the 3×3×3 bucket neighbourhood: its squared
+ *  chord distance, position, and flow strength (width) — or null if none near / no grid. */
+function nearestRiverVertex(p: Vec3, grid: RiverGrid | null): { chord2: number; pt: Vec3; width: number } | null {
+  if (!grid) return null;
+  const { pos, width, inv, buckets } = grid;
+  const gx = Math.round(p.x * inv);
+  const gy = Math.round(p.y * inv);
+  const gz = Math.round(p.z * inv);
+  let bi = -1;
+  let best = Infinity;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const b = buckets.get(gridKey(gx + dx, gy + dy, gz + dz));
+        if (!b) continue;
+        for (const i of b) {
+          const ex = pos[3 * i] - p.x;
+          const ey = pos[3 * i + 1] - p.y;
+          const ez = pos[3 * i + 2] - p.z;
+          const d2 = ex * ex + ey * ey + ez * ez;
+          if (d2 < best) {
+            best = d2;
+            bi = i;
+          }
+        }
+      }
+    }
+  }
+  return bi < 0 ? null : { chord2: best, pt: { x: pos[3 * bi], y: pos[3 * bi + 1], z: pos[3 * bi + 2] }, width: width[bi] };
+}
+
 /**
- * Place + size the cities of every country. Each country devotes CITY.URBAN_FRACTION of its people to
- * cities; that urban total is split across them by a rank-size (Zipf) rule — the largest leads, each
- * next ≈ 1/rank of it. Sites are sampled coastal-weighted (Earth concentrates people on coasts), spread
- * so they don't clump, and kept off high ground (no city on VERY_HIGH peaks; only small cities on HIGH).
- * The CAPITAL is then one of the largest few (50% the biggest, then 25% / 12.5% / 12.5%) — usually, but
- * not always, the biggest city. Deterministic (seeded). Run on the base globe.
+ * Place + size the cities of every country. Each country devotes POPULATION.URBAN_FRACTION of its people to
+ * cities; that urban total is split across them by a rank-size (Zipf) rule — the largest leads, each next
+ * ≈ 1/rank of it. Sites are placed in three buckets — ON a drawn large river (favouring mouths), AT the
+ * sea/lake shore, and sprinkled across the interior — in the CITY.{RIVER,COASTAL}_FRACTION proportions
+ * (Earth ~1400), spread so they don't clump, and kept off VERY_HIGH peaks. Each marker then sits right on
+ * its water (river line / shoreline), so it visibly belongs there. The CAPITAL is one of the largest few
+ * (50% the biggest, then 25 / 12.5 / 12.5). Deterministic (seeded). Run on the base globe.
+ *
+ * Because the river bucket places onto the DRAWN network, placement depends on `rivers`: an empty / late-
+ * arriving (GPU-sampled) network simply yields no river cities until it lands (then a recompute re-places).
  */
 export function assignCities(
   map: GlobeMap,
+  reportElevation: Float32Array, // the inland-risen display elevation (see inlandRisenElevation) — passed
+  // explicitly, not read off the map, so this function's dependency on the risen field is named, not implicit
   seaLevel: number,
   adjacency: number[][],
   countryOf: Int32Array,
   countries: Country[],
   mapSeed: string,
-  namer: NameGenerator
+  namer: NameGenerator,
+  // True iff the FINE elevation field reads as land at `p` (the same waterline the renderer draws). Lets a
+  // shore marker snap to the rendered coast, not the coarser base-cell boundary. See coastAnchor.
+  fineLandAt: (p: Vec3) => boolean,
+  // The drawn river network. River-bucket cities are placed ON its large rivers + snap to them. EMPTY_RIVERS
+  // ⇒ no river cities (e.g. before the debounced route finishes, or with no GPU float RT).
+  rivers: RiverData
 ): City[] {
   const coastDist = coastDistance(map, seaLevel, adjacency);
   const largeWater = largeWaterMask(map, seaLevel, adjacency);
   const seaDist = waterHopDistance(map, seaLevel, adjacency, (i) => largeWater[i] === 1);
   const elevCap = elevationCaps(map);
-  const urbanFraction = CITY.URBAN_FRACTION.value;
+  const urbanFraction = POPULATION.URBAN_FRACTION.value;
+
+  // The drawn large-river network (rivers.ts), hashed for fast nearest-vertex lookup. `riverStrength[c]` is
+  // the flow strength of the large river running THROUGH cell c (0 = none) — the river bucket's pool +
+  // weight (bigger ⇒ likelier, and strength peaks at the mouth, so mouths are favoured). All in cell-spacings.
+  const cellSpacing = Math.sqrt((4 * Math.PI) / map.cellCount);
+  const riverGrid = buildRiverGrid(rivers, RIVER_GRID_CELLS * cellSpacing);
+  const onRiver2 = (RIVER_ON_CELLS * cellSpacing) * (RIVER_ON_CELLS * cellSpacing);
+  const riverSnapD2 = (RIVER_SNAP_CELLS * cellSpacing) * (RIVER_SNAP_CELLS * cellSpacing);
+  const riverStrength = new Float32Array(map.cellCount);
+  if (riverGrid) {
+    for (let i = 0; i < map.cellCount; i++) {
+      if (map.elevation[i] < seaLevel) continue; // rivers run on land
+      const nr = nearestRiverVertex(siteVec(map, i), riverGrid);
+      if (nr && nr.chord2 <= onRiver2) riverStrength[i] = nr.width;
+    }
+  }
+
+  // Habitability per cell ∈ [HABITABILITY_FLOOR, 1] — folded into every placement pool below so cities
+  // favour wetter, ice-free land (the scoring is habitabilityWeight; here we just feed it each cell's
+  // water proximity). Both penalties are floored, so a desert / ice city stays possible, just rarer.
+  const desertAversion = CITIES.DESERT_AVERSION.value;
+  const iceAversion = CITIES.ICE_AVERSION.value;
+  const habitability = new Float32Array(map.cellCount);
+  for (let i = 0; i < map.cellCount; i++) {
+    // Water proximity: 1 on a drawn river or at the shore, fading to 0 by DRY_WATER_REACH hops inland.
+    const nearWater = Math.max(riverStrength[i] > 0 ? 1 : 0, Math.max(0, 1 - coastDist[i] / DRY_WATER_REACH));
+    habitability[i] = habitabilityWeight(map.moisture[i], map.ice[i], nearWater, desertAversion, iceAversion);
+  }
+
+  const isLargeWater = (nb: number): boolean => largeWater[nb] === 1;
+  const isAnyWater = (nb: number): boolean => map.elevation[nb] < seaLevel;
 
   // Group land cells by country (ocean / uninhabited cells are -1).
   const cellsByCountry: number[][] = countries.map(() => []);
@@ -145,9 +305,9 @@ export function assignCities(
       cells.length,
       Math.max(1, Math.round(Math.sqrt(urbanPop / (CITY_COUNT_SCALE * URBAN_FRACTION_REF))))
     );
-    // `placed` is size-ordered (largest first). A slot with no low-enough site after MAX_PLACEMENT_TRIES
-    // is dropped, so a country with nowhere habitable simply gets no city.
-    const placed = placeCities(map, cells, coastDist, elevCap, nCities, urbanPop, rng);
+    // `placed` is size-ordered (largest first). A slot with no habitable site is dropped, so a country with
+    // nowhere to live simply gets fewer cities.
+    const placed = placeCities(map, cells, coastDist, seaDist, riverStrength, habitability, elevCap, nCities, urbanPop, rng);
     if (placed.length === 0) continue;
     const capitalIdx = pickWeightedRank(CAPITAL_RANK_WEIGHTS, placed.length, rng);
     const usedFunFacts = new Set<string>(); // dedupe fun facts within this country
@@ -159,15 +319,37 @@ export function assignCities(
       // Name is globally unique (the namer re-rolls on collision); stats are seeded on a SEPARATE stream
       // so adding them never shifts placement/population (which consume the per-country `rng` above).
       const name = namer.generate({ seed: `${mapSeed}|city|${country.index}|${idx}`, lang: country.language, unique: true });
+      // Classify the cell's water by priority sea > large river > other water (lake/pond) > none — both for
+      // flavour and to place the marker right ON that water. A river city's marker snaps to the drawn river
+      // vertex; a shore city's to the fine waterline (sea or lake); the interior keeps its centre.
+      const bordersSea = adjacency[cell].some(isLargeWater);
+      const drawnRiver = nearestRiverVertex(siteVec(map, cell), riverGrid);
+      const onRiver = drawnRiver !== null && drawnRiver.chord2 <= riverSnapD2;
+      const waterKind: CityWaterKind = bordersSea
+        ? "ocean"
+        : onRiver
+          ? "river"
+          : coastDist[cell] === 0
+            ? "lake"
+            : "none";
+      const anchor =
+        waterKind === "ocean"
+          ? coastAnchor(map, adjacency, cell, isLargeWater, fineLandAt)
+          : waterKind === "river"
+            ? Vec3.normalize(drawnRiver!.pt) // snap onto the drawn river — a city on its bank
+            : waterKind === "lake"
+              ? coastAnchor(map, adjacency, cell, isAnyWater, fineLandAt)
+              : siteVec(map, cell);
       const profile = cityProfile({
         rawElevation: map.elevation[cell],
-        reportElevation: map.reportElevation[cell],
+        reportElevation: reportElevation[cell],
         moisture: map.moisture[cell],
         rainfall: map.rainfall,
         ice: map.ice[cell],
         seaLevel,
         coastDist: coastDist[cell],
         seaDist: seaDist[cell],
+        waterKind,
         population,
         tier,
         isCapital,
@@ -178,7 +360,7 @@ export function assignCities(
       });
       cities.push({
         name,
-        anchor: coastAnchor(map, adjacency, cell, largeWater),
+        anchor,
         cell,
         population,
         tier,
@@ -189,6 +371,7 @@ export function assignCities(
         industries: profile.industries,
         elevationMeters: profile.elevationMeters,
         funFact: profile.funFact,
+        waterKind,
       });
     });
   }
@@ -223,9 +406,6 @@ export function elevationCaps(map: GlobeMap): Int8Array {
   return cap;
 }
 
-const coastWeight = (d: number): number =>
-  d < 0 ? 1 : 1 + COASTAL_PULL * Math.exp(-d / COAST_FALLOFF);
-
 /** Pick an index 0..min(weights.length, n)-1 with probability ∝ weights (renormalised when fewer than
  *  weights.length items exist). */
 function pickWeightedRank(weights: number[], n: number, rng: RNG): number {
@@ -240,18 +420,33 @@ function pickWeightedRank(weights: number[], n: number, rng: RNG): number {
   return 0;
 }
 
-/** Weighted pick over the positive-weight cells not in `skip`; -1 if none remain. */
-function sampleWeighted(w: number[], skip: Set<number>, rng: RNG): number {
+// The four placement buckets. "rand" (anywhere on habitable land) is also the universal fallback: a city
+// rolled into a feature bucket its country lacks (no river / no sea coast / no lakeshore) lands here instead.
+type Bucket = "river" | "sea" | "lake" | "rand";
+
+/** Weighted pick over `w` (a per-cell pool weight) restricted to cells whose elevation cap clears `needCap`
+ *  (so a big city never lands on HIGH ground); -1 if the bucket has no eligible cell left. */
+function sampleBucket(w: number[], cells: number[], elevCap: Int8Array, needCap: number, rng: RNG): number {
   let total = 0;
-  for (let i = 0; i < w.length; i++) if (w[i] > 0 && !skip.has(i)) total += w[i];
+  for (let i = 0; i < w.length; i++) if (w[i] > 0 && elevCap[cells[i]] >= needCap) total += w[i];
   if (total <= 0) return -1;
   let r = rng() * total;
   for (let i = 0; i < w.length; i++) {
-    if (w[i] <= 0 || skip.has(i)) continue;
+    if (w[i] <= 0 || elevCap[cells[i]] < needCap) continue;
     r -= w[i];
     if (r <= 0) return i;
   }
   return -1;
+}
+
+/** A single city's bucket, by a weighted-random roll over the CITY.*_FRACTION dials; the leftover
+ *  probability (1 − river − sea − lake) falls to "rand" (interior). One rng draw. */
+function rollBucket(rng: RNG): Bucket {
+  let r = rng();
+  if ((r -= CITIES.RIVER_FRACTION.value) < 0) return "river";
+  if ((r -= CITIES.SEA_FRACTION.value) < 0) return "sea";
+  if ((r -= CITIES.LAKE_FRACTION.value) < 0) return "lake";
+  return "rand";
 }
 
 // Harmonic number Hₘ = Σ_{k=1}^{m} 1/k, closed-form via the Euler–Maclaurin asymptotic (γ = Euler–
@@ -262,16 +457,21 @@ const harmonicNumber = (m: number): number =>
 
 /**
  * Place one country's cities and size them by rank-size (city k gets urbanPop / (k · H), H the harmonic
- * number of the FULL settlement hierarchy — not just the emitted n — so sizes stay period-realistic). Each slot is
- * sampled coastal-weighted, then gated by elevation — a big/medium city needs LOW/MEDIUM ground (cap 2),
- * a small one may sit on HIGH ground (cap 1), and VERY_HIGH never hosts a city. A slot rejects too-high
- * sites and retries up to MAX_PLACEMENT_TRIES distinct spots; if none is low enough, that city is dropped.
- * Each placed city suppresses its neighbourhood so the rest spread out. Size-ordered (largest first).
+ * number of the FULL settlement hierarchy — not just the emitted n — so sizes stay period-realistic). Each
+ * city rolls a bucket by the CITY.*_FRACTION weights, then is placed by that bucket's rule: river ON a drawn
+ * river (weighted by strength, so big rivers + mouths win), sea at a large-water shore, lake at a small-water
+ * shore, rand anywhere habitable. If the country lacks the rolled feature the city drops to "rand" (so a
+ * landlocked or river-less country still places its full count). Elevation-gated (a big city avoids HIGH
+ * ground, VERY_HIGH never hosts one). Each placed city suppresses its neighbourhood so the rest spread out.
+ * Size-ordered (largest first).
  */
 function placeCities(
   map: GlobeMap,
   cells: number[],
   coastDist: Int32Array,
+  seaDist: Int32Array,
+  riverStrength: Float32Array,
+  habitability: Float32Array, // per-cell ∈ [floor, 1]: down-weights dry far-interior + iced land (see assignCities)
   elevCap: Int8Array,
   n: number,
   urbanPop: number,
@@ -285,36 +485,40 @@ function placeCities(
   // dweller into ≤16 cities and inflating them.
   const settlements = Math.max(n, Math.round(urbanPop / TYPICAL_TOWN_POP));
   const harmonic = harmonicNumber(settlements);
-  const w = cells.map((c) => coastWeight(coastDist[c]));
+  // Per-bucket pools over `cells` (weight 0 = ineligible): a drawn river runs through it (weight = strength,
+  // peaking at mouths) / it touches LARGE water (sea) / it touches SMALL water only (lake) / anywhere. Every
+  // pool is scaled by `habitability`, so dry far-interior + iced cells are picked less (the water buckets sit
+  // near water, so their dryness penalty self-waives — only ice bites them). Mutated as cities are placed.
+  const wRiver = cells.map((c) => (riverStrength[c] > 0 ? riverStrength[c] * habitability[c] : 0));
+  const wSea = cells.map((c) => (seaDist[c] === 0 ? habitability[c] : 0));
+  const wLake = cells.map((c) => (coastDist[c] === 0 && seaDist[c] !== 0 ? habitability[c] : 0));
+  const wRand = cells.map((c) => habitability[c]);
+  const pools: Record<Bucket, number[]> = { river: wRiver, sea: wSea, lake: wLake, rand: wRand };
+
   const placed: { cell: number; population: number }[] = [];
   for (let rank = 0; rank < n; rank++) {
     const population = Math.round(urbanPop / ((rank + 1) * harmonic));
     const needCap = population >= MEDIUM_POP ? 2 : 1; // big/medium need low ground; small may go up to HIGH
-    // Try up to MAX_PLACEMENT_TRIES distinct sites; reject any too high for this size, then give up.
-    const tried = new Set<number>();
-    let chosen = -1;
-    for (let t = 0; t < MAX_PLACEMENT_TRIES; t++) {
-      const idx = sampleWeighted(w, tried, rng);
-      if (idx < 0) break; // nothing left to sample
-      if (elevCap[cells[idx]] >= needCap) {
-        chosen = idx;
-        break;
-      }
-      tried.add(idx); // too high for this city — try a different location
-    }
-    if (chosen < 0) continue; // no low-enough site in MAX_PLACEMENT_TRIES tries → no city for this slot
+    const bucket = rollBucket(rng);
+    // Try the rolled bucket; if the country has no such feature (or no cell low enough), fall to "anywhere".
+    let chosen = sampleBucket(pools[bucket], cells, elevCap, needCap, rng);
+    if (chosen < 0 && bucket !== "rand") chosen = sampleBucket(wRand, cells, elevCap, needCap, rng);
+    if (chosen < 0) continue; // nowhere habitable left for this slot
     const cell = cells[chosen];
     placed.push({ cell, population });
-    w[chosen] = 0; // without replacement
-    // Suppress the chosen cell's neighbourhood so the next city lands elsewhere along the coast.
+    wRiver[chosen] = wSea[chosen] = wLake[chosen] = wRand[chosen] = 0; // without replacement (every pool)
+    // Suppress the chosen cell's neighbourhood in every pool so the next city lands elsewhere, not stacked.
     const ax = sites[3 * cell];
     const ay = sites[3 * cell + 1];
     const az = sites[3 * cell + 2];
-    for (let i = 0; i < w.length; i++) {
-      if (w[i] <= 0) continue;
+    for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
       const dot = ax * sites[3 * c] + ay * sites[3 * c + 1] + az * sites[3 * c + 2];
-      w[i] *= 1 - 0.85 * Math.exp(-(1 - dot) / SPREAD2);
+      const keep = 1 - 0.85 * Math.exp(-(1 - dot) / SPREAD2);
+      wRiver[i] *= keep;
+      wSea[i] *= keep;
+      wLake[i] *= keep;
+      wRand[i] *= keep;
     }
   }
   return placed;

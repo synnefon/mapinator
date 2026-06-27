@@ -20,12 +20,12 @@ import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
 
 // ── sweep config (edit freely, then reload) ──────────────────────────────────
 const ROWS = {
-  path: "TECTONIC.PLATE_COUNT",
+  path: "TECTONICS.PLATE_COUNT",
   label: "plates",
   values: [6, 10, 14, 18, 24, 30],
 };
 const COLS = {
-  path: "TECTONIC.RANGE_WIDTH",
+  path: "TECTONICS.RANGE_WIDTH",
   label: "width",
   values: [0.08, 0.14, 0.2, 0.26, 0.32, 0.4],
 };

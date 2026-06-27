@@ -1,10 +1,9 @@
-import { Quat, type Vec3 } from "./common/3DMath";
-import { globeRadiusPx } from "./renderer/GlobeRenderer";
+import type { Vec3 } from "./common/3DMath";
+import type { Projector } from "./renderer/projection";
 
 // The one info popup shared by every tagged thing on the map (countries, cities). It's opened against a
 // point on the globe and then FOLLOWS that point each frame, closing itself once the point leaves view —
 // rotated behind the limb, zoomed out below its reveal level, or when its layer is switched off.
-const MIN_FRONT_Z = 0.04; // closed once the anchor passes behind the visible limb
 const OFFSET_PX = 16; // nudge off the anchor so the box doesn't sit on top of the marker
 const PAD = 12; // viewport edge padding
 
@@ -88,28 +87,18 @@ export class InfoPopup {
 
   /** Reproject + reposition each frame; close if the anchor has left view. `layerVisible` is whether the
    *  anchor's own layer is currently shown. */
-  update(
-    canvas: HTMLCanvasElement,
-    orientation: Quat,
-    zoom: number,
-    offsetFraction: number,
-    level: number,
-    layerVisible: boolean
-  ): void {
+  update(proj: Projector, level: number, layerVisible: boolean): void {
     if (!this.anchored) return;
     if (!layerVisible || level < this.anchored.minLevel) {
       this.close();
       return;
     }
-    const r = Quat.rotate(orientation, this.anchored.anchor);
-    if (r.z < MIN_FRONT_Z) {
+    const r = proj.project(this.anchored.anchor);
+    if (!r.front) {
       this.close();
       return;
     }
-    const radius = globeRadiusPx(canvas, zoom);
-    const px = canvas.width / 2 + r.x * radius + offsetFraction * canvas.width;
-    const py = canvas.height / 2 - r.y * radius;
-    this.place(px, py);
+    this.place(r.x, r.y);
   }
 
   /** Position the popup just off a screen point, clamped to the viewport. */

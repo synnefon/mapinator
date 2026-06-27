@@ -64,7 +64,7 @@ export type RiverOptions = {
 };
 
 /** A river polyline mid-build: sphere points + per-vertex flow strength. */
-type Line = { pts: Vec3[]; str: number[] };
+export type Line = { pts: Vec3[]; str: number[] };
 
 type RoutingMesh = { sites: Float32Array; neighbors: number[][]; cellCount: number };
 const meshCache = new Map<number, RoutingMesh>();
@@ -335,10 +335,11 @@ export function computeRivers(sample: RiverFieldSampler, opts: RiverOptions): Ri
     if (pts.length >= 2) trunks.push({ pts, str });
   }
 
-  // 5. Grow tributaries off the trunks, then fractally refine every line for meander.
+  // 5. Grow tributaries off the trunks, clip every line to the coast, then refine for meander.
   const cellAngle = Math.sqrt((4 * Math.PI) / (10 * Math.pow(4, SKELETON_LEVEL)));
   const lines = trunks.concat(growTributaries(trunks, opts.branching, cellAngle));
-  const refined = lines.map((l) =>
+  const clipped = clipLinesToCoast(lines, sample, seaLevel);
+  const refined = clipped.map((l) =>
     refineSphereCurve(l.pts, l.str, { levels: opts.meanderDetail, amplitude: opts.meander })
   );
 
@@ -373,6 +374,116 @@ export function computeRivers(sample: RiverFieldSampler, opts: RiverOptions): Ri
   }
 
   return { ...pack(refined), labels };
+}
+
+/** Sub-cell samples taken ALONG a mouth segment to locate the fractal coast. The routing mesh is coarse
+ *  (~0.5°/cell); the rendered coast is the field's sub-cell seaLevel contour, so one linear step between
+ *  cell centres misses it — march the real field instead. The coast is fractal (noise at every scale), so
+ *  more steps than this buy nothing: the crossing already lands within the coast's own roughness band. */
+const COAST_SUBSTEPS = 8;
+
+/** End every line on the coastline. Routing decides land/sea on the COARSE mesh, so two things miss the
+ *  rendered coast: a trunk terminates at the first SEA cell's CENTRE (a cell past the shore), and a
+ *  tributary (growBranch) walks great circles with NO land/sea test at all. We sample the field at every
+ *  vertex, find each line's first in-sea vertex, then SUB-SAMPLE that mouth segment to cut exactly where
+ *  the real field crosses seaLevel — not at a linear guess between two cell centres (a deep adjacent sea
+ *  cell would drag that guess far inland → "stops short"; a shallow one pushes it past the shore). Done
+ *  BEFORE refine so a meander dip into a coastal inlet can't truncate a river mid-course. A line that
+ *  never reaches the sea is kept whole; one already starting in the sea is dropped. Falls back to the
+ *  input unchanged if the field can't be sampled (the sampler is the same one routing already used). */
+export function clipLinesToCoast(lines: Line[], sample: RiverFieldSampler, seaLevel: number): Line[] {
+  if (lines.length === 0) return lines;
+
+  // Pass 1 — sample every vertex; record each line's flat offset and its first vertex in the sea.
+  let total = 0;
+  for (const l of lines) total += l.pts.length;
+  const sites = new Float32Array(total * 3);
+  const starts = new Int32Array(lines.length);
+  let v = 0;
+  for (let k = 0; k < lines.length; k++) {
+    starts[k] = v;
+    for (const p of lines[k].pts) {
+      sites[3 * v] = p.x;
+      sites[3 * v + 1] = p.y;
+      sites[3 * v + 2] = p.z;
+      v++;
+    }
+  }
+  const field = sample(sites);
+  if (!field) return lines;
+  const { elevation } = field;
+  const seaIdx = new Int32Array(lines.length).fill(-1);
+  for (let k = 0; k < lines.length; k++) {
+    const s0 = starts[k];
+    for (let i = 0; i < lines[k].pts.length; i++) {
+      if (elevation[s0 + i] < seaLevel) {
+        seaIdx[k] = i;
+        break;
+      }
+    }
+  }
+
+  // Pass 2 — sub-sample each mouth segment [sea-1 → sea] (endpoints included) so the cut lands on the
+  // fractal coast. Batched into ONE sample call across all crossing lines.
+  const crossings: number[] = [];
+  for (let k = 0; k < lines.length; k++) if (seaIdx[k] >= 1) crossings.push(k);
+  const PTS = COAST_SUBSTEPS + 1; // t = 0, 1/STEP, …, 1 (inclusive)
+  const probe = new Float32Array(crossings.length * PTS * 3);
+  for (let c = 0; c < crossings.length; c++) {
+    const k = crossings[c];
+    const a = lines[k].pts[seaIdx[k] - 1];
+    const b = lines[k].pts[seaIdx[k]];
+    for (let s = 0; s < PTS; s++) {
+      const p = Vec3.normalize(Vec3.add(a, Vec3.scale(Vec3.sub(b, a), s / COAST_SUBSTEPS)));
+      const o = (c * PTS + s) * 3;
+      probe[o] = p.x;
+      probe[o + 1] = p.y;
+      probe[o + 2] = p.z;
+    }
+  }
+  const probeElev = crossings.length ? sample(probe)?.elevation : undefined;
+
+  // Fraction along [sea-1 → sea] where the field first drops below seaLevel (the coast), from the dense
+  // probe; falls back to the coarse linear estimate if the probe is unavailable.
+  const mouthT = (k: number, ci: number): number => {
+    const sea = seaIdx[k];
+    if (probeElev && ci >= 0) {
+      const base = ci * PTS;
+      for (let s = 1; s < PTS; s++) {
+        const e = probeElev[base + s];
+        if (e < seaLevel) {
+          const ePrev = probeElev[base + s - 1];
+          return (s - 1 + (ePrev - seaLevel) / (ePrev - e)) / COAST_SUBSTEPS;
+        }
+      }
+      return 1; // never dipped within the probe (shouldn't happen — b is sea) → end at b
+    }
+    const eA = elevation[starts[k] + sea - 1];
+    const eB = elevation[starts[k] + sea];
+    return (eA - seaLevel) / (eA - eB);
+  };
+
+  const out: Line[] = [];
+  let c = 0;
+  for (let k = 0; k < lines.length; k++) {
+    const l = lines[k];
+    const sea = seaIdx[k];
+    if (sea < 0) {
+      out.push(l); // never reaches the sea — keep whole
+      continue;
+    }
+    if (sea === 0) continue; // starts in the sea — drop
+    const ci = crossings[c] === k ? c++ : -1;
+    const t = mouthT(k, ci);
+    const a = sea - 1;
+    const cross = Vec3.normalize(Vec3.add(l.pts[a], Vec3.scale(Vec3.sub(l.pts[sea], l.pts[a]), t)));
+    const pts = l.pts.slice(0, sea);
+    const str = l.str.slice(0, sea);
+    pts.push(cross);
+    str.push(l.str[a] + (l.str[sea] - l.str[a]) * t);
+    if (pts.length >= 2) out.push({ pts, str });
+  }
+  return out;
 }
 
 /** For each trunk, spawn tributaries growing UPSTREAM-and-outward at deterministic intervals, recursing
