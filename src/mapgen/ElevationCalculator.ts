@@ -136,7 +136,7 @@ export class ElevationCalculator {
 
     // Cap the LAND base to just above the waterline so the CONTINENT + COAST surface alone stays in
     // the lowest (green) band — ONLY the MOUNTAIN wave lifts land into the brown/grey/white bands
-    // (mountains off ⇒ all-green continents). ONE variable, OCEAN.SEA_LEVEL, drives both the
+    // (mountains off ⇒ all-green continents). ONE variable, OCEANS.SEA_LEVEL, drives both the
     // coastline (continent vs the waterline, above) and this cap; LAND_HAIR is the small margin the
     // colour pipeline's contrast needs (a value exactly at the waterline would render as ocean).
     const land = Math.min(continent, OCEANS.SEA_LEVEL + LAND_HAIR);
@@ -224,7 +224,7 @@ export class ElevationCalculator {
    * One relief fBm wave (COAST or OCEAN) at the wave's OWN fixed octave count — never zoom-varying.
    * These two waves sum into `continent`, which decides land vs water, so freezing their octaves
    * keeps the COASTLINE identical at every zoom (a finer mesh just resolves the same line, rather
-   * than adding octaves that move it). Want a more detailed coast? Raise COAST.OCTAVES — it applies
+   * than adding octaves that move it). Want a more detailed coast? Raise COASTS.OCTAVES — it applies
    * to the globe and every patch uniformly. Every wave (COAST/OCEAN/MOUNTAIN/MOISTURE) now uses a
    * fixed octave count, so nothing crawls as you zoom.
    */

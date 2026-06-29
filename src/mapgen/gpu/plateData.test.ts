@@ -10,7 +10,7 @@ import { buildPlateData } from "./plateData";
 // (the poles come from the same interleaved RNG stream, so matching seeds ⇒ matching poles).
 function withPlateCount(n: number): TerrainParams {
   const p = snapshotParams();
-  return { ...p, TECTONIC: { ...p.TECTONIC, PLATE_COUNT: n } };
+  return { ...p, TECTONICS: { ...p.TECTONICS, PLATE_COUNT: n } };
 }
 
 describe("buildPlateData", () => {

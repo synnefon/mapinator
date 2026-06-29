@@ -22,22 +22,22 @@ describe("snapshotParams / GENERATION_GROUPS (the worker seam)", () => {
   });
 
   it("round-trips a scalar dial: applyTuning is reflected, then reverts", () => {
-    applyTuning({ "OCEAN.SEA_LEVEL": 0.6 });
-    expect(snapshotParams().OCEAN.SEA_LEVEL).toBe(0.6);
+    applyTuning({ "OCEANS.SEA_LEVEL": 0.6 });
+    expect(snapshotParams().OCEANS.SEA_LEVEL).toBe(0.6);
     applyTuning({});
-    expect(snapshotParams().OCEAN.SEA_LEVEL).toBe(tuningDefault("OCEAN.SEA_LEVEL"));
+    expect(snapshotParams().OCEANS.SEA_LEVEL).toBe(tuningDefault("OCEANS.SEA_LEVEL"));
   });
 
-  it("round-trips a range endpoint (OCEAN.SHELF.0)", () => {
-    applyTuning({ "OCEAN.SHELF.0": 0.4 });
-    expect(snapshotParams().OCEAN.SHELF[0]).toBe(0.4);
+  it("round-trips a range endpoint (OCEANS.SHELF.0)", () => {
+    applyTuning({ "OCEANS.SHELF.0": 0.4 });
+    expect(snapshotParams().OCEANS.SHELF[0]).toBe(0.4);
   });
 
   it("deep-copies ranges so a snapshot can't mutate the live dial or a later snapshot", () => {
     const a = snapshotParams();
     const liveBefore = OCEANS.SHELF.value[0];
-    a.OCEAN.SHELF[0] = 0.123;
-    expect(snapshotParams().OCEAN.SHELF[0]).not.toBe(0.123); // a fresh snapshot is untouched
+    a.OCEANS.SHELF[0] = 0.123;
+    expect(snapshotParams().OCEANS.SHELF[0]).not.toBe(0.123); // a fresh snapshot is untouched
     expect(OCEANS.SHELF.value[0]).toBe(liveBefore); // the live dial is untouched
   });
 });

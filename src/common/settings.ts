@@ -466,7 +466,7 @@ export const DIALS = {
       value: 0.495,
       doc: "[shelf-edge floor, inland]",
     },
-    // NB: land height is capped to just above OCEAN.SEA_LEVEL in ElevationCalculator, so the
+    // NB: land height is capped to just above OCEANS.SEA_LEVEL in ElevationCalculator, so the
     // CONTINENT + COAST surface alone stays green and only the MOUNTAIN wave makes mountains — one
     // variable (SEA_LEVEL) drives both the coastline and that cap. No separate ceiling dial.
     WARP: {
@@ -810,10 +810,10 @@ function dial(path: string): DialAccess {
   const leaf = GROUPS[g][k];
   if (Array.isArray(leaf.value)) {
     const arr = leaf.value;
-    const i = Number(idx); // e.g. OCEAN.SHELF.0 — one endpoint of a [lo, hi] range dial
+    const i = Number(idx); // e.g. OCEANS.SHELF.0 — one endpoint of a [lo, hi] range dial
     return { get: () => arr[i], set: (v) => void (arr[i] = v) };
   }
-  // a plain scalar dial, e.g. CONTINENT.LACUNARITY
+  // a plain scalar dial, e.g. CONTINENTS.LACUNARITY
   return { get: () => leaf.value as number, set: (v) => void (leaf.value = v) };
 }
 

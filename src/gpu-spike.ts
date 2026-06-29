@@ -164,7 +164,7 @@ type VisualSummary = {
 
 function renderVisual(gpu: GpuField | null, seed: string, params: TerrainParams): VisualSummary {
   const W = 600, H = 300, N = W * H;
-  const seaLevel = params.OCEAN.SEA_LEVEL;
+  const seaLevel = params.OCEANS.SEA_LEVEL;
   const sites = equirectSites(W, H);
 
   const cpu = allocFields(N);

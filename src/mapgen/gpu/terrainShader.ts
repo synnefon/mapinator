@@ -115,7 +115,7 @@ float ridgedFbm3(vec3 p, float scale, float amplitude, float octaves, float gain
 
 float continentNoise(vec3 p) { return snoise(p / uContWavelength); }
 
-// ElevationCalculator.continentalness — warp once, then 'full' (CONTINENT.OCTAVES) and the moisture
+// ElevationCalculator.continentalness — warp once, then 'full' (CONTINENTS.OCTAVES) and the moisture
 // 'broad' low-pass (WATER_SIZE_OCTAVES) off the same warped coords.
 void continentalness(vec3 pos, out float full, out float broad) {
   float w = uContWarp;

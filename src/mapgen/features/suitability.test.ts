@@ -8,7 +8,7 @@ import {
   temperatureNiche,
 } from "./suitability";
 
-const SEA = 0.47; // the default waterline (OCEAN.SEA_LEVEL); tests pass it explicitly
+const SEA = 0.47; // the default waterline (OCEANS.SEA_LEVEL); tests pass it explicitly
 
 describe("meanAnnualTempC", () => {
   it("is warmest at the equator and falls toward the poles", () => {
