@@ -568,6 +568,9 @@ export const DIALS = {
     },
     COAST_BIAS: {
       value: 0.08,
+      min: 0,
+      max: 1,
+      step: 0.01,
       doc: "fade interior ranges to favor coastal ones; 1 = coast-only, 0 = even across all land",
     },
   },
@@ -626,6 +629,9 @@ export const DIALS = {
     },
     CONTRAST: {
       value: 0.02,
+      min: 0,
+      max: 1,
+      step: 0.01,
       doc: "higher = sharper wet/dry boundaries",
     },
     WATER_PROXIMITY_EFFECT: {

@@ -3,7 +3,7 @@ import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
 import { Languages, type Language } from "./common/language";
-import { applyTuning, LOD, snapshotParams } from "./common/settings";
+import { applyTuning, LOD, OCEANS, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
 import { type MapFeatures } from "./mapgen/features";
 import { type RiverFieldSampler } from "./mapgen/features/rivers";
@@ -294,16 +294,72 @@ document.addEventListener("DOMContentLoaded", () => {
   // Interactive city markers (DOM dots over the globe), revealed by zoom tier; default on.
   const cityMarkers = new CityMarkers(canvas.parentElement as HTMLElement, infoPopup);
 
-  // Redraw the country overlay (hovered territory highlight + dotted borders) from the cached BASE
-  // result, always at base-mesh resolution; the live zoom only re-projects it. Deliberately coarse at
-  // all zooms: a per-patch (up to millions of cells) classification either froze pan/zoom or hitched on
-  // first hover, so we keep the cheap, bounded base mesh. The fill is blocky and bleeds over sub-cell
-  // water when deeply zoomed — an accepted tradeoff for a smooth, free overlay.
   // The view → screen projection for THIS frame — orientation + zoom + the active renderer's horizontal
   // offset — shared by every overlay so the projection + limb cull live in ONE place (renderer/projection.ts)
   // rather than being re-derived (and the renderer's offset re-fetched) in each.
   const currentProjector = (): Projector =>
     makeProjector(canvas.width, canvas.height, appState.orientation, appState.settings.zoom, globeRenderer.horizontalOffsetFraction());
+
+  // Country overlay (borders + hover highlight) follows the zoomed-in patch's FINE coastline by re-growing
+  // the country partition on the overlay patch's mesh. The re-grow runs ON THE WORKER (off the main thread)
+  // and is requested only once the view SETTLES (scheduleRegrow): during a pan/zoom the cheap coarse base
+  // borders show, and the fine borders arrive async a beat after you stop — the gesture never blocks. The
+  // result is cached per patch (incl. a null result above the cap / on deep zoom → coarse base fallback).
+  type PatchCountry = { map: GlobeMap; countryOf: Int32Array; borders: Float32Array };
+  const PATCH_COUNTRY_MAX_CELLS = 1_200_000; // skip the worker re-grow for huge patches → coarse base borders
+  const REGROW_REST_MS = 180; // request the re-grow only after the view has been still this long
+  let currentPatchCountry: PatchCountry | null = null; // what the overlay draws; null = coarse base mesh
+  let patchCountryCache: { patch: GlobeMap; sig: string; data: PatchCountry | null } | null = null;
+  let regrowTimer: ReturnType<typeof setTimeout> | null = null;
+  let regrowInFlight: { patch: GlobeMap; sig: string } | null = null;
+  let patchCountryCapLogged = false;
+
+  // base assignment (epoch) + waterline fully determine the fine partition for a given patch geometry.
+  const patchCountrySig = (): string => `${featureEpoch}|${OCEANS.SEA_LEVEL.value}`;
+  const patchCountryCached = (overlay: GlobeMap): boolean =>
+    !!patchCountryCache && patchCountryCache.patch === overlay && patchCountryCache.sig === patchCountrySig();
+
+  // Ask a worker to re-grow this patch's country partition (off the main thread). The worker reproduces
+  // the patch's EXACT mesh from its recorded generation params + the broadcast base seeds. Caches the
+  // result (incl. null = capped / not reproducible / no seeds → coarse base) so a patch never re-requests.
+  async function requestPatchCountry(overlay: GlobeMap, sig: string): Promise<void> {
+    if (overlay.cellCount > PATCH_COUNTRY_MAX_CELLS) {
+      if (!patchCountryCapLogged) {
+        console.info(`[country] patch has ${overlay.cellCount} cells (> ${PATCH_COUNTRY_MAX_CELLS}); coarse base borders at this zoom`);
+        patchCountryCapLogged = true;
+      }
+      patchCountryCache = { patch: overlay, sig, data: null };
+      return;
+    }
+    if (overlay.genHalfAngle === undefined || overlay.genPoints === undefined) return; // can't reproduce the mesh
+    const center = overlay.cap?.center ?? { x: 0, y: 0, z: 1 }; // whole-globe overlay ignores center
+    const result = await pool.computeCountries(center, overlay.genHalfAngle, overlay.genPoints);
+    if (sig !== patchCountrySig()) return; // assignment/waterline moved on while we waited — drop it
+    const data: PatchCountry | null = result ? { map: overlay, countryOf: result.countryOf, borders: result.borders } : null;
+    patchCountryCache = { patch: overlay, sig, data };
+    if (pipeline.overlay() === overlay) {
+      currentPatchCountry = data;
+      scheduleRender(); // repaint with the fine borders/highlight
+    }
+  }
+
+  // Debounced: request the worker re-grow only after the view stops changing. Every render during a
+  // pan/zoom restarts the timer, so the request fires once, at rest — never per patch mid-gesture.
+  function scheduleRegrow(): void {
+    if (regrowTimer) clearTimeout(regrowTimer);
+    regrowTimer = setTimeout(() => {
+      regrowTimer = null;
+      const overlay = pipeline.overlay();
+      if (!overlay || !(appState.settings.viewCountries ?? false)) return;
+      const sig = patchCountrySig();
+      if (patchCountryCached(overlay)) return; // landed in cache meanwhile
+      if (regrowInFlight && regrowInFlight.patch === overlay && regrowInFlight.sig === sig) return; // already requested
+      regrowInFlight = { patch: overlay, sig };
+      void requestPatchCountry(overlay, sig).finally(() => {
+        if (regrowInFlight && regrowInFlight.patch === overlay && regrowInFlight.sig === sig) regrowInFlight = null;
+      });
+    }, REGROW_REST_MS);
+  }
 
   function drawCountryOverlay(proj: Projector = currentProjector()): void {
     const baseMap = pipeline.base();
@@ -312,11 +368,13 @@ document.addEventListener("DOMContentLoaded", () => {
       countryCanvas.getContext("2d")?.clearRect(0, 0, countryCanvas.width, countryCanvas.height);
       return;
     }
-    const highlight =
-      hoveredCountry !== null
-        ? { map: baseMap, countryOf: result.countryOf, index: hoveredCountry }
-        : null;
-    drawCountries(countryCanvas, result.borders, highlight, proj);
+    // Fine per-patch data (computed by the last render) when present, else the coarse base mesh.
+    const pc = currentPatchCountry;
+    const map = pc ? pc.map : baseMap;
+    const countryOf = pc ? pc.countryOf : result.countryOf;
+    const borders = pc ? pc.borders : result.borders;
+    const highlight = hoveredCountry !== null ? { map, countryOf, index: hoveredCountry } : null;
+    drawCountries(countryCanvas, borders, highlight, proj);
   }
 
   function render() {
@@ -352,7 +410,29 @@ document.addEventListener("DOMContentLoaded", () => {
         hoveredCountry = null;
         countryLabels.setCountries(result.countries);
         cityMarkers.setCities(result.cities);
+        // Broadcast the base assignment to the workers so they can seed off-thread patch re-grows
+        // (sent here, before any re-grow is requested, so postMessage ordering lands it first).
+        pool.configure({
+          countrySeeds: {
+            sites: baseMap.sites,
+            elevation: baseMap.elevation,
+            countryOf: result.countryOf,
+            seaLevel: OCEANS.SEA_LEVEL.value,
+          },
+        });
       }
+    }
+
+    // Country overlay: use the cached fine re-grow for THIS patch if present; otherwise draw coarse base
+    // borders this frame and schedule the re-grow for when the view settles (keeps pan/zoom smooth).
+    if (showCountries && overlay && result) {
+      if (patchCountryCached(overlay)) currentPatchCountry = patchCountryCache!.data;
+      else {
+        currentPatchCountry = null;
+        scheduleRegrow();
+      }
+    } else {
+      currentPatchCountry = null;
     }
 
     // The choropleth tints the BASE globe's per-cell colours on the GPU. The detail patch has no

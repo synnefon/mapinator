@@ -478,10 +478,14 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     const geom = this.getPatchGeom(st, map);
     if (geom.indexCount === 0) return false;
 
-    // Colour LUT (bakes colorAt for this theme + rainfall); rebuilt only when those change.
-    const lutKey = `${settings.theme}|${map.rainfall}`;
+    // Colour LUT (bakes colorAt for this theme + rainfall); rebuilt only when those change. Use the
+    // LIVE snapshot's rainfall, NOT map.rainfall: the whole-globe overlay shown at zoom 0 is built once
+    // and KEPT across reset(), so its baked rainfall goes stale on a dial change. The field is recomputed
+    // live here from inputs.params, so the LUT must track the same snapshot or zoom 0 won't update.
+    const rainfall = inputs.params.MOISTURE.RAINFALL;
+    const lutKey = `${settings.theme}|${rainfall}`;
     if (st.colorLutKey !== lutKey || !st.colorLutTex) {
-      const data = buildColorLut(settings.theme, map.rainfall);
+      const data = buildColorLut(settings.theme, rainfall);
       st.colorLutTex ??= gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, st.colorLutTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, COLOR_LUT_SIZE, COLOR_LUT_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);

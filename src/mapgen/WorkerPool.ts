@@ -1,9 +1,20 @@
-import type { GlobeMap } from "../common/map";
+import type { Vec3 } from "../common/3DMath";
+import type { CountrySeeds, GlobeMap, PatchCountryData } from "../common/map";
 import type { TerrainParams } from "../common/settings";
 import type { GenRequest } from "../renderer/LodPipeline";
 
-// A config message broadcast to every worker (seed and/or resolved generation params).
-type PoolConfig = { seed?: string; params?: TerrainParams };
+// A config message broadcast to every worker (seed and/or resolved generation params and/or the base
+// country seeds the off-thread re-grow needs).
+type PoolConfig = { seed?: string; params?: TerrainParams; countrySeeds?: CountrySeeds };
+
+// An off-thread country re-grow for one patch: the worker reproduces the patch mesh from these exact
+// generation params (deterministic) and re-grows the partition against the configured base seeds.
+type CountryRequest = { kind: "countries"; center: Vec3; halfAngle: number; points: number };
+
+// One job posted to a worker — a rung generate or a country re-grow (both carry a `kind` the worker routes on).
+type PoolJob = GenRequest | CountryRequest;
+// Worker reply: a generate yields `map`; a country re-grow yields `country` (absent if it couldn't run).
+type WorkerResponse = { id: number; map?: GlobeMap; country?: PatchCountryData };
 
 // Per-worker peak memory while a fine-cap generate is in flight (its transient cap mesh + output
 // typed arrays) plus that worker's small mesh cache — rough, used only to size the pool. Each extra
@@ -30,17 +41,18 @@ export function recommendedWorkerCount(): number {
  * (the globe + each detail cap are independent maps), so N workers build N at once. Concurrency is
  * the pool SIZE, which is the memory cap: every in-flight generate transiently holds a cap mesh +
  * output arrays and each worker keeps its own mesh cache, so peak RAM scales with the worker count
- * (see recommendedWorkerCount). Requests beyond N queue until a worker frees.
+ * (see recommendedWorkerCount). Requests beyond N queue until a worker frees. The off-thread country
+ * re-grow (computeCountries) shares the same pool — it queues behind generation like any other job.
  *
- * Every worker holds an identical MapGenerator, so `configure` (seed / params / feature changes)
- * BROADCASTS to all of them and `generate` goes to whichever worker is free. postMessage is ordered
- * per worker, so a config sent before a generate is applied first on that worker.
+ * Every worker holds an identical MapGenerator, so `configure` (seed / params / feature / country-seed
+ * changes) BROADCASTS to all of them and jobs go to whichever worker is free. postMessage is ordered
+ * per worker, so a config sent before a job is applied first on that worker.
  */
 export class WorkerPool {
   private readonly workers: Worker[];
   private readonly idle: Worker[] = [];
-  private readonly pending = new Map<number, (map: GlobeMap) => void>();
-  private readonly waiting: { id: number; req: GenRequest }[] = [];
+  private readonly pending = new Map<number, (res: WorkerResponse) => void>();
+  private readonly waiting: { id: number; msg: PoolJob }[] = [];
   private nextId = 0;
 
   constructor(size: number) {
@@ -53,7 +65,7 @@ export class WorkerPool {
     return this.workers.length;
   }
 
-  /** Broadcast a seed / params / feature change to EVERY worker (each holds its own generator). */
+  /** Broadcast a seed / params / country-seed change to EVERY worker (each holds its own generator). */
   configure(config: PoolConfig): void {
     for (const w of this.workers) {
       w.postMessage({ id: ++this.nextId, kind: "config", ...config });
@@ -64,19 +76,30 @@ export class WorkerPool {
   generate(req: GenRequest): Promise<GlobeMap> {
     return new Promise((resolve) => {
       const id = ++this.nextId;
-      this.pending.set(id, resolve);
-      this.waiting.push({ id, req });
+      this.pending.set(id, (res) => resolve(res.map!));
+      this.waiting.push({ id, msg: req });
+      this.dispatch();
+    });
+  }
+
+  /** Re-grow one patch's country partition off the main thread. Resolves null if the worker couldn't
+   *  run it (no base seeds configured yet) — the caller then keeps the coarse base borders. */
+  computeCountries(center: Vec3, halfAngle: number, points: number): Promise<PatchCountryData | null> {
+    return new Promise((resolve) => {
+      const id = ++this.nextId;
+      this.pending.set(id, (res) => resolve(res.country ?? null));
+      this.waiting.push({ id, msg: { kind: "countries", center, halfAngle, points } });
       this.dispatch();
     });
   }
 
   private spawn(): Worker {
     const w = new Worker(new URL("./mapWorker.ts", import.meta.url), { type: "module" });
-    w.onmessage = (e: MessageEvent<{ id: number; map: GlobeMap }>) => {
+    w.onmessage = (e: MessageEvent<WorkerResponse>) => {
       const resolve = this.pending.get(e.data.id);
       this.pending.delete(e.data.id);
       this.idle.push(w);
-      resolve?.(e.data.map); // pipeline caches this map (its .then runs as a microtask)
+      resolve?.(e.data); // generate → .map; countries → .country (its .then runs as a microtask)
       this.dispatch(); // hand the freed worker the next queued job
     };
     w.onerror = (e) => console.error("map worker error:", e.message);
@@ -88,7 +111,7 @@ export class WorkerPool {
     while (this.idle.length && this.waiting.length) {
       const w = this.idle.pop()!;
       const job = this.waiting.shift()!;
-      w.postMessage({ id: job.id, ...job.req });
+      w.postMessage({ id: job.id, ...job.msg });
     }
   }
 }

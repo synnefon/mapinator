@@ -1,4 +1,5 @@
 import type { GlobeMap } from "../common/map";
+import { buildKdTree, nearestCell } from "../mapgen/features/kdTree";
 
 // Equirectangular country-colour texture for the choropleth. Each texel is the country colour of the
 // NEAREST base cell in that direction (or a dark sea for country-less water), so the globe and the
@@ -50,52 +51,4 @@ export function bakeCountryTexture(
     }
   }
   return data;
-}
-
-/** A 3D kd-tree over the base cell sites, for nearest-cell-to-a-direction lookups during the bake. */
-type KdNode = { cell: number; axis: number; left: KdNode | null; right: KdNode | null };
-
-function buildKdTree(sites: Float32Array, n: number): KdNode | null {
-  const idx = Array.from({ length: n }, (_v, i) => i);
-  const build = (lo: number, hi: number, axis: number): KdNode | null => {
-    if (lo >= hi) return null;
-    const mid = (lo + hi) >> 1;
-    // Median-split: sort this slice by the axis coordinate, take the middle as the node (build-once).
-    const slice = idx.slice(lo, hi).sort((a, b) => sites[3 * a + axis] - sites[3 * b + axis]);
-    for (let i = lo; i < hi; i++) idx[i] = slice[i - lo];
-    return {
-      cell: idx[mid],
-      axis,
-      left: build(lo, mid, (axis + 1) % 3),
-      right: build(mid + 1, hi, (axis + 1) % 3),
-    };
-  };
-  return build(0, n, 0);
-}
-
-/** Nearest base cell to direction (x,y,z), by squared Euclidean distance (monotonic in angle here). */
-function nearestCell(root: KdNode | null, sites: Float32Array, x: number, y: number, z: number): number {
-  let best = -1;
-  let bestD2 = Infinity;
-  const visit = (node: KdNode | null): void => {
-    if (!node) return;
-    const c = node.cell;
-    const ddx = x - sites[3 * c];
-    const ddy = y - sites[3 * c + 1];
-    const ddz = z - sites[3 * c + 2];
-    const d2 = ddx * ddx + ddy * ddy + ddz * ddz;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      best = c;
-    }
-    const q = node.axis === 0 ? x : node.axis === 1 ? y : z;
-    const s = sites[3 * c + node.axis];
-    const near = q < s ? node.left : node.right;
-    const far = q < s ? node.right : node.left;
-    visit(near);
-    const split = q - s;
-    if (split * split < bestD2) visit(far); // the other side could hold a closer point
-  };
-  visit(root);
-  return best;
 }

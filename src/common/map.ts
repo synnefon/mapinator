@@ -38,5 +38,26 @@ export interface GlobeMap {
     // Local patches only: the spherical cap they cover, so the renderer can
     // occlusion-cull the global base cells hidden beneath the patch.
     cap?: { center: Vec3; cosKeep: number };
+    // The exact generation request (whole-globe ⇒ halfAngle ≥ π), recorded so a worker can reproduce
+    // this EXACT mesh deterministically for the off-thread country re-grow (cell order must match).
+    genHalfAngle?: number;
+    genPoints?: number;
 }
+
+/** The base country assignment a worker needs to seed an off-thread patch re-grow: the base cells'
+ *  sites + elevation (land/water) + per-cell country index, plus the live waterline. Broadcast to the
+ *  worker pool (like params) whenever the assignment changes. */
+export type CountrySeeds = {
+    sites: Float32Array;
+    elevation: Float32Array;
+    countryOf: Int32Array;
+    seaLevel: number;
+};
+
+/** A patch's fine country layer, re-grown on the worker: per-cell country index (-1 = water/uninhabited)
+ *  aligned to the patch's cells, plus the border segments derived from it (flat xyz pairs). */
+export type PatchCountryData = {
+    countryOf: Int32Array;
+    borders: Float32Array;
+};
 

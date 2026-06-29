@@ -98,7 +98,10 @@ export class MapGenerator {
     if (halfAngle >= Math.PI) {
       const level = geometryOnly ? goldbergGlobeOverlayLevel(points) : goldbergLevelForPoints(points);
       const mesh = this.getMesh(level);
-      return this.packMesh(mesh, points, continentalnessOverride, undefined, geometryOnly);
+      const map = this.packMesh(mesh, points, continentalnessOverride, undefined, geometryOnly);
+      map.genHalfAngle = halfAngle;
+      map.genPoints = points;
+      return map;
     }
     // Detail cap at a finer subdivision than the global mesh. Cells outside the inset cap, and
     // incomplete-ring boundary cells, are dropped inside the mesher. `geometryOnly` skips the per-cell
@@ -112,7 +115,10 @@ export class MapGenerator {
         Math.max(0, keepHalfAngle - (MESH.OCCLUSION_MARGIN_DEG * Math.PI) / 180)
       ),
     };
-    return this.packMesh(mesh, mesh.length, continentalnessOverride, cap, geometryOnly);
+    const map = this.packMesh(mesh, mesh.length, continentalnessOverride, cap, geometryOnly);
+    map.genHalfAngle = halfAngle;
+    map.genPoints = points;
+    return map;
   }
 
   /** Whole-globe map at a resolution's point count — thin adapter over `generate` for the /sweep +

@@ -1,10 +1,11 @@
 import { createNoise3D } from "simplex-noise";
 import { Languages, type Language } from "../../common/language";
-import type { GlobeMap } from "../../common/map";
+import type { GlobeMap, PatchCountryData } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
 import { COUNTRIES } from "../../common/settings";
 import type { NameGenerator } from "../NameGenerator";
-import { coastDistance, vertexKey } from "./adjacency";
+import { buildAdjacency, coastDistance, vertexKey } from "./adjacency";
+import { buildKdTree, nearestCell } from "./kdTree";
 import { angularExtent, poleOfInaccessibility } from "./detect";
 import { generateGovernment, type GovType } from "./government";
 import { estimatePopulation } from "./population";
@@ -316,25 +317,65 @@ export function assignCountries(
 }
 
 /**
- * Per-cell country index for an LOD detail patch (compact index, or -1 for water): classify each cell
- * by the base globe's assignment, but only where the PATCH says land — its finer coastline is what lets
- * the hover highlight respect the water boundary up close. Computed on demand (one country hovered at a
- * time), so callers cache a few of these. Borders are NOT recomputed here — they stay base-resolution.
+ * Re-grow the country partition on an LOD detail patch's FINE mesh, so the choropleth, borders, and
+ * hover highlight follow the patch's own coastline instead of the coarse base cells. `fineElevation`
+ * is the patch's per-cell elevation; it defines land/water here, at the resolution actually drawn.
+ *
+ * A fine LAND cell whose nearest BASE cell is itself land is SEEDED with that base cell's country (it's
+ * confidently interior to a coarse country). Coast-overhang land — fine land beyond the coarse coast,
+ * whose nearest base cell is water — is left unseeded, then filled by a multi-source Dijkstra that grows
+ * over fine LAND ONLY. Because water is a hard barrier (never relaxed across), a country can't hop a
+ * strait into another landmass — the fix for narrow land with water on multiple sides. Returns the fine
+ * per-cell country (or -1 for water/unreached) plus the border segments derived from it.
+ *
+ * Runs on the worker, off the main thread (see WorkerPool.computeCountries) — `base` is the base
+ * assignment's seed arrays, not a full GlobeMap.
  */
-export function patchCountryOf(
+export function patchCountryData(
   patch: GlobeMap,
+  fineElevation: Float32Array,
   seaLevel: number,
-  classify: CountryClassifier
-): Int32Array {
-  const { cellCount, sites, elevation } = patch;
-  const out = new Int32Array(cellCount);
-  for (let i = 0; i < cellCount; i++) {
-    out[i] =
-      elevation[i] >= seaLevel
-        ? classify(sites[3 * i], sites[3 * i + 1], sites[3 * i + 2])
-        : -1;
+  base: Pick<GlobeMap, "sites" | "cellCount" | "elevation">,
+  baseCountryOf: Int32Array
+): PatchCountryData {
+  const n = patch.cellCount;
+  const { sites } = patch;
+  const countryOf = new Int32Array(n).fill(-1);
+  const isLand = (i: number): boolean => fineElevation[i] >= seaLevel;
+
+  // Seed confidently-interior fine land from the base assignment (nearest base cell, kd-tree).
+  const tree = buildKdTree(base.sites, base.cellCount);
+  const dist = new Float64Array(n).fill(Infinity);
+  const heap = new MinHeap(n);
+  for (let i = 0; i < n; i++) {
+    if (!isLand(i)) continue;
+    const bc = nearestCell(tree, base.sites, sites[3 * i], sites[3 * i + 1], sites[3 * i + 2]);
+    if (bc >= 0 && base.elevation[bc] >= seaLevel) {
+      countryOf[i] = baseCountryOf[bc];
+      dist[i] = 0;
+      heap.push(i, 0);
+    }
   }
-  return out;
+
+  // Grow over fine LAND only — water is never crossed, so a country stays on its own landmass.
+  const adjacency = buildAdjacency(patch);
+  while (heap.size > 0) {
+    const c = heap.pop();
+    if (heap.poppedKey > dist[c]) continue; // stale entry (c re-pushed cheaper since)
+    const cx = sites[3 * c], cy = sites[3 * c + 1], cz = sites[3 * c + 2];
+    for (const nb of adjacency[c]) {
+      if (!isLand(nb)) continue;
+      const dx = cx - sites[3 * nb], dy = cy - sites[3 * nb + 1], dz = cz - sites[3 * nb + 2];
+      const nd = dist[c] + Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (nd < dist[nb]) {
+        dist[nb] = nd;
+        countryOf[nb] = countryOf[c];
+        heap.push(nb, nd);
+      }
+    }
+  }
+
+  return { countryOf, borders: countryBorderSegments(patch, countryOf) };
 }
 
 /**
