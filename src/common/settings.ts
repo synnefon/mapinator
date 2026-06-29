@@ -524,15 +524,15 @@ export const DIALS = {
       doc: "detail layers; more = finer, costlier",
     },
     GAIN: {
-      value: 0.7,
+      value: 0.66,
       doc: "amplitude falloff per octave; higher = rougher",
     },
     LACUNARITY: {
-      value: 2,
+      value: 3,
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
-      value: 0.2653,
+      value: 0.63,
       doc: "fine — nearshore detail; smaller = finer coast",
     },
     AMPLITUDE: {
@@ -589,7 +589,7 @@ export const DIALS = {
       doc: "wavelength shrink per octave",
     },
     RIDGE_WAVELENGTH: {
-      value: 0.055,
+      value: 0.035,
       doc: "spacing of the ridged peaks; SMALLER = MORE peaks packed into a range",
     },
     RIDGE_AMPLITUDE: {
@@ -605,7 +605,7 @@ export const DIALS = {
   // MOISTURE — drives wet/dry biome coloring.
   MOISTURE: {
     OCTAVES: {
-      value: 4.5,
+      value: 5.7,
       doc: "detail layers; more = finer, costlier",
     },
     GAIN: {
@@ -633,7 +633,7 @@ export const DIALS = {
       doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline",
     },
     DESERT_STEEPNESS: {
-      value: 1.3,
+      value: 0.78,
       doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland",
     },
     WATER_SIZE_OCTAVES: {
