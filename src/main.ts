@@ -114,6 +114,21 @@ document.addEventListener("DOMContentLoaded", () => {
       plate: buildPlateData(appState.mapName, params),
     };
   };
+  // Replace the base globe's CPU-sampled noise fields with the GPU readback (the same field the renderer
+  // draws), so feature placement lands on the rendered coast — once per base map, before features derive.
+  // No-op without float-RT (CPU fields stand, the fallback). Plate stays CPU (not a noise field).
+  const gpuFilledBases = new WeakSet<GlobeMap>();
+  function fillBaseFieldsFromGpu(base: GlobeMap): void {
+    if (!gpuPatches || !webglRenderer || !gpuFieldInputs || gpuFilledBases.has(base)) return;
+    gpuFilledBases.add(base); // mark first: a failed/again attempt shouldn't re-run the readback
+    const f = webglRenderer.computeBaseField(canvas, base.sites, gpuFieldInputs);
+    if (!f) return; // GPU path unavailable → keep the worker's CPU fields
+    base.elevation.set(f.elevation);
+    base.moisture.set(f.moisture);
+    base.ice.set(f.ice);
+    base.shade.set(f.shade);
+    base.reportElevation.set(f.reportElevation);
+  }
   // The live view orientation (world→view quaternion), driven by the orbit controls, lives on
   // appState (so it rides along in snapshot/restore) — see appState.orientation.
   // rAF handle for the north-align animation (see orientNorth); any user view change
@@ -387,6 +402,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const baseMap = pipeline.base();
     const overlay = pipeline.overlay();
     if (!baseMap) return;
+    fillBaseFieldsFromGpu(baseMap); // GPU-canonical base fields (once per map) before features derive
 
     const viewLevel = pipeline.view().level;
     const showLabels = appState.settings.viewLabels ?? false;

@@ -329,6 +329,23 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     return st.riverField.computeRiverField(sites, inputs.params, inputs.perm, inputs.plate);
   }
 
+  /**
+   * Compute the base globe's full field on the GPU + read it back (elevation/moisture/ice/shade +
+   * reportElevation), so the base globe's fields — and thus feature placement — come from the SAME field
+   * the renderer draws, instead of a separate CPU noise pass. One-time per base map. Reuses the readback
+   * field (shared with rivers; the per-frame patch texture is untouched). Null if the GPU path can't run.
+   */
+  public computeBaseField(
+    canvas: HTMLCanvasElement,
+    sites: Float32Array,
+    inputs: GpuFieldInputs
+  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; shade: Float32Array; reportElevation: Float32Array } | null {
+    const st = this.getState(canvas);
+    if (st.riverField === undefined) st.riverField = GpuField.create(st.gl);
+    if (!st.riverField || !st.riverField.fits(sites.length / 3)) return null;
+    return st.riverField.computeBaseField(sites, inputs.params, inputs.perm, inputs.plate);
+  }
+
   public draw(
     canvas: HTMLCanvasElement,
     map: GlobeMap,

@@ -121,6 +121,43 @@ export class GpuField {
   }
 
   /**
+   * Compute the FULL base-globe field on the GPU and read it back: elevation/moisture/ice/shade in one
+   * pass, then reportElevation (the river-routing height, written to .a under emitReport) in a second.
+   * Lets the base globe's fields come from the GPU — matching the rendered coast — instead of CPU noise
+   * sampling. Used ONCE per base map (not per frame), so the two readbacks are fine. Plate index isn't a
+   * noise field (cheap), so it stays CPU. Mirrors compute() + computeRiverField().
+   */
+  computeBaseField(
+    sites: Float32Array,
+    params: TerrainParams,
+    perm: Float32Array,
+    plate: PlateData
+  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; shade: Float32Array; reportElevation: Float32Array } {
+    const gl = this.gl;
+    // Pass 1 — elevation, moisture, ice, shade.
+    const { width, height, count } = this.render(sites, params, perm, plate);
+    const dst = this.dstBuf!;
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
+    const elevation = new Float32Array(count);
+    const moisture = new Float32Array(count);
+    const ice = new Float32Array(count);
+    const shade = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      elevation[i] = dst[4 * i];
+      moisture[i] = dst[4 * i + 1];
+      ice[i] = dst[4 * i + 2];
+      shade[i] = dst[4 * i + 3];
+    }
+    // Pass 2 — reportElevation (emitReport writes it to .a in place of shade).
+    this.render(sites, params, perm, plate, true);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
+    const reportElevation = new Float32Array(count);
+    for (let i = 0; i < count; i++) reportElevation[i] = dst[4 * i + 3];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { elevation, moisture, ice, shade, reportElevation };
+  }
+
+  /**
    * Sample just the fields RIVER ROUTING needs at `sites`, with readback: `elevation` (land/water +
    * flow sinks), `moisture` (per-cell water yield) and `reportElevation` (the routing height — the
    * rendered elevation is flat on non-mountain land, so flow needs this continentalness-driven rise).
