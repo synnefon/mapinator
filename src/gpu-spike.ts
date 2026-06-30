@@ -25,7 +25,7 @@ const CHUNK = 200_000; // CPU work per event-loop yield (keeps the page alive on
 const allocFields = (n: number): FieldArrays => ({
   elevation: new Float32Array(n),
   moisture: new Float32Array(n),
-  ice: new Float32Array(n),
+  koppenZone: new Float32Array(n),
   shade: new Float32Array(n),
 });
 
@@ -75,10 +75,9 @@ function paint(f: FieldArrays, w: number, h: number, seaLevel: number): ImageDat
       img.data[o + 2] = 70 + shallow * 110;
     } else {
       const land = clamp((e - seaLevel) / (1 - seaLevel)); // 0 at shore → 1 at peak
-      const ice = f.ice[p];
-      const r = (70 + land * 150) * (1 - ice) + 235 * ice;
-      const g = (120 + land * 80) * (1 - ice) + 240 * ice;
-      const b = (55 + land * 120) * (1 - ice) + 250 * ice;
+      const r = 70 + land * 150;
+      const g = 120 + land * 80;
+      const b = 55 + land * 120;
       const sh = f.shade[p];
       img.data[o] = r * sh;
       img.data[o + 1] = g * sh;
@@ -187,7 +186,7 @@ function renderVisual(gpu: GpuField | null, seed: string, params: TerrainParams)
     agreement = {
       elevation: agree(cpu.elevation, a.fields.elevation),
       moisture: agree(cpu.moisture, a.fields.moisture),
-      ice: agree(cpu.ice, a.fields.ice),
+      koppenZone: agree(cpu.koppenZone, a.fields.koppenZone),
       shade: agree(cpu.shade, a.fields.shade),
     };
     // Single-device determinism: recompute identical inputs and diff elevation bit-for-bit.
@@ -196,7 +195,7 @@ function renderVisual(gpu: GpuField | null, seed: string, params: TerrainParams)
     const ag = (k: keyof FieldArrays): string => `${k} max ${agreement![k].maxDiff.toExponential(2)} / RMS ${agreement![k].rms.toExponential(2)}`;
     line +=
       `   |   GPU land fraction: ${(gpuLand * 100).toFixed(1)}% (Δ ${landDeltaPct.toFixed(2)} pts)\n` +
-      `GPU↔CPU agreement (same seed, full field): ${ag("elevation")}; ${ag("moisture")}; ${ag("ice")}; ${ag("shade")}\n` +
+      `GPU↔CPU agreement (same seed, full field): ${ag("elevation")}; ${ag("moisture")}; ${ag("koppenZone")}; ${ag("shade")}\n` +
       `→ the GPU reproduces the CPU's terrain up to float32 rounding, so a GPU patch lines up with the CPU globe.\n` +
       `Single-device determinism: re-running the GPU was ${deterministic ? "BIT-IDENTICAL." : "NOT bit-identical (unexpected)."}`;
   } else {

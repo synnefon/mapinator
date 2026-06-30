@@ -1,9 +1,9 @@
 import type { InfoPopup, PopupRow } from "./InfoPopup";
-import type { City } from "./mapgen/features";
-import { settlementClass } from "./mapgen/features/settlement";
+import type { Settlement } from "./mapgen/features";
+import { settlementClass } from "./mapgen/features/settlements";
 import type { Projector } from "./renderer/projection";
 
-// City markers are interactive DOM dots layered over the globe (so hover/click come for free),
+// Settlement markers are interactive DOM dots layered over the globe (so hover/click come for free),
 // reprojected each frame with the same projection as the canvas overlays. Two sets share the layer: the
 // STATIC global big cities (placed once with the map) and the DYNAMIC patch-local small towns (the
 // 1400-density tail, swapped in as you zoom/pan over a region — see RegionTownLayer). Both size dots by
@@ -25,8 +25,8 @@ const dotDiameter = (population: number): number =>
 export class CityMarkers {
   private readonly frame: HTMLElement;
   private readonly popup: InfoPopup;
-  private cities: City[] = []; // global big cities (static)
-  private towns: City[] = []; // patch-local small towns (dynamic)
+  private cities: Settlement[] = []; // global big cities (static)
+  private towns: Settlement[] = []; // patch-local small towns (dynamic)
   private cityDots: HTMLDivElement[] = [];
   private townDots: HTMLDivElement[] = [];
   private visible = false;
@@ -40,23 +40,23 @@ export class CityMarkers {
   }
 
   /** Set the static global big-city set (called when the cached map result changes). */
-  setCities(cities: City[]): void {
+  setCities(cities: Settlement[]): void {
     this.cities = cities;
     this.cityDots = this.rebuild(this.cityDots, cities);
   }
 
   /** Set the dynamic patch-local town set (called when the live region's grow lands). */
-  setRegionTowns(towns: City[]): void {
+  setRegionTowns(towns: Settlement[]): void {
     this.towns = towns;
     this.townDots = this.rebuild(this.townDots, towns);
   }
 
-  private rebuild(dots: HTMLDivElement[], cities: City[]): HTMLDivElement[] {
+  private rebuild(dots: HTMLDivElement[], cities: Settlement[]): HTMLDivElement[] {
     for (const d of dots) d.remove();
     return cities.map((city) => this.makeDot(city));
   }
 
-  private makeDot(city: City): HTMLDivElement {
+  private makeDot(city: Settlement): HTMLDivElement {
     const dot = document.createElement("div");
     dot.className = `city-marker ${city.tier}${city.isCapital ? " capital" : ""}`;
     // Size by population (overrides the tier's CSS size); the tier class still drives the capital ring.
@@ -80,7 +80,7 @@ export class CityMarkers {
   }
 
   // Population always; industries / elevation only when present (region towns carry neither → a lean popup).
-  private rowsFor(city: City): PopupRow[] {
+  private rowsFor(city: Settlement): PopupRow[] {
     const rows: PopupRow[] = [["population", this.formatPopulation(city.population)]];
     if (city.industries.length > 0) rows.push(["industries", city.industries.join(", ")]);
     if (city.elevationMeters > 0) rows.push(["elevation", this.formatElevation(city.elevationMeters)]);
@@ -106,7 +106,7 @@ export class CityMarkers {
     this.project(this.townDots, this.towns, proj, level);
   }
 
-  private project(dots: HTMLDivElement[], cities: City[], proj: Projector, level: number): void {
+  private project(dots: HTMLDivElement[], cities: Settlement[], proj: Projector, level: number): void {
     for (let i = 0; i < dots.length; i++) {
       const dot = dots[i];
       const city = cities[i];

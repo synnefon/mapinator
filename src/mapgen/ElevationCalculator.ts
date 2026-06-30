@@ -3,6 +3,7 @@ import type { Vec3 } from "../common/3DMath";
 import { SHADE_MIN_LAND_E } from "../common/elevationBands";
 import { INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
+import { classifyKoppen, hadleyPrecipFactor, meanAnnualTempC, moistureToPrecipMm, seasonalAmplitudeC } from "../common/koppen";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import {
   CONTINENT_WARP_OFFSET_X as WARP_OFFSET_X,
@@ -87,7 +88,7 @@ export class ElevationCalculator {
    * omit it elsewhere (the hillshade slope samples at offset points compute their own).
    */
   public elevationAt(site: Vec3, C: number, upliftOverride?: number): { elevation: number; reportElevation: number } {
-    const { CONTINENTS, OCEANS, COASTS, TECTONICS } = this.params;
+    const { CONTINENTS, OCEANS, COASTS, TECTONICS, LAND_RELIEF } = this.params;
     const { x, y, z } = site;
     const coastWavelength = COASTS.WAVELENGTH;
     const oceanWavelength = OCEANS.WAVELENGTH;
@@ -148,9 +149,13 @@ export class ElevationCalculator {
     // land/water shape untouched. Clamped to the waterline so mountains ONLY ADD relief — a valley
     // deepens toward the coastline's level but never below it (no mountain-made lakes / sea).
     const landMask = smoothstep(OCEANS.SHELF[0], OCEANS.SHELF[1], C);
+    // Gentle continental uplands (LAND_RELIEF) ride on the flat land base, gated to land and rectified
+    // positive so they only lift plains into plateaus — never dip below the waterline (coastline stays put).
+    const landRelief =
+      landMask * Math.max(0, this.relief(x, y, z, LAND_RELIEF.WAVELENGTH, LAND_RELIEF.AMPLITUDE, LAND_RELIEF));
     const mountainWeight = landMask * (1 - TECTONICS.COAST_BIAS * inland);
     const mountains = mountainWeight * this.mountainRelief(x, y, z, upliftOverride);
-    const rendered = clamp(Math.max(land + mountains, OCEANS.SEA_LEVEL));
+    const rendered = clamp(Math.max(land + landRelief + mountains, OCEANS.SEA_LEVEL));
     // REPORT ignores the rendering cap — but NOT by restoring `continent`, which carries the big
     // COAST/OCEAN detail wave (that's horizontal coastline SHAPE, not altitude; the cap exists to flatten
     // it off the land). The cap merely pins every non-mountain land cell at LAND_HAIR above the waterline;
@@ -343,7 +348,7 @@ export class ElevationCalculator {
   public sampleCell(
     site: Vec3,
     continentalnessOverride?: number
-  ): { elevation: number; reportElevation: number; moisture: number; ice: number; shade: number; plate: number } {
+  ): { elevation: number; reportElevation: number; moisture: number; ice: number; shade: number; plate: number; koppenZone: number } {
     const { ICE, MOISTURE } = this.params;
     // continentalness drives both the land/ocean elevation and the moisture maritime layer
     // (`broad` = the low-octave low-pass that sizes the maritime reach to the water body).
@@ -362,7 +367,10 @@ export class ElevationCalculator {
     const shade = this.hillshadeAt(site, continentalness, elevation);
     const moisture = this.moistureAt(site, continentalness, broadContinentalness);
     const ice = this.iceAt(site, elevation, clamp(ICE.COVERAGE));
-    return { elevation, reportElevation, moisture, ice, shade, plate };
+    // Köppen biome zone — the SINGLE source for biome colour + labels. Mirrors koppen.glsl.ts:koppenZone
+    // (uses the same post-maritime moisture + the shared continentalness as the field shader).
+    const koppenZone = this.koppenZoneAt(site, elevation, moisture, continentalness);
+    return { elevation, reportElevation, moisture, ice, shade, plate, koppenZone };
   }
 
   /**
@@ -377,7 +385,7 @@ export class ElevationCalculator {
     continentalness: number,
     broadContinentalness: number
   ): number {
-    const { MOISTURE, features } = this.params;
+    const { MOISTURE, OCEANS, features } = this.params;
     if (!features.climate) return INVARIANTS.NEUTRAL_CENTER_POINT; // climate off → flat moisture everywhere
     const raw = fbm3(
       this.noise3D,
@@ -394,7 +402,31 @@ export class ElevationCalculator {
     const oceanic = Math.min(continentalness, broadContinentalness);
     const waterProximity = Math.pow(1 - oceanic, MOISTURE.DESERT_STEEPNESS);
     m = lerp(m, 1, MOISTURE.WATER_PROXIMITY_EFFECT * waterProximity);
+    // Interior dryness — the inverse of maritime humidity: deep continental interiors lose moisture, placing
+    // the Gobi / Sahara-heart / Great-Basin drylands far from any coast. inland = 0 at the shelf → 1 deep inland.
+    const inland = smoothstep(OCEANS.SHELF[1], 1, continentalness);
+    m = lerp(m, 0, MOISTURE.INTERIOR_DRYNESS * inland);
     return applyContrast(m, MOISTURE.CONTRAST);
+  }
+
+  /**
+   * The cell's Köppen zone index (KZ.*) — the GPU twin is koppen.glsl.ts:koppenZone, kept in sync. Climate
+   * inputs (latitude → mean temp, a synthesized seasonal swing from latitude + continentality, precipitation
+   * from moisture) are mottled by a multi-octave JITTER, then classified into a Köppen zone.
+   */
+  private koppenZoneAt(site: Vec3, elevation: number, moisture: number, continentalness: number): number {
+    const { CLIMATE, OCEANS } = this.params;
+    const seaLevel = OCEANS.SEA_LEVEL;
+    const latDeg = (Math.asin(Math.max(-1, Math.min(1, site.y))) * 180) / Math.PI;
+    const absLat = Math.abs(latDeg);
+    const jT = CLIMATE.JITTER * 8 * fbm3(this.noise3D, site.x + 11.3, site.y + 4.7, site.z + 19.1, CLIMATE.JITTER_SCALE, 1, 5, 0.5, 2);
+    const jM = CLIMATE.JITTER * 0.18 * fbm3(this.noise3D, site.x + 31.7, site.y + 23.9, site.z + 7.5, CLIMATE.JITTER_SCALE, 1, 5, 0.5, 2);
+    const matC = meanAnnualTempC(latDeg, elevation, seaLevel) + jT;
+    const moist = clamp(moisture + jM);
+    const continentality = smoothstep(OCEANS.SHELF[1], 1, continentalness);
+    const amp = seasonalAmplitudeC(absLat / 90, continentality, CLIMATE.SEASONALITY, CLIMATE.CONTINENTAL_SEASONALITY);
+    const precip = moistureToPrecipMm(moist) * hadleyPrecipFactor(absLat, CLIMATE.HADLEY);
+    return classifyKoppen(matC, matC + amp, matC - amp, precip, absLat, moist, elevation, seaLevel, continentality);
   }
 
   /**

@@ -1,24 +1,20 @@
 import { describe, expect, it } from "vitest";
-import type { Vec3 } from "../../common/3DMath";
 import type { Language } from "../../common/language";
 import { OCEANS, RIVERS, snapshotParams, type MapSettings } from "../../common/settings";
 import { buildCpuCalc } from "../gpu/cpuField";
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
-import { buildAdjacency } from "./adjacency";
-import { assignCities, type CityWaterKind } from "./cities";
-import { assignCountries } from "./countries";
+import { computeMapFeatures, type SettlementWaterKind } from "./index";
 import { computeRivers, type RiverData, type RiverFieldSampler } from "./rivers";
 
-// === City–water audit ===
-// Tallies each placed city by the water it sits ON (City.waterKind — the same classification that drives the
-// flavour split + the debug marker tint) and reports the sea / river / lake / interior split, so the bucket
-// proportions (CITY.RIVER_FRACTION / SEA_FRACTION / LAKE_FRACTION) can be judged against the record: premodern
-// cities sat overwhelmingly on water, and RIVERS were the most common, the coast a major second, with an
-// interior minority. Run it to SEE the numbers (it logs a table); the assertions are loose sanity rails.
+// === Settlement–water audit ===
+// Tallies each big-city HEAD settlement by the water it sits ON (waterKind — the same classification the
+// flavour split keys on) and reports the sea / river / lake / interior split. With the unified engine, water
+// affinity is EMERGENT (the population coast/river density bonus + the shore/river snap), not fixed bucket
+// fractions — so the table below is the real signal; the assertions are loose sanity rails.
 //
 // Rivers are computed on the CPU here (the real routing fed by a CPU field sampler — the GPU path's twin) so
-// the audit exercises the river bucket without a GPU.
+// the audit exercises river snapping without a GPU.
 
 const PARAMS = snapshotParams();
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
@@ -57,40 +53,37 @@ function riversFor(seed: string): RiverData {
   });
 }
 
-describe("city–water placement audit", () => {
+describe("settlement–water placement audit", () => {
   it("reports the sea / river / lake / interior split across several worlds", { timeout: 120_000 }, () => {
-    const tally: Record<CityWaterKind, number> = { ocean: 0, river: 0, lake: 0, none: 0 };
+    const tally: Record<SettlementWaterKind, number> = { ocean: 0, river: 0, lake: 0, none: 0 };
     let total = 0;
     const perSeed: string[] = [];
 
     for (const seed of SEEDS) {
       const map = new MapGenerator(seed, PARAMS).generateMap(SETTINGS);
-      const adjacency = buildAdjacency(map);
-      const { calc } = buildCpuCalc(seed, PARAMS);
-      const fineLandAt = (p: Vec3): boolean => calc.sampleCell(p).elevation >= seaLevel;
-      const { countryOf, countries } = assignCountries(map, map.reportElevation, seaLevel, adjacency, seed, MAP_LANG, POOL, new NameGenerator("a"));
-      const cities = assignCities(map, map.reportElevation, seaLevel, adjacency, countryOf, countries, seed, new NameGenerator("a"), fineLandAt, riversFor(seed));
+      const result = computeMapFeatures(map, seaLevel, MAP_LANG, seed, new NameGenerator("a"), POOL, PARAMS, riversFor(seed));
+      const cities = result.cities;
 
-      const seedTally: Record<CityWaterKind, number> = { ocean: 0, river: 0, lake: 0, none: 0 };
+      const seedTally: Record<SettlementWaterKind, number> = { ocean: 0, river: 0, lake: 0, none: 0 };
       for (const c of cities) {
         seedTally[c.waterKind]++;
         tally[c.waterKind]++;
         total++;
       }
       const n = cities.length || 1;
-      const pct = (k: CityWaterKind) => `${((100 * seedTally[k]) / n).toFixed(0)}%`;
+      const pct = (k: SettlementWaterKind) => `${((100 * seedTally[k]) / n).toFixed(0)}%`;
       perSeed.push(
         `  ${seed}: ${cities.length.toString().padStart(4)} cities | ` +
           `sea ${pct("ocean").padStart(4)}  river ${pct("river").padStart(4)}  lake ${pct("lake").padStart(4)}  interior ${pct("none").padStart(4)}`
       );
     }
 
-    const pct = (k: CityWaterKind) => (100 * tally[k]) / total;
+    const pct = (k: SettlementWaterKind) => (100 * tally[k]) / total;
     const waterAccess = 100 - pct("none");
     console.log(
       [
         "",
-        "════════════ city–water audit ════════════",
+        "════════════ settlement–water audit ════════════",
         ...perSeed,
         "  ───────────────────────────────────────",
         `  TOTAL: ${total} cities across ${SEEDS.length} worlds`,
@@ -99,16 +92,15 @@ describe("city–water placement audit", () => {
         `    lakeside:       ${pct("lake").toFixed(1)}%`,
         `    interior:       ${pct("none").toFixed(1)}%`,
         `    → any water:    ${waterAccess.toFixed(1)}%`,
-        "═══════════════════════════════════════════",
+        "═════════════════════════════════════════════════",
         "",
       ].join("\n")
     );
 
-    // Loose sanity rails (the table above is the real signal). Biggest cities are placed first and claim the
-    // prime water, so they sit overwhelmingly on it; with a dense enough river network the small-town tail
-    // finds water too, so the aggregate lands near the 1400 record — most on water, rivers a leading water.
+    // Loose sanity rails (the table above is the real signal). Water affinity is emergent now — the density
+    // coast/river bonus pulls settlements toward water and the snap seats the on-water ones — so a healthy
+    // share sit ON water, but the exact split is no longer a dialled fraction.
     expect(total).toBeGreaterThan(0);
-    expect(waterAccess).toBeGreaterThan(55); // premodern settlements sat mostly on water
-    expect(pct("river")).toBeGreaterThan(20); // rivers are a leading settlement water
+    expect(waterAccess).toBeGreaterThan(25); // settlements still cluster on/near water
   });
 });

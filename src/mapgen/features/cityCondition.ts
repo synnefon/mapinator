@@ -1,10 +1,10 @@
 import type { ElevationFamily, MoistureBand } from "../../common/biomes";
-import type { CityTier, CityWaterKind } from "./cities";
-import type { BiomeName, CityContext } from "./cityStats";
+import type { SettlementTier, SettlementWaterKind } from "./settlements";
+import type { BiomeName, SettlementContext } from "./cityStats";
 import { type Tags } from "./government";
 import type { IndustryTag } from "./industries";
 
-// ===================== City conditions =====================
+// ===================== Settlement conditions =====================
 // A small declarative vocabulary for "does this city match?", shared by both industry rules and fun-fact
 // patterns so the two stay in lock-step. A condition is a bag of optional constraints; every constraint
 // that's set must hold, and they hold together (AND). Matching lives here, not in the data, so a rule is
@@ -12,12 +12,12 @@ import type { IndustryTag } from "./industries";
 
 export type TagFilter = Partial<Tags>;
 
-/** Optional constraints over a CityContext. Set fields are AND-combined. Array fields (elevations/bands/
+/** Optional constraints over a SettlementContext. Set fields are AND-combined. Array fields (elevations/bands/
  *  biomes/tiers) match if the city's value is ONE OF the listed (OR within the field); `industries`
  *  matches if the city HAS at least one of the listed. Tag filters: `tags` = every named tag present,
  *  `anyTags` = at least one present, `excludeTags` = none present. */
 export type CityCondition = {
-  tiers?: CityTier[];
+  tiers?: SettlementTier[];
   capital?: boolean;
 
   elevations?: ElevationFamily[];
@@ -28,7 +28,7 @@ export type CityCondition = {
 
   coastal?: boolean;
   nearWater?: boolean;
-  water?: CityWaterKind[]; // the specific water the city sits ON (ocean/river/lake/none) — finer than coastal/nearWater
+  water?: SettlementWaterKind[]; // the specific water the city sits ON (ocean/river/lake/none) — finer than coastal/nearWater
 
   minElevationMeters?: number;
   maxElevationMeters?: number;
@@ -75,7 +75,7 @@ function includesNoTags(actual: Tags, excluded?: TagFilter): boolean {
   });
 }
 
-function matchesSingle(c: CityContext, when: CityCondition): boolean {
+function matchesSingle(c: SettlementContext, when: CityCondition): boolean {
   if (when.capital !== undefined && c.isCapital !== when.capital) return false;
   if (when.tiers && !when.tiers.includes(c.tier)) return false;
 
@@ -102,7 +102,7 @@ function matchesSingle(c: CityContext, when: CityCondition): boolean {
 
 /** The tag half of a condition: `tags` (all present) ∧ `anyTags` (≥1 present) ∧ `excludeTags` (none present).
  *  Split out so a given govType's tag set can be tested directly (e.g. the offline combo audit), not only
- *  via a full CityContext. */
+ *  via a full SettlementContext. */
 export function tagsMatch(govTags: Tags, when: Pick<CityCondition, "tags" | "anyTags" | "excludeTags">): boolean {
   return (
     includesAllTags(govTags, when.tags) &&
@@ -114,7 +114,7 @@ export function tagsMatch(govTags: Tags, when: Pick<CityCondition, "tags" | "any
 /** Does the context satisfy `when`? `undefined` always matches. An ARRAY is any-of (OR): it matches when
  *  ANY member matches — the declarative way to express "A or B" across dimensions a single condition's
  *  AND-combined fields can't (e.g. coastal AND (wet OR mountainous)). */
-export function matchesCondition(c: CityContext, when?: CityCondition | CityCondition[]): boolean {
+export function matchesCondition(c: SettlementContext, when?: CityCondition | CityCondition[]): boolean {
   if (!when) return true;
   if (Array.isArray(when)) return when.some((w) => matchesSingle(c, w));
   return matchesSingle(c, when);

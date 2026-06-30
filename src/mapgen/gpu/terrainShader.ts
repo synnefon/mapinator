@@ -1,4 +1,5 @@
 import { EXACT_SNOISE_GLSL } from "./exactSnoise.glsl";
+import { KOPPEN_GLSL } from "./koppen.glsl";
 
 /**
  * GLSL port of the FULL per-cell field — the GPU twin of ElevationCalculator.sampleCell. Each block
@@ -35,7 +36,7 @@ const float ICE_HOLE_FREQ = 10.0;
 const float ICE_HOLE_SOFT = 0.15;
 const float RIDGE_FEEDBACK = 2.5;
 const float RIDGE_SHARPNESS = 3.5;
-const float CONVERGENCE_SOFTNESS = 0.4;               // Tectonics
+const float CONVERGENCE_SOFTNESS = 0.1;               // Tectonics
 const float JUNCTION_FADE_WIDTH = 0.06;
 const float TEC_WARP_WL = 0.7;
 const float TEC_WARP_OFF_X = 8.3;
@@ -50,8 +51,10 @@ uniform float uCoastWavelength, uCoastAmplitude, uCoastOctaves, uCoastGain, uCoa
 uniform vec2  uShelf;
 uniform float uRidgeWavelength, uRidgeAmplitude, uMountainOctaves, uMountainGain, uMountainLacunarity, uSwellFraction;
 uniform float uRangeWidth, uSinuosity, uConvergenceThreshold, uVariation, uCoastBias;
+uniform float uLandReliefWavelength, uLandReliefAmplitude, uLandReliefOctaves, uLandReliefGain, uLandReliefLacunarity;
 uniform float uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity, uMoistContrast, uWaterProximityEffect, uDesertSteepness, uWaterSizeOctaves;
 uniform float uIceCoverage, uIceWobble, uIceFill, uIceBlend;
+uniform float uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uInteriorDryness, uHadley;  // CLIMATE (Köppen)
 uniform vec3  uLight;                 // hillshade light in (east, north, up)
 uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeLowlandFloor, uShadeMinLandE;
 uniform float uMountainsOn, uClimateOn, uIceOn;   // feature switches (1 = on)
@@ -193,9 +196,12 @@ float elevationAt(vec3 pos, float C) {
   float continent = clamp(base + detail, 0.0, 1.0);
   if (continent < uSeaLevel) return continent;
   float land = min(continent, uSeaLevel + LAND_HAIR);
+  // LAND_RELIEF — gentle continental uplands on the flat land base (ElevationCalculator: rectified positive,
+  // gated to land), filling the mid-elevation band the cap omits without moving the coastline.
+  float landRelief = shelf * max(0.0, fbm3(pos, uLandReliefWavelength, uLandReliefAmplitude, uLandReliefOctaves, uLandReliefGain, uLandReliefLacunarity));
   float mountainWeight = shelf * (1.0 - uCoastBias * inland);
   float mountains = mountainWeight * mountainRelief(pos, uplift(pos));
-  return clamp(max(land + mountains, uSeaLevel), 0.0, 1.0);
+  return clamp(max(land + landRelief + mountains, uSeaLevel), 0.0, 1.0);
 }
 
 // ElevationCalculator.reportElevationAt — the routing height for rivers. The rendered elevation
@@ -216,6 +222,10 @@ float moistureAt(vec3 site, float cont, float broadCont) {
   float oceanic = min(cont, broadCont);
   float waterProximity = pow(1.0 - oceanic, uDesertSteepness);
   m = mix(m, 1.0, uWaterProximityEffect * waterProximity);
+  // Interior dryness — the inverse of maritime humidity: deep continental interiors lose moisture, placing
+  // the Gobi / Sahara-heart / Great-Basin drylands far from any coast. inland = 0 at the shelf → 1 deep inland.
+  float inland = smoothstep(uShelf.y, 1.0, cont);
+  m = mix(m, 0.0, uInteriorDryness * inland);
   return applyContrast(m, uMoistContrast);
 }
 
@@ -261,13 +271,14 @@ float hillshadeAt(vec3 site, float C, float h0) {
   return mix(floorE, 1.0, clamp(dotv, 0.0, 1.0));
 }
 
+${KOPPEN_GLSL}
+
 // The full per-cell field — the GPU twin of ElevationCalculator.sampleCell (minus the plate index).
 vec4 field(vec3 site) {
   float full, broad;
   continentalness(site, full, broad);
   float elev = elevationAt(site, full);
   float moist = moistureAt(site, full, broad);
-  float ice = iceAt(site, elev);
   // .a carries shade for the renderer, OR the river routing height (reportElevation) when sampling
   // for rivers — an if (not ?:) so the unused branch's work is skipped and the render path is unchanged.
   float a;
@@ -279,7 +290,14 @@ vec4 field(vec3 site) {
   } else {
     a = hillshadeAt(site, full, elev);
   }
-  return vec4(elev, moist, ice, a);
+  // .b: rivers (uEmitReport) still read the polar-ice mask (rivers aren't drawn over iced land); the
+  // colour + base passes read the KÖPPEN ZONE instead — ice has left the render path, so Köppen E/EF is the
+  // single source for frozen colour. continentality (interior-ness) feeds the synthesized seasonal swing.
+  float continentality = smoothstep(uShelf.y, 1.0, full);
+  float b = uEmitReport > 0.5
+    ? iceAt(site, elev)
+    : koppenZone(site, elev, moist, continentality, uSeaLevel, uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uHadley);
+  return vec4(elev, moist, b, a);
 }
 `;
 

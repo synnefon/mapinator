@@ -12,7 +12,7 @@ export type CpuCalc = { calc: ElevationCalculator };
 export type FieldArrays = {
   elevation: Float32Array;
   moisture: Float32Array;
-  ice: Float32Array;
+  koppenZone: Float32Array;
   shade: Float32Array;
 };
 
@@ -34,7 +34,7 @@ export function cpuFullFieldInto(
     const c = calc.sampleCell({ x: sites[3 * i], y: sites[3 * i + 1], z: sites[3 * i + 2] });
     out.elevation[i] = c.elevation;
     out.moisture[i] = c.moisture;
-    out.ice[i] = c.ice;
+    out.koppenZone[i] = c.koppenZone;
     out.shade[i] = c.shade;
   }
 }

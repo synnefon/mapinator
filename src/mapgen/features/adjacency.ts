@@ -1,4 +1,6 @@
+import { Vec3 } from "../../common/3DMath";
 import type { GlobeMap } from "../../common/map";
+import type { RawComponent } from "./detect";
 
 // Cells whose polygon rings share an EDGE (≥2 corners) are neighbours. The mesh is the watertight
 // Goldberg dual, but each cell emits its ring vertices independently, so the same corner can differ
@@ -93,4 +95,55 @@ export function waterHopDistance(
  *  multi-source BFS out from the coastline (a land cell touching water is 0). Water cells stay -1. */
 export function coastDistance(map: GlobeMap, seaLevel: number, adjacency: number[][]): Int32Array {
   return waterHopDistance(map, seaLevel, adjacency, (i) => map.elevation[i] < seaLevel);
+}
+
+// A water body counts as "large" (a sea/ocean, not a lake/pond) if it's the biggest water body OR spans at
+// least this fraction of all cells. Resolution-independent (a fraction of the cell count).
+const LARGE_WATER_FRAC = 0.01;
+
+/** Per-cell flag (1/0): is this cell part of a LARGE water body? The single biggest water component always
+ *  counts (these worlds always have an ocean); others count once they clear LARGE_WATER_FRAC. Takes the
+ *  already-detected components so the caller doesn't re-flood-fill. */
+export function largeWaterMask(components: RawComponent[], cellCount: number): Uint8Array {
+  const mask = new Uint8Array(cellCount);
+  const water = components.filter((c) => c.cls === "water");
+  if (water.length === 0) return mask;
+  const threshold = LARGE_WATER_FRAC * cellCount;
+  const largest = water.reduce((a, b) => (b.cells.length > a.cells.length ? b : a));
+  for (const comp of water) {
+    if (comp === largest || comp.cells.length >= threshold) {
+      for (const cell of comp.cells) mask[cell] = 1;
+    }
+  }
+  return mask;
+}
+
+/** Per land cell, the unit direction toward its nearest bordering WATER cell (0,0,0 if it touches no water).
+ *  The shore snap marches a settlement along this to the fine waterline, so the marker sits on the coast.
+ *  Computed where the mesh adjacency lives (main thread) + shipped to the worker so both snap identically. */
+export function buildCoastDir(map: GlobeMap, adjacency: number[][], seaLevel: number): Float32Array {
+  const { cellCount, sites, elevation } = map;
+  const dir = new Float32Array(3 * cellCount);
+  for (let i = 0; i < cellCount; i++) {
+    if (elevation[i] < seaLevel) continue; // water cell — no shore direction
+    const cx = sites[3 * i];
+    const cy = sites[3 * i + 1];
+    const cz = sites[3 * i + 2];
+    let best = -1;
+    let bestDot = -Infinity;
+    for (const nb of adjacency[i]) {
+      if (elevation[nb] >= seaLevel) continue; // only head toward water neighbours
+      const dot = cx * sites[3 * nb] + cy * sites[3 * nb + 1] + cz * sites[3 * nb + 2];
+      if (dot > bestDot) {
+        bestDot = dot; // largest dot ⇒ smallest angle ⇒ nearest water neighbour
+        best = nb;
+      }
+    }
+    if (best < 0) continue;
+    const d = Vec3.normalize({ x: sites[3 * best] - cx, y: sites[3 * best + 1] - cy, z: sites[3 * best + 2] - cz });
+    dir[3 * i] = d.x;
+    dir[3 * i + 1] = d.y;
+    dir[3 * i + 2] = d.z;
+  }
+  return dir;
 }

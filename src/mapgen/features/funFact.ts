@@ -1,8 +1,8 @@
 import { randomChoice } from "../../common/random";
 import { type CityCondition, matchesCondition } from "./cityCondition";
-import type { BiomeName, CityContext } from "./cityStats";
+import type { BiomeName, SettlementContext } from "./cityStats";
 import { Authority, Society, Structure, Trait } from "./government";
-import { applySettlementNoun } from "./settlement";
+import { applySettlementNoun } from "./settlements";
 
 // ===================== Fun facts: the oddity engine =====================
 // One register only: a fun fact is a concrete, surprising, SPECIFIC claim — something that sounds TRUE of
@@ -34,7 +34,7 @@ type FunFactPattern = Conditional<{
 }>;
 
 // {country} → the country name; {slot} → the rendered slot value. No tokens ⇒ returned unchanged.
-function renderTemplate(template: string, slots: Record<string, string>, ctx: CityContext): string {
+function renderTemplate(template: string, slots: Record<string, string>, ctx: SettlementContext): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => (key === "country" ? ctx.countryName : slots[key] ?? ""));
 }
 
@@ -414,13 +414,13 @@ const flatOddityPatterns: FunFactPattern[] = cityOddities.map((o) => ({ when: o.
 const FUN_FACT_PATTERNS: FunFactPattern[] = [...flatOddityPatterns, ...slottedOddityPatterns];
 
 // Pick one option a city satisfies, at random; null if it has none (the slot — and so the pattern — can't fire).
-function chooseSlotOption(options: FactPart[], ctx: CityContext): FactPart | null {
+function chooseSlotOption(options: FactPart[], ctx: SettlementContext): FactPart | null {
   const candidates = options.filter((o) => matchesCondition(ctx, o.when));
   return candidates.length === 0 ? null : randomChoice(candidates, ctx.rng);
 }
 
 // Render one pattern for a city, or null if its gate fails or a slot has no eligible option.
-function generateFromPattern(pattern: FunFactPattern, ctx: CityContext): string | null {
+function generateFromPattern(pattern: FunFactPattern, ctx: SettlementContext): string | null {
   if (!matchesCondition(ctx, pattern.when)) return null;
   const resolved: Record<string, string> = {};
   for (const [slotName, options] of Object.entries(pattern.slots)) {
@@ -431,7 +431,7 @@ function generateFromPattern(pattern: FunFactPattern, ctx: CityContext): string 
   return renderTemplate(pattern.template, resolved, ctx);
 }
 
-export function generateFunFact(ctx: CityContext, used?: Set<string>): string {
+export function generateFunFact(ctx: SettlementContext, used?: Set<string>): string {
   // Collect every oddity this city can show (one rendering per pattern), then prefer one the COUNTRY hasn't
   // used yet — so a country's cities each get a distinct fact, falling back to a repeat only once it has
   // genuinely spent its eligible oddities. Universal entries always match, so the stub is unreachable.

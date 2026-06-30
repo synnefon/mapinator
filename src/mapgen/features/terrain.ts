@@ -1,23 +1,37 @@
+import { SHADE_MIN_LAND_E } from "../../common/elevationBands";
+import { isAridZone, isForestZone, isOceanZone } from "../../common/koppen";
 import type { GlobeMap } from "../../common/map";
-import { terrainClassOf } from "../../renderer/BiomeColor";
+import { CONTINENTS, OCEANS } from "../../common/settings";
+import { applyContrast } from "../../common/util";
 
 export type TerrainKind = "MOUNTAINS" | "DESERT" | "FOREST";
 export type TerrainComponent = { kind: TerrainKind; cells: number[] };
 
 const KINDS: TerrainKind[] = ["MOUNTAINS", "DESERT", "FOREST"];
 
+// A cell is MOUNTAINS once its (contrasted) land elevation reaches the HIGH band — the SAME threshold the
+// renderer shades as mountains (SHADE_MIN_LAND_E). Köppen is climate-only, so the mountain label stays
+// elevation-driven (deliberately outside the Köppen scope); deserts/forests are the climate (Köppen zone).
+function isMountainElevation(elevation: number): boolean {
+  const cwl = applyContrast(OCEANS.SEA_LEVEL.value, CONTINENTS.ELEVATION_CONTRAST.value);
+  const ec = applyContrast(elevation, CONTINENTS.ELEVATION_CONTRAST.value);
+  if (ec < cwl) return false; // ocean
+  return (ec - cwl) / (1 - cwl) >= SHADE_MIN_LAND_E;
+}
+
 /**
- * A land cell's labelled terrain kind from its biome (or null = ocean / mid-moisture plains, which
- * we leave unnamed). Matches the rendered colour: mountains are the high rock/snow band; desert is
- * dry low/medium land; forest is wet low/medium land.
+ * A land cell's labelled terrain kind from its KÖPPEN zone (+ an elevation test for mountains), or null
+ * (ocean, or unlabelled plains — grassland / savanna / steppe / mediterranean / tundra). Reads off the
+ * same Köppen truth the colours do: deserts are the arid (B) zones, forests the humid tropical/temperate/
+ * boreal zones.
  */
 function terrainKindOf(map: GlobeMap, i: number): TerrainKind | null {
-  const c = terrainClassOf(map.elevation[i], map.moisture[i], map.rainfall);
-  if (!c) return null;
-  if (c.family === "HIGH" || c.family === "VERY_HIGH") return "MOUNTAINS";
-  if (c.band === "DRY") return "DESERT";
-  if (c.band === "WET") return "FOREST";
-  return null; // mid-moisture lowland — plains, left unlabelled
+  const zone = map.koppenZone[i];
+  if (isOceanZone(zone)) return null;
+  if (isMountainElevation(map.elevation[i])) return "MOUNTAINS";
+  if (isAridZone(zone)) return "DESERT";
+  if (isForestZone(zone)) return "FOREST";
+  return null; // grassland / savanna / steppe / mediterranean / tundra — left unlabelled (as before)
 }
 
 /**

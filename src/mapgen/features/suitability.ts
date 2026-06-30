@@ -105,24 +105,30 @@ export function ruggednessFactor(slope: number): number {
   return 1 / (1 + POPULATION.RUGGEDNESS.value * SLOPE_GAIN * Math.max(0, slope));
 }
 
-const ICE_SUPPRESSION = 0.92; // a full ice cap removes 92% of a cell's habitability
+const ICE_SUPPRESSION = 0.92; // deep cold removes 92% of a cell's habitability
+
+/** Fraction of a cell that's permanently frozen, from its mean annual temperature — the Köppen-aligned
+ *  replacement for the old polar-ice MASK, so habitability and the biome COLOUR now agree on "frozen" from
+ *  ONE source (temperature). 1 at deep cold (≤ −12 °C, ice-cap), ramping to 0 by 0 °C. */
+const frozenFraction = (matC: number): number => 1 - smoothstep(-12, 0, matC);
 
 export type CellEnv = {
   latDeg: number;
   reportElevation: number; // [0,1] display height — feeds the lapse-rate temperature
   moisture: number; // [0,1] already-contrasted
-  ice: number; // [0,1] polar ice-cap mask
+  ice: number; // VESTIGIAL — habitability's "frozen" now comes from temperature (frozenFraction); the polar-ice field retires with the settlement rework
   slope: number; // local max |Δ raw-elevation| to neighbours — ruggedness
 };
 
-/** Joint per-cell suitability: temperature niche × moisture × ruggedness × ice suppression. */
+/** Joint per-cell suitability: temperature niche × moisture × ruggedness × frozen-temperature suppression.
+ *  "Frozen" is now derived from MAT (frozenFraction), so it's the same Köppen truth the colour uses. */
 export function cellSuitability(env: CellEnv, seaLevel: number): number {
   const matC = meanAnnualTempC(env.latDeg, env.reportElevation, seaLevel);
   return (
     temperatureNiche(matC, env.moisture) *
     moistureSuitability(env.moisture, matC) *
     ruggednessFactor(env.slope) *
-    (1 - ICE_SUPPRESSION * env.ice)
+    (1 - ICE_SUPPRESSION * frozenFraction(matC))
   );
 }
 

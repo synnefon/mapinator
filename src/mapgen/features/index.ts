@@ -1,12 +1,12 @@
 import type { Vec3 } from "../../common/3DMath";
 import type { Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
-import { COUNTRIES, type TerrainParams } from "../../common/settings";
+import { CITIES, COUNTRIES, POPULATION, type TerrainParams } from "../../common/settings";
 import { buildCpuCalc } from "../gpu/cpuField";
 import type { NameGenerator } from "../NameGenerator";
-import { buildAdjacency } from "./adjacency";
+import { buildAdjacency, buildCoastDir, coastDistance, largeWaterMask, waterHopDistance } from "./adjacency";
 import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
-import { assignCities, type City } from "./cities";
+import { assembleHeadSettlements } from "./cityStats";
 import {
   assignCountries,
   colorCountries,
@@ -15,13 +15,16 @@ import {
   refineCountryBorders,
 } from "./countries";
 import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
+import type { Tags } from "./government";
 import { inlandRisenElevation } from "./inlandElevation";
+import { buildKdTree, nearestCell } from "./kdTree";
 import { nameFeature } from "./name";
 import { subdivideOcean } from "./ocean";
 import type { RiverData } from "./rivers";
+import { buildRiverGrid, makeSettlementWorld, RIVER_GRID_CELLS, type Settlement } from "./settlements";
 import { detectTerrainFeatures } from "./terrain";
 
-export type { City, CityTier, CityWaterKind } from "./cities";
+export type { Settlement, SettlementTier, SettlementWaterKind } from "./settlements";
 export { CLASSIFY, type FeatureKind } from "./classify";
 export { OCEAN_NAMING } from "./ocean";
 
@@ -40,6 +43,7 @@ export type CountryInfo = {
   name: string;
   language: Language;
   government: string;
+  govTags: Tags; // the government's semantic tags — drives a settlement marker's industries + fun facts (tail towns)
   population: number;
   areaKm2: number;
   anchor: Vec3; // where the (red) label sits
@@ -51,12 +55,15 @@ export type CountryInfo = {
 export type MapFeatures = {
   features: MapFeature[];
   countries: CountryInfo[];
-  cities: City[]; // city markers — tier + zoom-gated, with interactive population popups
+  cities: Settlement[]; // the big-city HEAD — the settlement field over the whole sphere ≥ the global split
   borders: Float32Array; // flat [x0,y0,z0, x1,y1,z1, …] unit-sphere border segment pairs
   countryOf: Int32Array; // per cell: country index (matches CountryInfo.index), or -1 for ocean
   grownCountryOf: Int32Array; // countryOf grown over water by contiguity — every cell has a country (the base
   // partition the workers sample to stamp each patch cell at generation; see growCountriesOverWater)
   countryColors: Int32Array; // per country index: a colour class for the choropleth fill (see colorCountries)
+  // The per-base-cell water arrays the one settlement engine routes + biases on, shipped to the worker so the
+  // patch-local town tail routes identically to the head (see main.ts broadcast + mapWorker).
+  settlementSeeds: { coastDist: Int32Array; seaDist: Int32Array; coastDir: Float32Array };
 };
 
 const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
@@ -88,8 +95,8 @@ export function computeMapFeatures(
   const adjacency = buildAdjacency(map);
   const components = detectComponents(map, seaLevel, adjacency);
   // The continental inland rise as an explicit display-elevation field (pure — no map mutation), computed
-  // BEFORE countries/cities, which take it as a named input so the coast→interior gradient that feeds the
-  // city cards + population lapse rate can't be reordered away.
+  // BEFORE countries, which take it as a named input so the coast→interior gradient that feeds the
+  // population lapse rate can't be reordered away.
   const reportElevation = inlandRisenElevation(map, seaLevel, adjacency, components);
   // Start a clean uniqueness namespace for this generation: countries claim names first, then cities,
   // then features (all via `namer`), so no two named things anywhere share a name. Resetting each call
@@ -106,16 +113,43 @@ export function computeMapFeatures(
     namer
   );
   const { countryOf, countries } = countryData;
-  // Re-derive the generator's FINE field on this thread (the base map was built in a worker) so coastal
-  // city markers can snap to the rendered waterline (`elev >= seaLevel`), not the coarse cell boundary.
-  const { calc } = buildCpuCalc(mapSeed, params);
-  const fineLandAt = (p: Vec3): boolean => calc.sampleCell(p).elevation >= seaLevel;
-  const cities = assignCities(map, reportElevation, seaLevel, adjacency, countryOf, countries, mapSeed, namer, fineLandAt, rivers);
-  const countryColors = colorCountries(countryOf, adjacency, countries.length);
-  // The base partition grown over water by contiguity — the per-cell country every direction maps to.
-  // Broadcast to the workers so each patch cell is country-stamped at GENERATION (nearest base cell), not by
-  // a lagging re-grow. (Land cells unchanged; water cells take their contiguous coast — never a strait-hop.)
+  // The base partition grown over water by contiguity — every cell (even open water) maps to a country, so a
+  // coastal settlement whose nearest base cell is water still gets claimed. Broadcast to the workers so each
+  // patch cell is country-stamped at GENERATION (nearest base cell), and the SAME partition seeds the head +
+  // tail settlement field's countryAt.
   const grownCountryOf = growCountriesOverWater(adjacency, countryOf, map.cellCount);
+  // The water arrays the one settlement engine routes + biases on, computed here where the mesh adjacency
+  // lives; the SAME arrays are shipped to the worker so the patch-local tail routes identically (main.ts).
+  const largeWater = largeWaterMask(components, map.cellCount);
+  const coastDist = coastDistance(map, seaLevel, adjacency);
+  const seaDist = waterHopDistance(map, seaLevel, adjacency, (i) => largeWater[i] === 1);
+  const coastDir = buildCoastDir(map, adjacency, seaLevel);
+  const cellSpacing = Math.sqrt((4 * Math.PI) / map.cellCount);
+  const riverGrid = buildRiverGrid(rivers.positions, rivers.widths, CITIES.RIVER_MIN_STRENGTH.value, RIVER_GRID_CELLS * cellSpacing);
+  // Re-derive the generator's FINE field on this thread (the base map was built in a worker) so the engine's
+  // density + coastal snap read the same field the renderer draws (`elev >= seaLevel`).
+  const { calc } = buildCpuCalc(mapSeed, params);
+  const tree = buildKdTree(map.sites, map.cellCount);
+  const nearestCellAt = (p: Vec3): number => nearestCell(tree, map.sites, p.x, p.y, p.z);
+  // The one SettlementWorld — the SAME engine + routes the worker builds for the tail (makeSettlementWorld).
+  const world = makeSettlementWorld({
+    sampleCell: (p) => calc.sampleCell(p),
+    seaLevel,
+    nearestCell: nearestCellAt,
+    countryOf: grownCountryOf,
+    coastDist,
+    seaDist,
+    coastDir,
+    riverGrid,
+    cellSpacing,
+    densityScale: POPULATION.GLOBAL_POPULATION_DENSITY.value,
+    coastStrength: POPULATION.COAST_STRENGTH.value,
+    coastFalloff: POPULATION.COAST_FALLOFF.value,
+    desertAversion: CITIES.DESERT_AVERSION.value,
+    iceAversion: CITIES.ICE_AVERSION.value,
+  });
+  const cities = assembleHeadSettlements({ map, seaLevel, world, countries, mapSeed, namer });
+  const countryColors = colorCountries(countryOf, adjacency, countries.length);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of
   // its largest bordering country. Both fall back to the map language.
@@ -191,6 +225,7 @@ export function computeMapFeatures(
       name: c.name,
       language: c.language,
       government: c.government,
+      govTags: c.govType.tags,
       population: c.population,
       areaKm2: c.areaKm2,
       anchor: siteVec(map, c.anchorCell),
@@ -204,5 +239,6 @@ export function computeMapFeatures(
     countryOf,
     grownCountryOf,
     countryColors,
+    settlementSeeds: { coastDist, seaDist, coastDir },
   };
 }

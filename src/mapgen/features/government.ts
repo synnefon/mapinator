@@ -784,7 +784,7 @@ function titleCase(words: string): string {
  * - Royal Constitutional Kingdom
  * - Democratic People's Republic
  * - Mercantile Trade League
- * - Autonomous City-State
+ * - Autonomous Settlement-State
  *
  * Density is derived from the govType's tags. The tags are the source of truth.
  */

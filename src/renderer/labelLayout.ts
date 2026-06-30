@@ -1,6 +1,6 @@
 // Occupancy-bitmap label declutter. A coarse per-frame raster of "claimed" screen space: text labels
 // are placed in priority order, each shown only if its (gutter-inflated) box lands on free space, then
-// it stamps its box as claimed so later, lower-priority labels avoid it. City dots + UI chrome are
+// it stamps its box as claimed so later, lower-priority labels avoid it. Settlement dots + UI chrome are
 // pre-stamped as reserved obstacles, so labels never cover them. O(n) over the raster — light,
 // position-dependent, per-frame work (same category as the per-frame dot reprojection), so it lives on
 // the main thread with the other overlays rather than off-thread (cf. CLAUDE.md).

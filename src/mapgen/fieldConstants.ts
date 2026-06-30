@@ -36,7 +36,7 @@ export const ICE_HOLE_SOFTNESS = 0.15;
 
 // --- Tectonics.ts ---
 // Ramp width above CONVERGENCE_THRESHOLD to a full-height range (stronger collisions → taller ranges).
-export const CONVERGENCE_SOFTNESS = 0.4;
+export const CONVERGENCE_SOFTNESS = 0.1;
 // Width over which a range fades to nothing approaching a triple junction (a smooth gap, not a hard cut).
 export const JUNCTION_FADE_WIDTH = 0.06;
 // Plate-boundary domain warp (SINUOSITY scales it): wavelength + per-axis decorrelation offsets.

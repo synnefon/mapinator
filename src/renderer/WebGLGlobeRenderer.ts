@@ -1,11 +1,11 @@
 import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { CONTINENTS, COUNTRIES, LOD, OCEANS, type MapSettings, type TerrainParams } from "../common/settings";
+import { COUNTRIES, LOD, OCEANS, type MapSettings, type TerrainParams } from "../common/settings";
 import { GpuField } from "../mapgen/gpu/GpuField";
 import type { PlateData } from "../mapgen/gpu/plateData";
-import { computeCellColors, type ChoroplethTint } from "./BiomeColor";
-import { buildColorLut, COLOR_LUT_SIZE, iceColorRgb } from "./colorLut";
+import { computeCellColors, koppenPaletteRgb, type ChoroplethTint } from "./BiomeColor";
+import { KOPPEN_ZONE_COUNT } from "../common/koppen";
 import { bakeCountryTexture, COUNTRY_TEX_H, COUNTRY_TEX_W, HUES } from "./countryTexture";
 import { globeRadiusPx, GlobeRenderer } from "./GlobeRenderer";
 
@@ -170,41 +170,23 @@ flat in vec4 vCountry; // per-cell: rgb = country hue, a = (index+1)/255 (0 = wa
 in float vLimb;
 in vec3 vWorldDir;
 uniform float uAmbient;
-uniform float uElevationContrast;
-uniform float uSeaLevel;       // clip the country tint to the patch's own (fine) coastline
-uniform sampler2D uColorLut;   // [contrasted-elevation, moisture] → biome rgb (bakes colorAt)
-uniform vec3 uIceColor;
+uniform float uSeaLevel;       // land/ocean split — clips the country tint to the patch's own (fine) coastline
+uniform vec3 uPalette[${KOPPEN_ZONE_COUNT}]; // Köppen zone id → earth colour (mirrors KOPPEN_COLORS)
 uniform float uChoropleth;     // 0 = off, else the country-tint OPACITY (mix amount)
 uniform float uUseCellCountry; // 1 = per-cell (re-grow landed), 0 = coarse equirect fallback (gap)
 uniform int uHoverCountry;     // hovered country index, or -1 = none
 uniform sampler2D uCountryTex; // equirect choropleth: rgb = dilated country hue (gated by per-cell coast)
 out vec4 fragColor;
-// util.ts:applyContrast — raw elevation → contrasted, the LUT's elevation axis.
-float applyContrast(float v, float contrast) {
-  float t = clamp(contrast, 0.0, 1.0);
-  float u = 2.0 * v - 1.0;
-  float e = t <= 0.5 ? mix(3.0, 1.0, t / 0.5) : mix(1.0, 0.2, (t - 0.5) / 0.5);
-  return clamp((sign(u) * pow(abs(u), e) + 1.0) * 0.5, 0.0, 1.0);
-}
 void main() {
-  float elev = vField.r, moist = vField.g, ice = vField.b, shade = vField.a;
-  // Biome from the LUT (axis = contrasted elevation). The LUT is NEAREST-sampled, so a cell within ~a
-  // texel of the waterline can snap to the WRONG side of colorAt's ocean/land split — painting a true
-  // ocean cell as land (a tan speck in the blue) or vice versa, fringing the coast. Clamp the lookup to
-  // the side the EXACT test picks (elev vs uSeaLevel — the SAME waterline the country tint + the base
-  // globe gate on), so the biome's coast IS the gate's coast: one source of truth, no LUT-quantization
-  // fringe. The margin is one LUT texel (covers NEAREST's half-texel snap + the LUT's i/(size-1)-build
-  // vs texcoord-addressing skew); only cells within a texel of the waterline move, by ≤1 texel of the
-  // ramp (invisible), while the cross-waterline mismatch is gone.
-  float ec = applyContrast(elev, uElevationContrast);
-  float wc = applyContrast(uSeaLevel, uElevationContrast); // colorAt's waterline in contrasted space
-  ec = elev < uSeaLevel ? min(ec, wc - ${(1 / COLOR_LUT_SIZE).toFixed(6)})
-                        : max(ec, wc + ${(1 / COLOR_LUT_SIZE).toFixed(6)});
-  vec3 biome = texture(uColorLut, vec2(ec, moist)).rgb;
-  vec3 terrain = mix(biome, uIceColor, ice);
+  float elev = vField.r, shade = vField.a;
+  // Biome colour: the field baked the cell's KÖPPEN ZONE into .b (ElevationCalculator / the field shader
+  // ran the classifier), so the draw is a pure palette lookup — no LUT, no ice mix. +0.5 rounds the float
+  // zone id; ocean is just the OCEAN_DEEP/MID/SHALLOW zones, so the biome coast IS the classifier's waterline.
+  int zone = int(vField.b + 0.5);
+  vec3 biome = uPalette[zone];
   // Hillshade applies to TERRAIN only; the country tint + highlight are laid FLAT on top — a clean
   // political overlay, crisp to the fine coast (per-cell from vCountry, no equirect sampling/dilation).
-  vec3 col = terrain * shade;
+  vec3 col = biome * shade;
   if (elev >= uSeaLevel) {
     if (uUseCellCountry > 0.5) {
       // Re-grow landed. Choropleth tint is gated on the colours layer; the hover highlight is INDEPENDENT
@@ -270,8 +252,6 @@ type GLState = {
   patch?: PatchProgram | null;
   gpuField?: GpuField | null;
   riverField?: GpuField | null; // separate field sampler for river routing (readback) — keeps the patch texture undisturbed
-  colorLutTex: WebGLTexture | null;
-  colorLutKey: string | null;
   patchGeom: Map<GlobeMap, PatchGeomEntry>; // pos + fan idx + cell index + per-cell country tex, LRU by count
 };
 
@@ -283,12 +263,10 @@ type PatchProgram = {
   uDepthBias: WebGLUniformLocation;
   uOffsetX: WebGLUniformLocation;
   uAmbient: WebGLUniformLocation;
-  uElevationContrast: WebGLUniformLocation;
   uSeaLevel: WebGLUniformLocation;
   uField: WebGLUniformLocation;
   uFieldWidth: WebGLUniformLocation;
-  uColorLut: WebGLUniformLocation;
-  uIceColor: WebGLUniformLocation;
+  uPalette: WebGLUniformLocation;
   uCountryField: WebGLUniformLocation;
   uCountryTex: WebGLUniformLocation;
   uChoropleth: WebGLUniformLocation;
@@ -390,7 +368,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     canvas: HTMLCanvasElement,
     sites: Float32Array,
     inputs: GpuFieldInputs
-  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; shade: Float32Array; reportElevation: Float32Array } | null {
+  ): { elevation: Float32Array; moisture: Float32Array; koppenZone: Float32Array; shade: Float32Array; reportElevation: Float32Array } | null {
     const st = this.getState(canvas);
     if (st.riverField === undefined) st.riverField = GpuField.create(st.gl);
     if (!st.riverField || !st.riverField.fits(sites.length / 3)) return null;
@@ -532,8 +510,6 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       countryKey: null,
       geom: new Map(),
       geomBytes: 0,
-      colorLutTex: null,
-      colorLutKey: null,
       patchGeom: new Map(),
     };
     this.states.set(canvas, state);
@@ -564,24 +540,6 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     const geom = this.getPatchGeom(st, map);
     if (geom.indexCount === 0) return false;
 
-    // Colour LUT (bakes colorAt for this theme + rainfall); rebuilt only when those change. Use the
-    // LIVE snapshot's rainfall, NOT map.rainfall: the whole-globe overlay shown at zoom 0 is built once
-    // and KEPT across reset(), so its baked rainfall goes stale on a dial change. The field is recomputed
-    // live here from inputs.params, so the LUT must track the same snapshot or zoom 0 won't update.
-    const rainfall = inputs.params.MOISTURE.RAINFALL;
-    const lutKey = `${settings.theme}|${rainfall}`;
-    if (st.colorLutKey !== lutKey || !st.colorLutTex) {
-      const data = buildColorLut(settings.theme, rainfall);
-      st.colorLutTex ??= gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, st.colorLutTex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, COLOR_LUT_SIZE, COLOR_LUT_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      st.colorLutKey = lutKey;
-    }
-
     // Compute the field into a GPU texture (no readback). Restores DEPTH_TEST for our draw.
     const field = st.gpuField.renderToTexture(map.sites, inputs.params, inputs.perm, inputs.plate);
 
@@ -595,8 +553,8 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.uniform1f(p.uDepthBias, PATCH_DEPTH_BIAS); // overlay: bias toward the camera over the base
     gl.uniform1f(p.uOffsetX, 2 * LOD.GLOBE_OFFSET_FRACTION);
     gl.uniform1f(p.uAmbient, AMBIENT);
-    gl.uniform1f(p.uElevationContrast, CONTINENTS.ELEVATION_CONTRAST.value);
     gl.uniform1f(p.uSeaLevel, OCEANS.SEA_LEVEL.value);
+    gl.uniform3fv(p.uPalette, koppenPaletteRgb(settings.theme)); // Köppen zone → colour (matches the CPU base mesh)
     gl.uniform1i(p.uFieldWidth, field.width);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, geom.posBuf);
@@ -609,11 +567,6 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, field.texture);
     gl.uniform1i(p.uField, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, st.colorLutTex);
-    gl.uniform1i(p.uColorLut, 1);
-    const [ir, ig, ib] = iceColorRgb(settings.theme);
-    gl.uniform3f(p.uIceColor, ir, ig, ib);
 
     // Per-cell country tint + highlight: bake the patch's re-grown countryOf (+ 4-colour classes) into an
     // RGBA8 strip matching the field layout (rgb = hue, a = index+1), rebuilt only when the array changes.
@@ -644,7 +597,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     // (baked by the base pass earlier this frame), so the choropleth doesn't blink off during pan/zoom. A
     // harmless stand-in when unbaked (choropleth is then off, so it isn't sampled).
     gl.activeTexture(gl.TEXTURE3);
-    gl.bindTexture(gl.TEXTURE_2D, st.countryTex ?? st.colorLutTex);
+    gl.bindTexture(gl.TEXTURE_2D, st.countryTex ?? field.texture);
     gl.uniform1i(p.uCountryTex, 3);
     gl.uniform1f(p.uChoropleth, (settings.viewCountryColors ?? false) ? COUNTRIES.CHOROPLETH_OPACITY.value : 0.0);
     gl.uniform1f(p.uUseCellCountry, patchCountry ? 1.0 : 0.0);
@@ -677,12 +630,10 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
       uDepthBias: uni("uDepthBias"),
       uOffsetX: uni("uOffsetX"),
       uAmbient: uni("uAmbient"),
-      uElevationContrast: uni("uElevationContrast"),
       uSeaLevel: uni("uSeaLevel"),
       uField: uni("uField"),
       uFieldWidth: uni("uFieldWidth"),
-      uColorLut: uni("uColorLut"),
-      uIceColor: uni("uIceColor"),
+      uPalette: uni("uPalette"),
       uCountryField: uni("uCountryField"),
       uCountryTex: uni("uCountryTex"),
       uChoropleth: uni("uChoropleth"),

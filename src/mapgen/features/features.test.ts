@@ -26,6 +26,7 @@ function testMap(parts: {
     reportElevation: new Float32Array(cellCount),
     moisture: new Float32Array(cellCount),
     ice: new Float32Array(cellCount),
+    koppenZone: new Float32Array(cellCount),
     shade: new Float32Array(cellCount),
     plate: new Uint16Array(cellCount),
     arrowPositions: empty,

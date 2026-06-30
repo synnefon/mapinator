@@ -9,7 +9,7 @@ import { FIELD_FRAG_SRC, FIELD_VERT_SRC } from "./terrainShader";
  *  readPixels + unpack. This is the READBACK path (for validation/benchmark); the renderer will use a
  *  no-readback variant that samples the field texture directly. */
 export type GpuFieldResult = {
-  fields: { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; shade: Float32Array };
+  fields: { elevation: Float32Array; moisture: Float32Array; koppenZone: Float32Array; shade: Float32Array };
   width: number;
   height: number;
   timing: { upload: number; render: number; readback: number; total: number };
@@ -103,11 +103,11 @@ export class GpuField {
   compute(sites: Float32Array, params: TerrainParams, perm: Float32Array, plate: PlateData): GpuFieldResult {
     const { width, height, count, upload, render } = this.render(sites, params, perm, plate);
     const t2 = now();
-    const [elevation, moisture, ice, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
+    const [elevation, moisture, koppenZone, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     const readback = now() - t2;
     return {
-      fields: { elevation, moisture, ice, shade },
+      fields: { elevation, moisture, koppenZone, shade },
       width,
       height,
       timing: { upload, render, readback, total: upload + render + readback },
@@ -126,13 +126,13 @@ export class GpuField {
     params: TerrainParams,
     perm: Float32Array,
     plate: PlateData
-  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; shade: Float32Array; reportElevation: Float32Array } {
+  ): { elevation: Float32Array; moisture: Float32Array; koppenZone: Float32Array; shade: Float32Array; reportElevation: Float32Array } {
     const { width, height, count } = this.render(sites, params, perm, plate); // pass 1
-    const [elevation, moisture, ice, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
+    const [elevation, moisture, koppenZone, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
     this.render(sites, params, perm, plate, true); // pass 2 — reportElevation written to .a (emitReport)
     const [reportElevation] = this.readChannels(width, height, count, [3]);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
-    return { elevation, moisture, ice, shade, reportElevation };
+    return { elevation, moisture, koppenZone, shade, reportElevation };
   }
 
   /**
@@ -329,6 +329,12 @@ export class GpuField {
     f("uMountainGain", p.MOUNTAINS.GAIN);
     f("uMountainLacunarity", p.MOUNTAINS.LACUNARITY);
     f("uSwellFraction", p.MOUNTAINS.SWELL_FRACTION);
+    // LAND RELIEF — gentle continental uplands (fills the mid-elevation band the flat land cap omits).
+    f("uLandReliefWavelength", p.LAND_RELIEF.WAVELENGTH);
+    f("uLandReliefAmplitude", p.LAND_RELIEF.AMPLITUDE);
+    f("uLandReliefOctaves", p.LAND_RELIEF.OCTAVES);
+    f("uLandReliefGain", p.LAND_RELIEF.GAIN);
+    f("uLandReliefLacunarity", p.LAND_RELIEF.LACUNARITY);
     // TECTONICS
     f("uRangeWidth", p.TECTONICS.RANGE_WIDTH);
     f("uSinuosity", p.TECTONICS.SINUOSITY);
@@ -351,6 +357,13 @@ export class GpuField {
     f("uIceWobble", p.ICE.WOBBLE);
     f("uIceFill", p.ICE.FILL);
     f("uIceBlend", p.ICE.BLEND);
+    // CLIMATE — the Köppen classifier's knobs (+ interior dryness, which lives in MOISTURE).
+    f("uSeasonality", p.CLIMATE.SEASONALITY);
+    f("uContinentalSeasonality", p.CLIMATE.CONTINENTAL_SEASONALITY);
+    f("uJitter", p.CLIMATE.JITTER);
+    f("uJitterScale", p.CLIMATE.JITTER_SCALE);
+    f("uHadley", p.CLIMATE.HADLEY);
+    f("uInteriorDryness", p.MOISTURE.INTERIOR_DRYNESS);
     // HILLSHADE — light precomputed from the azimuth/altitude dials (mirrors ElevationCalculator).
     const az = (p.HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
     const alt = (p.HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;

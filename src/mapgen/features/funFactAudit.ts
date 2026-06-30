@@ -1,7 +1,7 @@
 import type { ElevationFamily, MoistureBand } from "../../common/biomes";
-import type { CityTier, CityWaterKind } from "./cities";
+import type { SettlementTier, SettlementWaterKind } from "./settlements";
 import { type CityCondition, tagsMatch } from "./cityCondition";
-import { biomeName, type CityContext } from "./cityStats";
+import { biomeName, type SettlementContext } from "./cityStats";
 import { FUN_FACT_PATTERNS, type FactPart, renderTemplate } from "./funFact";
 import { GOV_TYPES } from "./government";
 
@@ -16,7 +16,7 @@ const ELEVATIONS: ElevationFamily[] = ["LOW", "MEDIUM", "HIGH", "VERY_HIGH"];
 const BANDS: MoistureBand[] = ["DRY", "MID", "WET"];
 // One ice value inside each band the `when`s cut at (0.2 / 0.25 / 0.3 / 0.35), plus none and a tundra-forcing one.
 const ICE_POINTS = [0, 0.22, 0.27, 0.32, 0.37, 0.6];
-const TIERS: CityTier[] = ["small", "medium", "big"];
+const TIERS: SettlementTier[] = ["small", "medium", "big"];
 const GOV_TAG_SETS = GOV_TYPES.map((g) => g.tags);
 
 /** Can a single real city satisfy every one of these conditions at once? Rejects mountains-and-coast,
@@ -42,7 +42,7 @@ function jointlySatisfiable(conds: CityCondition[]): boolean {
 
   // Water kind must be consistent — a city sits on exactly one — and it implies coastal / nearWater:
   // coastal ⇒ ocean, an explicitly-inland gate ⇒ not ocean, and "none" ⇒ not nearWater.
-  let waters: CityWaterKind[] = ["ocean", "river", "lake", "none"];
+  let waters: SettlementWaterKind[] = ["ocean", "river", "lake", "none"];
   for (const c of conds) if (c.water) waters = waters.filter((w) => c.water!.includes(w));
   if (conds.some((c) => c.coastal === true)) waters = waters.filter((w) => w === "ocean");
   if (conds.some((c) => c.coastal === false)) waters = waters.filter((w) => w !== "ocean");
@@ -87,7 +87,7 @@ const whenOf = (part: { when?: CityCondition }): CityCondition[] => (part.when ?
  *  jointly-satisfiable combinations). `industries` gates are ignored by jointlySatisfiable, so the audit
  *  over-approximates reachability for industry-gated facts — harmless for nonsense-spotting. */
 export function enumerateReachableFunFacts(country = "Aldoria"): Set<string> {
-  const ctx = { countryName: country } as CityContext;
+  const ctx = { countryName: country } as SettlementContext;
   const facts = new Set<string>();
 
   for (const pattern of FUN_FACT_PATTERNS) {

@@ -630,7 +630,7 @@ select[multiple] optgroup {
   text-decoration: underline;
 }
 
-/* City markers: interactive dots over the globe. Tier sets the dot size + the zoom level it appears at
+/* Settlement markers: interactive dots over the globe. Tier sets the dot size + the zoom level it appears at
    (big/capitals first, then medium, then small); capitals get a ring. Click opens a population popup
    (which reuses the .info-popup styling below). */
 .city-marker {

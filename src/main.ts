@@ -3,9 +3,9 @@ import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
 import { Languages, type Language } from "./common/language";
-import { applyTuning, CITIES, LOD, OCEANS, POPULATION, snapshotParams } from "./common/settings";
+import { applyTuning, LOD, OCEANS, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
-import { type City, type MapFeatures } from "./mapgen/features";
+import { type Settlement, type MapFeatures } from "./mapgen/features";
 import { type RiverFieldSampler } from "./mapgen/features/rivers";
 import { createMapDerivations } from "./mapDerivations";
 import { NameGenerator } from "./mapgen/NameGenerator";
@@ -146,7 +146,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!f) return; // GPU path unavailable → keep the worker's CPU fields
     base.elevation.set(f.elevation);
     base.moisture.set(f.moisture);
-    base.ice.set(f.ice);
+    // ice stays the worker's CPU value — the GPU field now carries the KÖPPEN ZONE in that channel, not ice.
+    base.koppenZone.set(f.koppenZone);
     base.shade.set(f.shade);
     base.reportElevation.set(f.reportElevation);
   }
@@ -339,7 +340,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // The patch-local small-town tail: grown per in-view region off-thread, named here. A dedicated namer
   // (its own stream, deterministic-by-location, not unique) keeps these from perturbing feature/city naming.
   const regionTowns = new RegionTownLayer(pool, new NameGenerator("towns"), scheduleRender);
-  let lastRegionTowns: City[] = [];
+  let lastRegionTowns: Settlement[] = [];
 
   // The view → screen projection for THIS frame — orientation + zoom + the active renderer's horizontal
   // offset — shared by every overlay so the projection + limb cull live in ONE place (renderer/projection.ts)
@@ -425,10 +426,21 @@ document.addEventListener("DOMContentLoaded", () => {
         hoveredCountry = null;
         countryLabels.setCountries(result.countries);
         cityMarkers.setCities(result.cities);
-        // Broadcast the base partition so workers can country-stamp the patch-local town tail (nearest base
-        // seed). Cloned to every worker; refreshed each result change. Needed whenever cities may show.
+        // Broadcast the base partition + the water arrays/river network the settlement engine routes on, so
+        // the worker grows the patch-local tail with the SAME engine + routes the head used. Cloned to every
+        // worker; refreshed each result change (which also refires on any dial that re-derives features).
+        const riverData = derivations.rivers(baseMap);
         pool.configure({
-          countrySeeds: { sites: baseMap.sites, countryOf: result.grownCountryOf, seaLevel: OCEANS.SEA_LEVEL.value },
+          countrySeeds: {
+            sites: baseMap.sites,
+            countryOf: result.grownCountryOf,
+            seaLevel: OCEANS.SEA_LEVEL.value,
+            coastDist: result.settlementSeeds.coastDist,
+            seaDist: result.settlementSeeds.seaDist,
+            coastDir: result.settlementSeeds.coastDir,
+            riverPositions: riverData.positions,
+            riverWidths: riverData.widths,
+          },
         });
       }
     }
@@ -484,7 +496,7 @@ document.addEventListener("DOMContentLoaded", () => {
       clear(riverCanvas);
     }
 
-    // 2D / DOM overlays over the globe. City markers update FIRST so their dot positions are known: the
+    // 2D / DOM overlays over the globe. Settlement markers update FIRST so their dot positions are known: the
     // declutter pass reserves them, then places the text labels (feature + river names on the canvas,
     // country names in the DOM) so nothing overlaps a dot or another label.
     if (result && showCities) {
@@ -498,8 +510,7 @@ document.addEventListener("DOMContentLoaded", () => {
         capAngle: v.halfAngle,
         countries: result.countries,
         epoch: featureEpoch,
-        popDensityScale: POPULATION.GLOBAL_POPULATION_DENSITY.value,
-        minTownPop: CITIES.MIN_TOWN_POP.value,
+        rainfall: baseMap.rainfall,
       });
       if (towns !== lastRegionTowns) {
         lastRegionTowns = towns;
@@ -640,7 +651,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // maps built with the old tuning, and ensureMap regenerates at the current view.
   function applyAdvancedTuning(): void {
     applyTuning({ ...appState.tuningOverrides }); // render-side dials (sea level, contrast, colours) on this thread
-    // Some dials (e.g. CITY.URBAN_FRACTION) aren't in snapshotParams — they don't touch terrain gen,
+    // Some dials (e.g. CITY.MIN_TOWN_POP) aren't in snapshotParams — they don't touch terrain gen,
     // only the cheap feature/city layer. If the worker params didn't actually change, skip the costly
     // pipeline.reset() (which would regenerate the globe AND every zoomed-in detail patch) and just
     // drop the cached feature result so cities re-derive at the new dial on the next frame.

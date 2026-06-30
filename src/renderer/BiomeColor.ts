@@ -6,7 +6,6 @@ import {
   THEME_OVERRIDES,
   bandLightnessAt,
   colorFor as baseColorFor,
-  iceColorFor,
   type ElevationBand,
   type ElevationFamily,
   type MoistureBand,
@@ -14,12 +13,14 @@ import {
 } from "../common/biomes";
 import {
   hexToHsl,
+  hexToRgb,
   hslToHex,
   internPalette,
   invertHex,
   mixHex,
   quantizeColor,
 } from "../common/colorUtils";
+import { KOPPEN_COLORS, KOPPEN_RGB, KOPPEN_ZONE_COUNT } from "../common/koppen";
 import type { GlobeMap } from "../common/map";
 import { CONTINENTS, FEATURES, OCEANS } from "../common/settings";
 import { applyContrast, clamp } from "../common/util";
@@ -146,8 +147,8 @@ export type ChoroplethTint = {
 };
 
 export function computeCellColors(map: GlobeMap, theme: Theme, viewPlates: boolean): CellColors {
-  const { elevation, moisture, ice, cellCount, rainfall } = map;
-  const colors = computeColorsFromFields(elevation, moisture, ice, rainfall, cellCount, theme);
+  const { koppenZone, cellCount } = map;
+  const colors = computeColorsFromFields(koppenZone, cellCount, theme);
   if (!viewPlates) return colors;
 
   // Plate overlay ON: tint each cell's biome colour with its plate's color at PLATE_OVERLAY_OPACITY.
@@ -183,30 +184,43 @@ export function computePlateColors(map: GlobeMap): CellColors {
 }
 
 /**
- * Core of computeCellColors, decoupled from GlobeMap so the cubemap baker can reuse
- * the exact same biome/ice/quantize logic over flat field arrays (texels, not cells).
+ * Per-cell colours from the baked Köppen zone field: the renderer just looks each zone's colour up in
+ * the earth palette (KOPPEN_COLORS). The classifier ran in the FIELD (ElevationCalculator / its GPU twin),
+ * so colouring is now a pure table lookup — byte-identical to the GPU patch shader's palette read.
+ * Decoupled from GlobeMap so the cubemap baker can reuse it over flat field arrays.
  */
 export function computeColorsFromFields(
-  elevation: Float32Array,
-  moisture: Float32Array,
-  ice: Float32Array,
-  rainfall: number,
+  koppenZone: Float32Array,
   count: number,
   theme: Theme
 ): CellColors {
-  const iceColor = iceColorFor(theme);
-  return internPalette(count, (i) => {
-    const biome = colorAt(
-      theme,
-      applyContrast(elevation[i], CONTINENTS.ELEVATION_CONTRAST.value),
-      moisture[i],
-      rainfall
-    );
-    // Blend snow into the terrain by iciness (quantized to keep the palette small), so the ice
-    // edge fades like every other biome. Ice is its own layer — the `ice` field is zeroed upstream
-    // when the ice toggle is off — independent of climate, so caps stay when climate is off.
-    return ice[i] > 0 ? quantizeColor(mixHex(biome, iceColor, ice[i])) : biome;
-  });
+  return internPalette(count, (i) => koppenColorHex(koppenZone[i], theme));
+}
+
+/** A Köppen zone's earth-palette colour, with the active theme's saturation applied (so grayscale et al.
+ *  still tint the land). The palette is theme-independent (one earth palette); themes only scale saturation
+ *  for now — per-theme Köppen palettes are a follow-up. */
+export function koppenColorHex(zone: number, theme: Theme): string {
+  const hex = KOPPEN_COLORS[Math.round(zone)] ?? KOPPEN_COLORS[0];
+  const sat = resolveTheme(theme).saturationScale ?? 1;
+  if (sat === 1) return hex;
+  const { h, s, l } = hexToHsl(hex);
+  return hslToHex(h, clamp(s * sat), l);
+}
+
+/** The Köppen palette as a flat RGB Float32Array (zone*3 → r,g,b in 0..1) for the GPU patch shader's
+ *  `uPalette` uniform — theme-adjusted to match koppenColorHex exactly (base mesh ≡ GPU patches). */
+export function koppenPaletteRgb(theme: Theme): Float32Array {
+  const sat = resolveTheme(theme).saturationScale ?? 1;
+  if (sat === 1) return KOPPEN_RGB;
+  const out = new Float32Array(KOPPEN_ZONE_COUNT * 3);
+  for (let z = 0; z < KOPPEN_ZONE_COUNT; z++) {
+    const rgb = hexToRgb(koppenColorHex(z, theme)) ?? { r: 255, g: 0, b: 255 };
+    out[3 * z] = rgb.r / 255;
+    out[3 * z + 1] = rgb.g / 255;
+    out[3 * z + 2] = rgb.b / 255;
+  }
+  return out;
 }
 
 /** ================================================

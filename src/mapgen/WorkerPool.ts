@@ -17,7 +17,13 @@ type TownRequest = {
   minPop: number;
   ceilingPop: number;
   perCapita: number;
+  // Live dials so the tail routes + biases with the SAME values the head did (the worker's copy is stale).
   popDensityScale: number;
+  coastStrength: number;
+  coastFalloff: number;
+  desertAversion: number;
+  iceAversion: number;
+  riverMinStrength: number;
 };
 
 // One job posted to a worker — a rung generate or a region town grow (each carries a `kind`).

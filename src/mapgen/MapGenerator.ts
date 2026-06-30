@@ -166,6 +166,7 @@ export class MapGenerator {
     const reportElevation = new Float32Array(n);
     const moisture = new Float32Array(n);
     const ice = new Float32Array(n);
+    const koppenZone = new Float32Array(n);
     const shade = new Float32Array(n);
     const plate = new Uint16Array(n);
 
@@ -198,6 +199,7 @@ export class MapGenerator {
         reportElevation[i] = cell.reportElevation;
         moisture[i] = cell.moisture;
         ice[i] = cell.ice;
+        koppenZone[i] = cell.koppenZone;
         shade[i] = cell.shade;
         plate[i] = cell.plate;
       }
@@ -218,6 +220,7 @@ export class MapGenerator {
       reportElevation,
       moisture,
       ice,
+      koppenZone,
       shade,
       plate,
       arrowPositions: this.arrowData.positions,

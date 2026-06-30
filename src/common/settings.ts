@@ -258,47 +258,24 @@ export const DIALS = {
       doc: "how strongly the country choropleth tint covers the terrain. Lower = more terrain shows through (but coastal biome variation bleeds as off-colour cells); higher = flatter, more uniform country colour",
     },
   },
-  // CITY — placement of city markers within each country (features/cities.ts). Read LIVE (not terrain gen),
-  // so a change re-places cities without a full regen. Each country's cities split into four buckets, each
-  // placed RIGHT ON its feature so the marker visibly sits there: a RIVER share (on drawn rivers, favouring
-  // big ones + their mouths), a SEA share (at a large-water shore — the dominant coastal kind), a LAKE share
-  // (at a medium/small-water shore), and the rest sprinkled across the interior. Earth ~1400: rivers the most
-  // common settlement water, the SEA a strong second (sea coasts vastly outnumber lake shores), lakes few.
+  // CITY — knobs for the ONE settlement engine (features/settlements.ts), shared by the big-city head + the
+  // patch-local town tail. Read LIVE (not terrain gen), so a change re-places settlements without a full regen.
+  // Settlements cluster on water via the population coast/river bonus and snap onto the river/coast/lake they
+  // sit by — no per-feature "buckets" any more; water affinity is emergent from the density + the snap.
   CITIES: {
     MIN_TOWN_POP: {
-      value: 800,
+      value: 4100,
       min: 100,
       max: 5000,
       step: 50,
       doc: "smallest settlement shown as you zoom in — the population floor for the patch-local town tail at the deepest zoom. Higher = fewer, larger towns; lower = a denser sprinkle down to villages/hamlets. Shallower zoom levels scale this up so each level stays legible. (Big cities at/above the global split always show regardless.)",
-    },
-    RIVER_FRACTION: {
-      value: 0.38,
-      min: 0,
-      max: 1,
-      step: 0.02,
-      doc: "share of a country's cities placed ON a drawn river (favouring bigger rivers + their mouths)",
-    },
-    SEA_FRACTION: {
-      value: 0.3,
-      min: 0,
-      max: 1,
-      step: 0.02,
-      doc: "share placed at a LARGE-water (sea/ocean) shore — most water-body cities sat here (ports)",
-    },
-    LAKE_FRACTION: {
-      value: 0.07,
-      min: 0,
-      max: 1,
-      step: 0.02,
-      doc: "share placed at a MEDIUM/SMALL-water (lake/pond) shore — historically few. The remainder (1 − river − sea − lake) sprinkles across the interior. Earth ~1400 ≈ river .38 / sea .30 / lake .07 / interior .25",
     },
     RIVER_MIN_STRENGTH: {
       value: 0.12,
       min: 0.05,
       max: 0.9,
       step: 0.01,
-      doc: "min DRAWN-river flow strength (0–1, 1 = biggest trunk) for a cell to host a river city. The bucket weights by strength so big rivers + mouths win; this is just the floor below which a trickle doesn't count",
+      doc: "min DRAWN-river flow strength (0–1, 1 = biggest trunk) for a river to pull + carry a settlement — the floor below which a trickle doesn't count as water access (no snap, no riverbank density bonus)",
     },
     DESERT_AVERSION: {
       value: 0.7,
@@ -315,10 +292,10 @@ export const DIALS = {
       doc: "how strongly polar-cap (iced) land repels cities, everywhere including coasts, scaled by how iced the cell is (0 = ice settles like anywhere; 1 = strongest avoidance — a city on the ice stays rare but still possible)",
     },
   },
-  // POPULATION — per-cell carrying-capacity model (features/suitability.ts) summed into each country's
-  // head count. Read LIVE like COUNTRY/CITY (not part of the terrain snapshot). GLOBAL_POPULATION_DENSITY is
-  // the master scale; the rest weight the terrain factors the suitability surface grounds in ~1400 truth.
-  // URBAN_FRACTION then splits that head count into city vs. countryside dwellers.
+  // POPULATION — per-cell carrying-capacity model (features/suitability.ts) summed into each country's head
+  // count, AND the per-cell density the one settlement field is accepted against. Read LIVE like COUNTRY/CITY
+  // (not part of the terrain snapshot). GLOBAL_POPULATION_DENSITY is the master scale; the rest weight the
+  // terrain factors the suitability surface grounds in ~1400 truth.
   POPULATION: {
     GLOBAL_POPULATION_DENSITY: {
       value: 2.6,
@@ -361,13 +338,6 @@ export const DIALS = {
       max: 3,
       step: 0.1,
       doc: "how much steep, broken terrain suppresses farming/population independent of altitude; 0 = slope is ignored",
-    },
-    URBAN_FRACTION: {
-      value: 0.1,
-      min: 0,
-      max: 1,
-      step: 0.05,
-      doc: "share of each country's people who live in cities vs. countryside (Earth ~1400 ≈ 0.10); higher = more and larger cities",
     },
   },
   // RIVERS — coarse flow-routed skeleton + grown tributaries + fractal meander (NOT terrain gen, so
@@ -573,23 +543,25 @@ export const DIALS = {
       doc: "number of drifting plates → how many / how long the ranges (more = more, shorter)",
     },
     RANGE_WIDTH: {
-      value: 0.33,
+      value: 0.22,
       doc: "full angular width (radians) of the mountain belt straddling a boundary",
     },
     SINUOSITY: {
-      value: 0.19,
+      value: 0.2,
       doc: "how much ranges meander off their straight plate-boundary arcs (0 = dead straight)",
+      hidden: true,
     },
     CONVERGENCE_THRESHOLD: {
       value: 0.04,
       doc: "min collision strength to raise a range; higher = fewer, only the hardest collisions",
+      hidden: true,
     },
     VARIATION: {
-      value: 0.73,
+      value: 0.6,
       doc: "along-strike height variation — swells, pinches, gaps along a range (0 = uniform ribbon, 1 = full gaps)",
     },
     COAST_BIAS: {
-      value: 0.08,
+      value: 0.24,
       min: 0,
       max: 1,
       step: 0.01,
@@ -602,28 +574,59 @@ export const DIALS = {
   // RIDGE_AMPLITUDE is the overall height and SWELL_FRACTION splits it between body and crests.
   MOUNTAINS: {
     OCTAVES: {
-      value: 4.5,
+      value: 4,
       doc: "detail layers on the ridged peaks; more = finer, costlier",
+      hidden: true,
     },
     GAIN: {
-      value: 0.84,
+      value: 0.55,
       doc: "amplitude falloff per octave; higher = rougher",
+      hidden: true,
     },
     LACUNARITY: {
       value: 1.95,
       doc: "wavelength shrink per octave",
+      hidden: true,
     },
     RIDGE_WAVELENGTH: {
-      value: 0.035,
+      value: 0.007,
       doc: "spacing of the ridged peaks; SMALLER = MORE peaks packed into a range",
     },
     RIDGE_AMPLITUDE: {
-      value: 0.72,
+      value: 1,
       doc: "overall range height — the collision-driven swell + the crests riding on it",
     },
     SWELL_FRACTION: {
-      value: 0.68,
+      value: 0.55,
       doc: "body vs crest: broad-swell height as a fraction of the crest rise; higher = more plateau/body, lower = spikier crests + deeper valleys",
+    },
+  },
+
+  // LAND RELIEF — gentle, broad continental uplands riding on the flat land base: gives plains/plateaus
+  // a mid-elevation form (the band the cap-flat land otherwise omits) WITHOUT moving the coastline
+  // (added like mountains, gated to land, never below sea level). Broad + low-amplitude so it reads as
+  // green lowland → tan highland, never the brown/grey mountain bands. Rectified positive (max(0,·)) so
+  // it only lifts uplands out of the plain. AMPLITUDE is the only knob you'll usually touch.
+  LAND_RELIEF: {
+    OCTAVES: {
+      value: 4,
+      doc: "detail layers on the continental swell; more = finer, costlier",
+    },
+    GAIN: {
+      value: 0.5,
+      doc: "amplitude falloff per octave; higher = rougher",
+    },
+    LACUNARITY: {
+      value: 2,
+      doc: "wavelength shrink per octave",
+    },
+    WAVELENGTH: {
+      value: 0.4,
+      doc: "size of the broad uplands/plateaus; larger = fewer, bigger swells (~0.4 ≈ 2500 km)",
+    },
+    AMPLITUDE: {
+      value: 0.03,
+      doc: "height of the continental uplands above the plains. Subtle by design: ~0.03 keeps most land green with the highest uplands edging into tan; raise for taller plateaus (toward the brown bands), 0 = flat green continents (old behavior)",
     },
   },
 
@@ -664,6 +667,13 @@ export const DIALS = {
       value: 0.78,
       doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland",
     },
+    INTERIOR_DRYNESS: {
+      value: 0.4,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      doc: "how much DEEP CONTINENTAL INTERIORS dry out (the inverse of maritime humidity): the far interior of a large landmass loses moisture, placing the Gobi / Sahara-heart / Great-Basin drylands away from any coast. 0 = off; 1 = interiors go fully arid",
+    },
     WATER_SIZE_OCTAVES: {
       value: 1,
       doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'"
@@ -671,6 +681,48 @@ export const DIALS = {
     RAINFALL: {
       value: 0.68,
       doc: "higher = wetter",
+    },
+  },
+
+  // CLIMATE — knobs for the Köppen biome classifier (src/common/koppen.ts). The per-cell FIELD classifies
+  // each cell into a Köppen zone (temperature × moisture × elevation, with a synthesized summer/winter
+  // swing); the renderer just looks the zone's colour up in the palette. Crosses the worker seam — the
+  // worker's ElevationCalculator AND the GPU field both run the classifier — so it lives in GENERATION_GROUPS.
+  CLIMATE: {
+    SEASONALITY: {
+      value: 12,
+      min: 0,
+      max: 30,
+      step: 0.5,
+      doc: "summer↔winter temperature half-swing (°C) at the poles — the seasonal extreme that splits temperate (C) from continental (D) from polar (E). 0 = a seasonless planet (no continental/polar interiors); higher = harsher winters reaching further toward the equator",
+    },
+    CONTINENTAL_SEASONALITY: {
+      value: 1.2,
+      min: 0,
+      max: 3,
+      step: 0.1,
+      doc: "how much deep continental interiors AMPLIFY the seasonal swing (oceans stay mild year-round; interiors bake in summer and freeze in winter — Siberia, the Dakotas). 0 = latitude alone sets the seasons; higher = harsher, more continental interiors",
+    },
+    JITTER: {
+      value: 0.35,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      doc: "biome MOTTLING: perturbs each cell's temperature + moisture before classifying, so neighbouring Köppen zones dither into one another instead of forming flat slabs (dither, not blur — every cell keeps a pure palette colour). 0 = crisp hard-edged zones; higher = noisier, more organic boundaries",
+    },
+    JITTER_SCALE: {
+      value: 0.22,
+      min: 0.02,
+      max: 1,
+      step: 0.02,
+      doc: "size of the mottling noise (smaller = finer, tighter stipple; larger = broad blotches). Multi-octave, so it keeps resolving finer texture as you zoom in",
+    },
+    HADLEY: {
+      value: 0.7,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "strength of Earth's zonal RAIN BANDS (the Hadley circulation): wet equator (rainforest belt), dry ±30° horse latitudes (the Sahara / Atacama / Australian desert belt), wetter mid-latitudes, dry poles. 0 = rainfall is moisture-only (no latitude banding); 1 = full bands — this is what clusters deserts + rainforests where Earth puts them",
     },
   },
 
@@ -724,7 +776,7 @@ export const DIALS = {
       step: 1,
     },
     EPSILON: {
-      value: 0.017,
+      value: 0.004,
       doc: "finite-difference step (radians) for the slope; smaller = finer relief detail",
       min: 0.001,
       max: 0.05,
@@ -759,7 +811,9 @@ export const {
   COASTS,
   TECTONICS,
   MOUNTAINS,
+  LAND_RELIEF,
   MOISTURE,
+  CLIMATE,
   ICE,
   HILLSHADE,
 } = DIALS;
@@ -951,7 +1005,9 @@ export const GENERATION_GROUPS = {
   COASTS,
   TECTONICS,
   MOUNTAINS,
+  LAND_RELIEF,
   MOISTURE,
+  CLIMATE,
   ICE,
   HILLSHADE,
 } as const;

@@ -1,7 +1,7 @@
 import { type RNG } from "../../common/random";
-import type { CityTier } from "./cities";
+import type { SettlementTier } from "./settlements";
 import { type CityCondition, matchesCondition } from "./cityCondition";
-import type { CityContext } from "./cityStats";
+import type { SettlementContext } from "./cityStats";
 import { Authority, Society, Structure, Trait } from "./government";
 
 // ===================== Industry =====================
@@ -152,7 +152,7 @@ export function industryTagsOf(names: string[]): IndustryTag[] {
 }
 
 // Industry count grows with city size — smaller cities get fewer.
-const INDUSTRY_COUNT: Record<CityTier, number> = { small: 1, medium: 2, big: 3 };
+const INDUSTRY_COUNT: Record<SettlementTier, number> = { small: 1, medium: 2, big: 3 };
 
 /** Up to `count` distinct items drawn uniformly at random from `pool` (partial Fisher–Yates shuffle). */
 function pickUniform<T>(pool: T[], count: number, rng: RNG): T[] {
@@ -167,7 +167,7 @@ function pickUniform<T>(pool: T[], count: number, rng: RNG): T[] {
 
 /** The city's industries: every rule whose `when` fits its context, then a uniform pick sized by tier
  *  (smaller cities get fewer). `trade` always fits, so a city always gets at least one. Deterministic. */
-export function deriveIndustries(ctx: CityContext): string[] {
+export function deriveIndustries(ctx: SettlementContext): string[] {
   const eligible = INDUSTRY_RULES.filter((r) => matchesCondition(ctx, r.when)).map((r) => r.name);
   return pickUniform(eligible, INDUSTRY_COUNT[ctx.tier], ctx.rng);
 }
