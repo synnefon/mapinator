@@ -1,5 +1,5 @@
-import { ELEVATION_BAND_BREAKS } from "../../common/elevationBands";
-import { HILLSHADE, RIVERS, type TerrainParams } from "../../common/settings";
+import { SHADE_MIN_LAND_E } from "../../common/elevationBands";
+import { RIVERS, type TerrainParams } from "../../common/settings";
 import { fieldTextureDims } from "./gpuFieldLayout";
 import type { PlateData } from "./plateData";
 import { FIELD_FRAG_SRC, FIELD_VERT_SRC } from "./terrainShader";
@@ -16,13 +16,6 @@ export type GpuFieldResult = {
 };
 
 const now = (): number => performance.now();
-
-// The landE at which the hillshade elevation gate turns on (MEDIUM→HIGH boundary): the break just before
-// the first HIGH-elevation band. Derived so it tracks elevationBands.ts. Mirrors the CPU's
-// getElevationBandNameRaw HIGH/VERY_HIGH gate in ElevationCalculator.hillshadeAt.
-const SHADE_MIN_LAND_E = ELEVATION_BAND_BREAKS[
-  ELEVATION_BAND_BREAKS.findIndex((b) => b.colorElevation === "HIGH") - 1
-].breakPoint;
 
 /**
  * Computes the full per-cell field (elevation, moisture, ice, shade) on the GPU for an arbitrary set
@@ -192,17 +185,6 @@ export class GpuField {
     return { texture: this.outTex!, width, count };
   }
 
-  /** Read back ONLY elevation (.r) from the LAST render — no re-render — so a CPU consumer (the country
-   *  re-grow's land/water) gets the EXACT field that was just drawn, never a second computation that could
-   *  round a hair differently at the waterline. `count` = that render's cell count; call right after
-   *  renderToTexture for the same sites. */
-  readbackElevation(count: number): Float32Array {
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.fbo);
-    const [elevation] = this.readChannels(this.dims.width, this.dims.height, count, [0]);
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
-    return elevation;
-  }
-
   // Shared upload + render into this.outTex (the FBO colour attachment). Saves/restores DEPTH_TEST so
   // it composes with a renderer that keeps depth testing on for its globe draws. Leaves the FBO bound.
   private render(
@@ -369,13 +351,14 @@ export class GpuField {
     f("uIceWobble", p.ICE.WOBBLE);
     f("uIceFill", p.ICE.FILL);
     f("uIceBlend", p.ICE.BLEND);
-    // HILLSHADE — light precomputed from the fixed azimuth/altitude (mirrors ElevationCalculator).
-    const az = (HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
-    const alt = (HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;
+    // HILLSHADE — light precomputed from the azimuth/altitude dials (mirrors ElevationCalculator).
+    const az = (p.HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
+    const alt = (p.HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;
     gl.uniform3f(u("uLight"), Math.sin(az) * Math.cos(alt), Math.cos(az) * Math.cos(alt), Math.sin(alt));
-    f("uExaggeration", HILLSHADE.EXAGGERATION);
-    f("uEpsilon", HILLSHADE.EPSILON);
-    f("uShadeFloor", HILLSHADE.FLOOR);
+    f("uExaggeration", p.HILLSHADE.EXAGGERATION);
+    f("uEpsilon", p.HILLSHADE.EPSILON);
+    f("uShadeFloor", p.HILLSHADE.FLOOR);
+    f("uShadeLowlandFloor", p.HILLSHADE.LOWLAND_FLOOR);
     f("uShadeMinLandE", SHADE_MIN_LAND_E);
     // features
     f("uMountainsOn", p.features.mountains ? 1 : 0);

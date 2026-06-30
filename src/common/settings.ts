@@ -171,15 +171,9 @@ export const LOD = {
   MIN_EXPORT_POINTS: 4_000_000, // zoomed-in PNG export density floor
 } as const;
 
-// HILLSHADE — relief shading baked per cell: a fixed cartographic light over the local
-// slope makes mountains read as 3D. Applied as a colour multiply at draw time (≈ free).
-export const HILLSHADE = {
-  EXAGGERATION: 22, // how strongly the relief slope tilts the normal; higher = more dramatic
-  AZIMUTH_DEG: 315, // light compass direction (315 = NW, the cartographic convention)
-  ALTITUDE_DEG: 45, // light angle above the horizon
-  EPSILON: 0.012, // finite-difference step (radians) for the slope — feature-scale, fixed across LOD
-  FLOOR: 0.35, // darkest shade multiplier (lower = deeper valley shadows / more 3D)
-};
+// HILLSHADE relief-shading dials now live in DIALS.HILLSHADE (tunable + snapshotted into
+// TerrainParams). SHADE_MIN_LAND_E — the elevation where aerial-perspective shadows reach full
+// depth — stays a structural constant in common/elevationBands.
 
 /* ======================================================================
  *  DIALS — the single source of truth for every tunable group. Each leaf is a Dial / DialRange
@@ -702,6 +696,55 @@ export const DIALS = {
       doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer",
     },
   },
+
+  // HILLSHADE — relief shading baked per cell at generation: a cartographic light over the local
+  // slope makes terrain read as 3D (a colour multiply at draw time). AERIAL PERSPECTIVE: shadow depth
+  // scales with elevation, so plains use LOWLAND_FLOOR (gentle) and mountains the deeper FLOOR. Tuning
+  // any of these re-bakes the shade (it's a generation group), so they live as dials here.
+  HILLSHADE: {
+    EXAGGERATION: {
+      value: 14.5,
+      doc: "how strongly the relief slope tilts the normal; higher = more dramatic shadows",
+      min: 0,
+      max: 60,
+      step: 0.5,
+    },
+    AZIMUTH_DEG: {
+      value: 315,
+      doc: "light compass direction in degrees (315 = NW, the cartographic convention)",
+      min: 0,
+      max: 360,
+      step: 1,
+    },
+    ALTITUDE_DEG: {
+      value: 45,
+      doc: "light angle above the horizon in degrees; lower = longer, deeper shadows",
+      min: 0,
+      max: 90,
+      step: 1,
+    },
+    EPSILON: {
+      value: 0.017,
+      doc: "finite-difference step (radians) for the slope; smaller = finer relief detail",
+      min: 0.001,
+      max: 0.05,
+      step: 0.001,
+    },
+    FLOOR: {
+      value: 0.35,
+      doc: "darkest shade on MOUNTAINS (lower = deeper valley shadows / more 3D)",
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    LOWLAND_FLOOR: {
+      value: 0.74,
+      doc: "shade floor on the PLAINS (1 = flat-lit like before; lower = more relief on lowlands)",
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+  },
 };
 
 // Familiar aliases so generation code keeps importing CONTINENT, OCEAN, … directly — the
@@ -718,6 +761,7 @@ export const {
   MOUNTAINS,
   MOISTURE,
   ICE,
+  HILLSHADE,
 } = DIALS;
 
 // Mesh / LOD infrastructure (not terrain shape).
@@ -892,8 +936,8 @@ export const FEATURES: Features = { ...FEATURE_DEFAULTS };
  *  resolved on the main thread and handed across the worker seam (and to direct callers / tests).
  *  Generation reads ITS params, never the live global dials — so the interface names its whole
  *  dependency and the worker no longer replays applyTuning in its own realm. Render-time dials still
- *  read the aliases above on the main thread. HILLSHADE / MESH / INVARIANTS are fixed constants, not
- *  params, so generation keeps importing them directly.
+ *  read the aliases above on the main thread. MESH / INVARIANTS are fixed constants, not params, so
+ *  generation keeps importing them directly.
  *  ===================================================================== */
 // Which dial groups cross the worker seam into terrain GENERATION. This ONE list is the single
 // source for both the TerrainParams type and snapshotParams below, so a new generation group is a
@@ -909,6 +953,7 @@ export const GENERATION_GROUPS = {
   MOUNTAINS,
   MOISTURE,
   ICE,
+  HILLSHADE,
 } as const;
 type GenGroups = typeof GENERATION_GROUPS;
 

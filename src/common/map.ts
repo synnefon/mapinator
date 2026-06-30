@@ -42,6 +42,10 @@ export interface GlobeMap {
     // this EXACT mesh deterministically for the off-thread country re-grow (cell order must match).
     genHalfAngle?: number;
     genPoints?: number;
+    // Detail patches only: per-cell owning country (index, matching CountryInfo.index; -1 = unclaimed),
+    // stamped AT GENERATION by sampling the broadcast grown base partition (nearest base cell). Lets the
+    // choropleth fill + highlight colour each cell correctly the instant the mesh exists — no async re-grow.
+    countryOf?: Int32Array;
 }
 
 /** The base country assignment a worker needs to seed an off-thread patch re-grow: the base cells'
@@ -49,16 +53,8 @@ export interface GlobeMap {
  *  worker pool (like params) whenever the assignment changes. */
 export type CountrySeeds = {
     sites: Float32Array;
-    elevation: Float32Array;
-    countryOf: Int32Array;
+    countryOf: Int32Array; // the grown base partition (every cell → a country) the workers sample from
     seaLevel: number;
-};
-
-/** A patch's fine country layer, re-grown on the worker: per-cell country index aligned to the patch's
- *  cells — -1 = water, else the owning country (every land cell is covered). Feeds the GPU per-cell
- *  choropleth fill + hover highlight; the border LINES come separately from refineCountryBorders. */
-export type PatchCountryData = {
-    countryOf: Int32Array;
 };
 
 /** The patch-local small towns for one in-view region, grown off-thread (mapWorker `towns` job). Flat,

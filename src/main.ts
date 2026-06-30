@@ -257,7 +257,14 @@ document.addEventListener("DOMContentLoaded", () => {
   // thread. The pool SIZE caps peak generation memory (see WorkerPool / recommendedWorkerCount).
   const pool = new WorkerPool(recommendedWorkerCount());
 
-  const requestMap = (req: GenRequest): Promise<GlobeMap> => pool.generate(req);
+  // Detail patches carry per-cell country stamped at generation (so the choropleth/highlight colour the
+  // instant the mesh exists). Request it only for detail caps (halfAngle < π — the base globe uses the
+  // equirect) and only when a country layer is on, so geometry-only gen stays cheap when it's not needed.
+  const requestMap = (req: GenRequest): Promise<GlobeMap> => {
+    const wantCountry =
+      req.halfAngle < Math.PI && ((appState.settings.viewCountries ?? false) || (appState.settings.viewCountryColors ?? false));
+    return pool.generate(wantCountry ? { ...req, withCountry: true } : req);
+  };
 
   // The LOD pipeline: it feeds generate jobs to the worker pool (up to pool.size at once), reads the
   // live view (zoom/orientation/resolution + canvas size), and re-renders via scheduleRender
@@ -360,69 +367,13 @@ document.addEventListener("DOMContentLoaded", () => {
   if (document.fonts) void document.fonts.ready.then(() => { monoMeasured = false; });
   let prevPlacedLabels: ReadonlyMap<string, Placement> = new Map();
 
-  // BORDER LINES are compute-once: refined sphere polylines baked in the derivation (refineCountryBorders).
-  // The choropleth FILL + hover HIGHLIGHT, however, need PER-CELL country to follow the country border
-  // exactly + leave no half-tinted coastal cells — a coarse equirect texture can't (it's fixed-resolution).
-  // So the patch's per-cell country is re-grown ON THE WORKER from the patch's GPU-read elevation (the coast
-  // matches what's drawn EXACTLY) + the broadcast base seeds, land-constrained so it can't hop a strait, and
-  // with a nearest-base-land fallback so EVERY land cell is covered. Requested as soon as a patch is shown
-  // (requestRegrow, NOT debounced) and cached PER PATCH (revisiting is free; GC'd when the LOD pipeline
-  // evicts the patch, so it regenerates alongside the mesh on a pan-back). The equirect (bakeCountryTexture)
-  // is now only the coarse FALLBACK: the base globe, the CPU path, and the brief gap before a re-grow lands.
-  type PatchCountry = { map: GlobeMap; countryOf: Int32Array };
-  const PATCH_COUNTRY_MAX_CELLS = 1_500_000; // skip the re-grow for huge (deepest-zoom) patches → fallback
-  let currentPatchCountry: PatchCountry | null = null;
-  const patchCountryCache = new WeakMap<GlobeMap, { sig: string; data: PatchCountry | null }>();
-  let regrowInFlight: { patch: GlobeMap; sig: string } | null = null;
-  let patchCountryCapLogged = false;
-
-  // The base assignment (featureEpoch) + the live waterline fully determine a patch's fine partition.
-  const patchCountrySig = (): string => `${featureEpoch}|${OCEANS.SEA_LEVEL.value}`;
-  const patchCountryCached = (overlay: GlobeMap): boolean => {
-    const e = patchCountryCache.get(overlay);
-    return !!e && e.sig === patchCountrySig();
-  };
-
-  // Ask a worker to re-grow this patch's per-cell country (off the main thread). Reads the patch's GPU
-  // elevation back ONCE (so land/water matches the drawn coast exactly), then the worker reproduces the
-  // patch mesh + runs the land-constrained grow. Caches the result (incl. null = capped / not reproducible)
-  // so a patch never re-requests; repaints if this patch is still shown when it lands.
-  async function requestPatchCountry(overlay: GlobeMap, sig: string, fineElev: Float32Array | undefined): Promise<void> {
-    if (overlay.cellCount > PATCH_COUNTRY_MAX_CELLS) {
-      if (!patchCountryCapLogged) {
-        console.info(`[country] patch has ${overlay.cellCount} cells (> ${PATCH_COUNTRY_MAX_CELLS}); equirect fallback at this zoom`);
-        patchCountryCapLogged = true;
-      }
-      patchCountryCache.set(overlay, { sig, data: null });
-      return;
-    }
-    if (overlay.genHalfAngle === undefined || overlay.genPoints === undefined) return; // can't reproduce the mesh
-    const center = overlay.cap?.center ?? { x: 0, y: 0, z: 1 }; // whole-globe overlay ignores center
-    const result = await pool.computeCountries(center, overlay.genHalfAngle, overlay.genPoints, fineElev);
-    if (sig !== patchCountrySig()) return; // assignment / waterline moved on while we waited — drop it
-    const data: PatchCountry | null = result ? { map: overlay, countryOf: result.countryOf } : null;
-    patchCountryCache.set(overlay, { sig, data });
-    if (pipeline.overlay() === overlay) {
-      currentPatchCountry = data;
-      scheduleRender(); // repaint with the fine per-cell fill + highlight
-    }
-  }
-
-  // Request the re-grow for the shown overlay (NOT debounced). Reads the patch's elevation back from the
-  // field drawPatchGpu JUST rendered — ONE field computation, so the re-grow's land/water is bit-identical
-  // to the drawn coast (no waterline disagreement → no untinted cells). MUST run AFTER the patch draws.
-  function requestRegrow(): void {
-    const overlay = pipeline.overlay();
-    if (!overlay || !((appState.settings.viewCountries ?? false) || (appState.settings.viewCountryColors ?? false))) return;
-    const sig = patchCountrySig();
-    if (patchCountryCached(overlay)) return;
-    if (regrowInFlight && regrowInFlight.patch === overlay && regrowInFlight.sig === sig) return;
-    const fineElev = gpuPatches && webglRenderer ? webglRenderer.readbackPatchElevation(canvas, overlay.cellCount) ?? undefined : undefined;
-    regrowInFlight = { patch: overlay, sig };
-    void requestPatchCountry(overlay, sig, fineElev).finally(() => {
-      if (regrowInFlight && regrowInFlight.patch === overlay && regrowInFlight.sig === sig) regrowInFlight = null;
-    });
-  }
+  // Country FILL + hover HIGHLIGHT use the patch's PER-CELL country, stamped AT GENERATION (each patch cell
+  // takes the nearest base cell of the broadcast grown partition — see mapWorker + growCountriesOverWater)
+  // and carried on the mesh as `overlay.countryOf`. So they colour correctly the instant the patch exists —
+  // no async re-grow, no GPU-elevation readback; it's cached + preloaded with the mesh by the LOD pipeline.
+  // The equirect choropleth (bakeCountryTexture) is now only the coarse FALLBACK: the base globe, the CPU
+  // path, and any patch built while the country layer was off. BORDER LINES stay compute-once (refined
+  // sphere polylines from the derivation — refineCountryBorders).
 
   function drawCountryOverlay(proj: Projector = currentProjector()): void {
     const baseMap = pipeline.base();
@@ -432,10 +383,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     // Borders: the refined coarse polylines from the derivation. Highlight: when the shown patch carries
-    // per-cell country, the GPU patch fills the hovered country per-pixel (drawPatchGpu) — skip the 2D
-    // fill; otherwise (no patch / pre-re-grow / CPU path) fall back to a 2D fill on the BASE cells.
-    const pc = currentPatchCountry;
-    const gpuHighlight = gpuPatches && pc !== null && pc.map === pipeline.overlay();
+    // per-cell country (stamped at gen), the GPU patch fills the hovered country per-pixel (drawPatchGpu) —
+    // skip the 2D fill; otherwise (no patch / equirect-fallback patch / CPU path) fall back to a 2D fill.
+    const gpuHighlight = gpuPatches && pipeline.overlay()?.countryOf != null;
     const highlight =
       hoveredCountry !== null && !gpuHighlight ? { map: baseMap, countryOf: result.countryOf, index: hoveredCountry } : null;
     drawCountries(countryCanvas, result.borders, highlight, proj);
@@ -478,32 +428,23 @@ document.addEventListener("DOMContentLoaded", () => {
         // Broadcast the base partition so workers can country-stamp the patch-local town tail (nearest base
         // seed). Cloned to every worker; refreshed each result change. Needed whenever cities may show.
         pool.configure({
-          countrySeeds: { sites: baseMap.sites, elevation: baseMap.elevation, countryOf: result.countryOf, seaLevel: OCEANS.SEA_LEVEL.value },
+          countrySeeds: { sites: baseMap.sites, countryOf: result.grownCountryOf, seaLevel: OCEANS.SEA_LEVEL.value },
         });
       }
     }
 
-    // Per-cell country for the patch being drawn THIS frame: use the cached re-grow (the equirect fallback
-    // covers it until the re-grow lands). The re-grow itself is requested AFTER the patch draws, so it can
-    // read the elevation back from that very render (one field computation — see after the patch draw).
-    if ((showCountries || showCountryColors) && overlay && result) {
-      const cached = patchCountryCache.get(overlay);
-      currentPatchCountry = cached && cached.sig === patchCountrySig() ? cached.data : null;
-    } else {
-      currentPatchCountry = null;
-    }
-
-    // Choropleth — the equirect texture is the FALLBACK (base globe + CPU path + the brief gap before a
-    // patch's per-cell re-grow lands); the GPU patch prefers patchCountry (per-cell) below when present.
+    // Choropleth — the equirect texture is the FALLBACK: the base globe, the CPU path, and any detail patch
+    // whose per-cell country wasn't stamped at generation (the country layer was off when it was built). When
+    // the patch DOES carry per-cell country (the common case), the GPU patch prefers it (patchCountry) below.
     const choropleth =
       showCountryColors && result
         ? { map: baseMap, countryOf: result.countryOf, countryColors: result.countryColors, key: `${featureEpoch}` }
         : undefined;
-    // Per-cell country for the GPU patch: the re-grown countryOf + colour classes + hovered country, ONLY
-    // when the data matches the shown patch's mesh (else the equirect fallback tints this frame).
+    // Per-cell country for the GPU patch: the patch's OWN gen-stamped countryOf + colour classes + hovered
+    // country. Present the instant the mesh exists (no async re-grow, no readback); absent ⇒ equirect tints.
     const patchCountry =
-      currentPatchCountry && currentPatchCountry.map === overlay && result
-        ? { countryOf: currentPatchCountry.countryOf, colors: result.countryColors, hovered: hoveredCountry ?? -1 }
+      overlay?.countryOf && result
+        ? { countryOf: overlay.countryOf, colors: result.countryColors, hovered: hoveredCountry ?? -1 }
         : undefined;
 
     // The globe (rung 0) is the base; an overlaid detail patch (if any) sits on top. When a patch is
@@ -523,10 +464,6 @@ document.addEventListener("DOMContentLoaded", () => {
         globeRenderer.draw(canvas, overlay, appState.settings, appState.orientation, false, undefined, choropleth);
       }
     }
-    // The patch's field is now on the GPU (drawPatchGpu just rendered it) — kick off this patch's per-cell
-    // country re-grow, reading its elevation back from THAT render (one field computation, so the re-grown
-    // coast is bit-identical to the drawn one). Once per patch; lands async + caches → next frame per-cell.
-    requestRegrow();
     // Every overlay below shares ONE projection for this frame (orientation + zoom + the renderer's
     // horizontal offset) — the project + limb cull live in renderer/projection.ts, not in each overlay.
     const proj = currentProjector();

@@ -10,6 +10,7 @@ import { assignCities, type City } from "./cities";
 import {
   assignCountries,
   colorCountries,
+  growCountriesOverWater,
   largestBorderingCountry,
   refineCountryBorders,
 } from "./countries";
@@ -53,6 +54,8 @@ export type MapFeatures = {
   cities: City[]; // city markers — tier + zoom-gated, with interactive population popups
   borders: Float32Array; // flat [x0,y0,z0, x1,y1,z1, …] unit-sphere border segment pairs
   countryOf: Int32Array; // per cell: country index (matches CountryInfo.index), or -1 for ocean
+  grownCountryOf: Int32Array; // countryOf grown over water by contiguity — every cell has a country (the base
+  // partition the workers sample to stamp each patch cell at generation; see growCountriesOverWater)
   countryColors: Int32Array; // per country index: a colour class for the choropleth fill (see colorCountries)
 };
 
@@ -109,6 +112,10 @@ export function computeMapFeatures(
   const fineLandAt = (p: Vec3): boolean => calc.sampleCell(p).elevation >= seaLevel;
   const cities = assignCities(map, reportElevation, seaLevel, adjacency, countryOf, countries, mapSeed, namer, fineLandAt, rivers);
   const countryColors = colorCountries(countryOf, adjacency, countries.length);
+  // The base partition grown over water by contiguity — the per-cell country every direction maps to.
+  // Broadcast to the workers so each patch cell is country-stamped at GENERATION (nearest base cell), not by
+  // a lagging re-grow. (Land cells unchanged; water cells take their contiguous coast — never a strait-hop.)
+  const grownCountryOf = growCountriesOverWater(adjacency, countryOf, map.cellCount);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of
   // its largest bordering country. Both fall back to the map language.
@@ -195,6 +202,7 @@ export function computeMapFeatures(
     // chained + fractally subdivided so detail resolves on zoom with no per-patch recompute.
     borders: refineCountryBorders(map, countryOf, { levels: COUNTRIES.BORDER_DETAIL.value, amplitude: COUNTRIES.BORDER_WIGGLE.value }),
     countryOf,
+    grownCountryOf,
     countryColors,
   };
 }

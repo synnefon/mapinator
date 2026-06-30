@@ -1,17 +1,11 @@
 import type { Vec3 } from "../common/3DMath";
-import type { CountrySeeds, GlobeMap, PatchCountryData, TownFieldData } from "../common/map";
+import type { CountrySeeds, GlobeMap, TownFieldData } from "../common/map";
 import type { TerrainParams } from "../common/settings";
 import type { GenRequest } from "../renderer/LodPipeline";
 
 // A config message broadcast to every worker (seed and/or resolved generation params and/or the base
-// country seeds the off-thread re-grow needs).
+// country seeds the per-cell country stamp + town field read).
 type PoolConfig = { seed?: string; params?: TerrainParams; countrySeeds?: CountrySeeds };
-
-// An off-thread country re-grow for one patch: the worker reproduces the patch MESH from these exact
-// generation params (deterministic) and re-grows the partition against the configured base seeds, using
-// `elevation` (read back from the GPU — the field the patch is rendered from) for land/water so the
-// re-grown coast matches the drawn one. Omitted on the CPU-fallback path (worker samples it itself).
-type CountryRequest = { kind: "countries"; center: Vec3; halfAngle: number; points: number; elevation?: Float32Array };
 
 // An off-thread grow of one region's patch-local small towns (the 1400-density tail). The worker samples a
 // deterministic town field over the cap, accepted ∝ local population density (see mapWorker `towns`).
@@ -26,10 +20,10 @@ type TownRequest = {
   popDensityScale: number;
 };
 
-// One job posted to a worker — a rung generate, a country re-grow, or a town grow (each carries a `kind`).
-type PoolJob = GenRequest | CountryRequest | TownRequest;
-// Worker reply: a generate yields `map`; a country re-grow yields `country`; a town grow yields `towns`.
-type WorkerResponse = { id: number; map?: GlobeMap; country?: PatchCountryData; towns?: TownFieldData };
+// One job posted to a worker — a rung generate or a region town grow (each carries a `kind`).
+type PoolJob = GenRequest | TownRequest;
+// Worker reply: a generate yields `map` (with per-cell country stamped on detail caps); a town grow `towns`.
+type WorkerResponse = { id: number; map?: GlobeMap; towns?: TownFieldData };
 
 // Per-worker peak memory while a fine-cap generate is in flight (its transient cap mesh + output
 // typed arrays) plus that worker's small mesh cache — rough, used only to size the pool. Each extra
@@ -56,8 +50,8 @@ export function recommendedWorkerCount(): number {
  * (the globe + each detail cap are independent maps), so N workers build N at once. Concurrency is
  * the pool SIZE, which is the memory cap: every in-flight generate transiently holds a cap mesh +
  * output arrays and each worker keeps its own mesh cache, so peak RAM scales with the worker count
- * (see recommendedWorkerCount). Requests beyond N queue until a worker frees. The off-thread country
- * re-grow (computeCountries) shares the same pool — it queues behind generation like any other job.
+ * (see recommendedWorkerCount). Requests beyond N queue until a worker frees. The region town grow
+ * (growTowns) shares the same pool — it queues behind generation like any other job.
  *
  * Every worker holds an identical MapGenerator, so `configure` (seed / params / feature / country-seed
  * changes) BROADCASTS to all of them and jobs go to whichever worker is free. postMessage is ordered
@@ -93,22 +87,6 @@ export class WorkerPool {
       const id = ++this.nextId;
       this.pending.set(id, (res) => resolve(res.map!));
       this.waiting.push({ id, msg: req });
-      this.dispatch();
-    });
-  }
-
-  /** Re-grow one patch's country partition off the main thread. Resolves null if the worker couldn't
-   *  run it (no base seeds configured yet) — the caller then keeps the coarse base borders. */
-  computeCountries(center: Vec3, halfAngle: number, points: number, elevation?: Float32Array): Promise<PatchCountryData | null> {
-    return new Promise((resolve) => {
-      const id = ++this.nextId;
-      this.pending.set(id, (res) => resolve(res.country ?? null));
-      // Transfer the GPU-read elevation zero-copy — the main thread doesn't keep it after the re-grow.
-      this.waiting.push({
-        id,
-        msg: { kind: "countries", center, halfAngle, points, elevation },
-        transfer: elevation ? [elevation.buffer] : undefined,
-      });
       this.dispatch();
     });
   }

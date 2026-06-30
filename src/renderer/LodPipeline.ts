@@ -68,6 +68,7 @@ export type GenRequest = {
   halfAngle: number; // ≥ π ⇒ the whole globe (rung 0); smaller ⇒ a detail cap
   points: number;
   geometryOnly?: boolean; // detail rungs only, GPU path: mesh without per-cell fields (GPU samples them)
+  withCountry?: boolean; // detail rungs only: stamp per-cell country from the broadcast base partition at gen
 };
 
 /** The current view's LOD rung, derived from zoom + orientation. level 0 = whole globe. */

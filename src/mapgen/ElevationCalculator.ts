@@ -1,7 +1,7 @@
 import type { NoiseFunction3D } from "simplex-noise";
 import type { Vec3 } from "../common/3DMath";
-import { getElevationBandNameRaw } from "../common/elevationBands";
-import { HILLSHADE, INVARIANTS, type TerrainParams } from "../common/settings";
+import { SHADE_MIN_LAND_E } from "../common/elevationBands";
+import { INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import {
@@ -36,7 +36,7 @@ type FbmShape = { OCTAVES: number; GAIN: number; LACUNARITY: number };
  *
  * Every tuned value comes from the injected `params` snapshot (see settings.ts TerrainParams), not
  * the live global dials — so a generator instance is a pure function of (seed, params) and the
- * interface names its whole dependency. HILLSHADE / INVARIANTS are fixed constants, imported direct.
+ * interface names its whole dependency. INVARIANTS is a fixed constant, imported direct.
  */
 export class ElevationCalculator {
   private noise3D: NoiseFunction3D;
@@ -58,8 +58,8 @@ export class ElevationCalculator {
     this.continentWavelength = params.CONTINENTS.WAVELENGTH;
     this.continentAmplitude = params.CONTINENTS.AMPLITUDE;
     this.oceanAmplitude = params.OCEANS.AMPLITUDE;
-    const az = (HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
-    const alt = (HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;
+    const az = (params.HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
+    const alt = (params.HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;
     this.light = {
       e: Math.sin(az) * Math.cos(alt),
       n: Math.cos(az) * Math.cos(alt),
@@ -169,23 +169,17 @@ export class ElevationCalculator {
    */
   public hillshadeAt(site: Vec3, C: number, h0: number): number {
     const { CONTINENTS, OCEANS } = this.params;
-    // Relief shading is for MOUNTAINS only — the HIGH + VERY_HIGH elevation families. Map h0
-    // through the same contrast + waterline remap the renderer bands on (BiomeColor), then gate
-    // on the family: ocean and lower land (LOW/MEDIUM) stay flat-lit (shade 1). This also skips
-    // the slope samples for the vast majority of cells.
+    // Relief shading over ALL land, with AERIAL PERSPECTIVE: the shadow floor ramps from shallow
+    // (LOWLAND_FLOOR — gentle form on the plains) to deep (FLOOR — dramatic mountains) by the
+    // MEDIUM→HIGH boundary (SHADE_MIN_LAND_E). Map h0 through the same contrast + waterline remap the
+    // renderer bands on (BiomeColor) so this land/ocean split matches the one generation made.
     // Compare in CONTRASTED space: applyContrast is monotonic, so ec < applyContrast(WATERLINE) ⟺
     // h0 < WATERLINE — the SAME land/ocean split generation made on the raw value. (Thresholding the
     // contrasted ec against the raw WATERLINE only matched while WATERLINE ≈ the 0.5 contrast pivot.)
     const cwl = applyContrast(OCEANS.SEA_LEVEL, CONTINENTS.ELEVATION_CONTRAST);
     const ec = applyContrast(h0, CONTINENTS.ELEVATION_CONTRAST);
-    if (ec < cwl) return 1;
+    if (ec < cwl) return 1; // ocean: flat-lit
     const landE = Math.min((ec - cwl) / (1 - cwl), 1 - 1e-9);
-    const family = getElevationBandNameRaw(landE).colorElevation;
-    // TRUE MOUNTAINS only: the HIGH (bare rock) + VERY_HIGH (snow) bands — the height only the
-    // MOUNTAIN wave can reach (land base is capped to the green band). Everything below — green
-    // foothills/swell (MEDIUM) and flat LOW plains — stays flat-lit, so shadows mark real
-    // mountains, not every raised feature.
-    if (family !== "HIGH" && family !== "VERY_HIGH") return 1;
     const { x, y, z } = site;
     // North tangent = world +Y projected onto the tangent plane; at the poles (+Y has no
     // tangential part) fall back to +X. East = site × north (unit, since both are unit & ⊥).
@@ -206,18 +200,24 @@ export class ElevationCalculator {
     const ey = z * nx - x * nz;
     const ez = x * ny - y * nx;
 
-    const e = HILLSHADE.EPSILON;
+    const e = this.params.HILLSHADE.EPSILON;
     const hE = this.elevationAt({ x: x + ex * e, y: y + ey * e, z: z + ez * e }, C).elevation;
     const hN = this.elevationAt({ x: x + nx * e, y: y + ny * e, z: z + nz * e }, C).elevation;
 
     // Surface normal in (east, north, up): the up vector tilted opposite the uphill slope,
     // exaggerated. Dot with the fixed light; FLOOR lifts shadows off pure black.
-    const k = HILLSHADE.EXAGGERATION;
+    const k = this.params.HILLSHADE.EXAGGERATION;
     const nE = -k * (hE - h0);
     const nN = -k * (hN - h0);
     const len = Math.hypot(nE, nN, 1);
     const dot = (nE * this.light.e + nN * this.light.n + this.light.u) / len;
-    return lerp(HILLSHADE.FLOOR, 1, clamp(dot));
+    // Aerial perspective: floor ramps from shallow (plains) to deep (mountains) by SHADE_MIN_LAND_E.
+    const floorE = lerp(
+      this.params.HILLSHADE.LOWLAND_FLOOR,
+      this.params.HILLSHADE.FLOOR,
+      smoothstep(0, SHADE_MIN_LAND_E, landE)
+    );
+    return lerp(floorE, 1, clamp(dot));
   }
 
   /**

@@ -53,7 +53,7 @@ uniform float uRangeWidth, uSinuosity, uConvergenceThreshold, uVariation, uCoast
 uniform float uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity, uMoistContrast, uWaterProximityEffect, uDesertSteepness, uWaterSizeOctaves;
 uniform float uIceCoverage, uIceWobble, uIceFill, uIceBlend;
 uniform vec3  uLight;                 // hillshade light in (east, north, up)
-uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeMinLandE;
+uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeLowlandFloor, uShadeMinLandE;
 uniform float uMountainsOn, uClimateOn, uIceOn;   // feature switches (1 = on)
 uniform float uEmitReport;            // rivers: 1 = write reportElevation (routing height) into .a instead of shade
 uniform float uRiverRoughAmp;         // rivers: micro-relief amplitude folded into the routing height (so trunk flow converges)
@@ -235,14 +235,14 @@ float iceAt(vec3 site, float elevation) {
   return inCap * solid;
 }
 
-// ElevationCalculator.hillshadeAt — mountains-only relief shading (the family gate becomes the
-// uShadeMinLandE threshold; below it, flat-lit = 1). Two offset elevationAt samples reuse the centre C.
+// ElevationCalculator.hillshadeAt — relief shading over all land, with aerial perspective: shadow depth
+// grows with elevation (plains use the shallow uShadeLowlandFloor, mountains the deep uShadeFloor), so
+// lowlands gain gentle form while peaks stay dramatic. Two offset elevationAt samples reuse the centre C.
 float hillshadeAt(vec3 site, float C, float h0) {
   float cwl = applyContrast(uSeaLevel, uElevationContrast);
   float ec = applyContrast(h0, uElevationContrast);
-  if (ec < cwl) return 1.0;
+  if (ec < cwl) return 1.0;  // ocean: flat-lit
   float landE = min((ec - cwl) / (1.0 - cwl), 1.0 - 1e-9);
-  if (landE < uShadeMinLandE) return 1.0;
   float x = site.x, y = site.y, z = site.z;
   float nx = -y * x, ny = 1.0 - y * y, nz = -y * z;
   float nl = length(vec3(nx, ny, nz));
@@ -256,7 +256,9 @@ float hillshadeAt(vec3 site, float C, float h0) {
   float nE = -k * (hE - h0), nN = -k * (hN - h0);
   float len = length(vec3(nE, nN, 1.0));
   float dotv = (nE * uLight.x + nN * uLight.y + uLight.z) / len;
-  return mix(uShadeFloor, 1.0, clamp(dotv, 0.0, 1.0));
+  // Aerial perspective: floor ramps from shallow (plains) to deep (mountains) by uShadeMinLandE.
+  float floorE = mix(uShadeLowlandFloor, uShadeFloor, smoothstep(0.0, uShadeMinLandE, landE));
+  return mix(floorE, 1.0, clamp(dotv, 0.0, 1.0));
 }
 
 // The full per-cell field — the GPU twin of ElevationCalculator.sampleCell (minus the plate index).

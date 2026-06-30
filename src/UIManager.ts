@@ -148,10 +148,6 @@ export class UIManager {
     slider.label.textContent = value.toFixed(slider.decimals);
   }
 
-  // get lockFrequencies() {
-  //   return this.elements.lockFrequencies;
-  // }
-
   get themeRadios() {
     return this.elements.themeRadios;
   }

@@ -1,13 +1,12 @@
 import { createNoise3D } from "simplex-noise";
 import type { Vec3 } from "../../common/3DMath";
 import { Languages, type Language } from "../../common/language";
-import type { GlobeMap, PatchCountryData } from "../../common/map";
+import type { GlobeMap } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
 import { COUNTRIES } from "../../common/settings";
 import { refineSphereCurve } from "../../common/sphereCurve";
 import type { NameGenerator } from "../NameGenerator";
-import { buildAdjacency, coastDistance, vertexKey } from "./adjacency";
-import { buildKdTree, nearestCell } from "./kdTree";
+import { coastDistance, vertexKey } from "./adjacency";
 import { angularExtent, poleOfInaccessibilityWithRadius } from "./detect";
 import { generateGovernment, type GovType } from "./government";
 import { estimatePopulation } from "./population";
@@ -300,105 +299,37 @@ export function assignCountries(
   return { countryOf, countries };
 }
 
+
 /**
- * Re-grow the country partition on an LOD detail patch's FINE mesh, so the choropleth + hover highlight
- * follow the patch's own coastline instead of the coarse base cells. `fineElevation` is the patch's
- * per-cell elevation (read back from the GPU — the field actually drawn); it defines land/water here.
- *
- * A fine LAND cell whose nearest BASE cell is itself land is SEEDED with that base cell's country (it's
- * confidently interior to a coarse country). Coast-overhang land — fine land beyond the coarse coast,
- * whose nearest base cell is water — is left unseeded, then filled by a multi-source Dijkstra that grows
- * over fine LAND ONLY. Because water is a hard barrier (never relaxed across), a country can't hop a
- * strait into another landmass — the fix for narrow land with water on multiple sides. Any land the grow
- * can't reach falls back to its nearest base-land country, so EVERY land cell is covered. Returns the
- * fine per-cell country: -1 for water, else the owning country.
- *
- * Runs on the worker, off the main thread (see WorkerPool.computeCountries) — `base` is the base
- * assignment's seed arrays, not a full GlobeMap.
+ * Attribute EVERY cell a country by surface CONTIGUITY: seed each land cell with its own country, then BFS
+ * outward over water by hop distance, so a water cell — and any fine coastal land that later sits over it —
+ * is owned by the coast it's actually CONNECTED to, not the Euclidean-nearest (which hops straits). This is
+ * the BASE-RESOLUTION partition every land direction maps to; the worker samples it (nearest base cell) to
+ * stamp each patch cell's country at GENERATION time, so the choropleth colours correctly the instant the
+ * geometry exists — no async re-grow, no GPU-elevation readback. Mirrors bakeCountryTexture's own grow.
  */
-export function patchCountryData(
-  patch: GlobeMap,
-  fineElevation: Float32Array,
-  seaLevel: number,
-  base: Pick<GlobeMap, "sites" | "cellCount" | "elevation">,
-  baseCountryOf: Int32Array
-): PatchCountryData {
-  const n = patch.cellCount;
-  const { sites } = patch;
-  const countryOf = new Int32Array(n).fill(-1);
-  const isLand = (i: number): boolean => fineElevation[i] >= seaLevel;
-
-  // Seed ONLY confidently-interior fine land — a cell whose every neighbour is land too — from the base
-  // assignment (nearest base cell). A COASTAL fine cell is deliberately left UNSEEDED: its Euclidean-nearest
-  // base land can belong to a different country across a strait, and seeding it directly would strait-hop
-  // (the grow below can't override a seed — it only fills unseeded cells). The land-constrained grow reaches
-  // coastal cells over LAND from the interior instead, so each takes the country it's actually contiguous with.
-  const adjacency = buildAdjacency(patch);
-  const tree = buildKdTree(base.sites, base.cellCount);
-  const dist = new Float64Array(n).fill(Infinity);
-  const heap = new MinHeap(n);
-  for (let i = 0; i < n; i++) {
-    if (!isLand(i)) continue;
-    let interior = true;
-    for (const nb of adjacency[i]) if (!isLand(nb)) { interior = false; break; }
-    if (!interior) continue; // coastal — leave it for the land-constrained grow (no strait-hop)
-    const bc = nearestCell(tree, base.sites, sites[3 * i], sites[3 * i + 1], sites[3 * i + 2]);
-    if (bc >= 0 && base.elevation[bc] >= seaLevel) {
-      countryOf[i] = baseCountryOf[bc];
-      dist[i] = 0;
-      heap.push(i, 0);
+export function growCountriesOverWater(adjacency: number[][], countryOf: Int32Array, cellCount: number): Int32Array {
+  const grown = new Int32Array(cellCount).fill(-1);
+  let frontier: number[] = [];
+  for (let c = 0; c < cellCount; c++) {
+    if (countryOf[c] >= 0) {
+      grown[c] = countryOf[c];
+      frontier.push(c);
     }
   }
-
-  // Grow out from the interior seeds. A LAND edge costs its length; a WATER edge costs WATER_COST× that, so
-  // connected land is reached cheaply OVER LAND (a country can't hop a strait to a coast that's reachable
-  // overland — that route is far cheaper), while a coast fragment or island the fine mesh cut off behind a
-  // thin channel is still claimed by the nearest coast ACROSS the water (a few costly steps) instead of a
-  // straight-line hop to a far country. Water only CARRIES the country to reach stranded land; it's reset to
-  // -1 afterwards (water has no country of its own).
-  const WATER_COST = COUNTRIES.WATER_COST.value;
-  while (heap.size > 0) {
-    const c = heap.pop();
-    if (heap.poppedKey > dist[c]) continue; // stale entry (c re-pushed cheaper since)
-    const cx = sites[3 * c], cy = sites[3 * c + 1], cz = sites[3 * c + 2];
-    for (const nb of adjacency[c]) {
-      const dx = cx - sites[3 * nb], dy = cy - sites[3 * nb + 1], dz = cz - sites[3 * nb + 2];
-      const nd = dist[c] + Math.sqrt(dx * dx + dy * dy + dz * dz) * (isLand(nb) ? 1 : WATER_COST);
-      if (nd < dist[nb]) {
-        dist[nb] = nd;
-        countryOf[nb] = countryOf[c];
-        heap.push(nb, nd);
+  while (frontier.length) {
+    const next: number[] = [];
+    for (const c of frontier) {
+      for (const nb of adjacency[c]) {
+        if (grown[nb] < 0) {
+          grown[nb] = grown[c];
+          next.push(nb);
+        }
       }
     }
+    frontier = next;
   }
-  for (let i = 0; i < n; i++) if (!isLand(i)) countryOf[i] = -1; // water carried the grow; it has no country
-
-  // Last resort: a land cell the grow STILL couldn't reach (only happens when the patch has NO interior
-  // seeds at all — e.g. nothing but thin coast) takes the nearest BASE-LAND country, so every land cell is
-  // covered. Normally the water-cost grow above reaches everything, so this builds nothing.
-  let unreached = 0;
-  for (let i = 0; i < n; i++) if (isLand(i) && countryOf[i] < 0) unreached++;
-  if (unreached > 0) {
-    const landIdx: number[] = [];
-    for (let b = 0; b < base.cellCount; b++) if (base.elevation[b] >= seaLevel) landIdx.push(b);
-    if (landIdx.length > 0) {
-      const landSites = new Float32Array(landIdx.length * 3);
-      for (let j = 0; j < landIdx.length; j++) {
-        const b = landIdx[j];
-        landSites[3 * j] = base.sites[3 * b];
-        landSites[3 * j + 1] = base.sites[3 * b + 1];
-        landSites[3 * j + 2] = base.sites[3 * b + 2];
-      }
-      const landTree = buildKdTree(landSites, landIdx.length);
-      for (let i = 0; i < n; i++) {
-        if (!isLand(i) || countryOf[i] >= 0) continue;
-        const j = nearestCell(landTree, landSites, sites[3 * i], sites[3 * i + 1], sites[3 * i + 2]);
-        if (j >= 0) countryOf[i] = baseCountryOf[landIdx[j]];
-      }
-    }
-  }
-
-  return { countryOf };
+  return grown;
 }
 
 /**

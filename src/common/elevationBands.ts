@@ -38,6 +38,15 @@ export const ELEVATION_BAND_BREAKS: readonly {
   { breakPoint: 1.0, colorElevation: "VERY_HIGH", band: "VERY_HIGH_2" },
 ] as const;
 
+// The landE (normalized [0,1] land elevation) at the MEDIUM→HIGH boundary — the break just before the
+// first HIGH band. Hillshade uses it as the elevation where aerial-perspective shadows reach full depth
+// (mountains): below it, the shadow floor is lifted toward flat so lowlands shade gently. Shared by the
+// GPU field (uShadeMinLandE uniform) and the CPU ElevationCalculator so both stay in exact sync.
+export const SHADE_MIN_LAND_E =
+  ELEVATION_BAND_BREAKS[
+    ELEVATION_BAND_BREAKS.findIndex((b) => b.colorElevation === "HIGH") - 1
+  ].breakPoint;
+
 // Continuous elevation -> unified band (the first break whose upper bound it falls under).
 export function getElevationBandNameRaw(elevation: number): {
   breakPoint: number;

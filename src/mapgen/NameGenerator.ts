@@ -21,9 +21,6 @@ export interface CountryGenOptions {
 // suffix. A language yields far more names than any one map needs, so the fallback is effectively dead.
 const MAX_NAME_REROLLS = 64;
 
-// const NUMBERS = [...Array(100)].map((_, i) => i.toString());
-// const LETTERS = [...Array(26)].map((_, i) => String.fromCharCode(65 + i)).map((letter) => letter.toUpperCase());
-
 export class NameGenerator {
   private rng: RNG;
   // Names already minted by THIS generator since the last reset — the global dedup set when opts.unique
@@ -123,17 +120,6 @@ export class NameGenerator {
 
     return vowelSoftened || clusterSoftened || raw;
   }
-
-  // private planetNumberSuffix(rng: RNG): string {
-  //   const prob = rng();
-  //   if (prob > 0.4) {
-  //     return "";
-  //   } else if (prob > 0.1) {
-  //     return "-" + randomChoice(NUMBERS, rng);
-  //   } else {
-  //     return "-" + randomChoice(NUMBERS, rng) + randomChoice(LETTERS, rng);
-  //   }
-  // }
 
   private softenClusters(s: string, language: Language): string {
     const cfg = languageConfigs[language];

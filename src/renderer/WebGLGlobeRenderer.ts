@@ -397,20 +397,6 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     return st.riverField.computeBaseField(sites, inputs.params, inputs.perm, inputs.plate);
   }
 
-  /**
-   * Read back a patch's per-cell elevation from the GPU — the exact field the patch is rendered from —
-   * so the off-thread country re-grow classifies land/water identically to what's drawn (no coast
-   * mismatch). Reuses the readback field. Null if the GPU path can't run here.
-   */
-  /** Read back the elevation of the patch most recently drawn by drawPatchGpu — from the SAME render, with
-   *  no second field computation — so the country re-grow's land/water is bit-identical to the drawn coast
-   *  (no waterline disagreement → no untinted coastal cells). Null if the GPU field is unavailable. Must be
-   *  called right after drawPatchGpu for the same patch (its field is still in the GPU texture). */
-  public readbackPatchElevation(canvas: HTMLCanvasElement, count: number): Float32Array | null {
-    const st = this.getState(canvas);
-    if (!st.gpuField) return null;
-    return st.gpuField.readbackElevation(count);
-  }
 
   public draw(
     canvas: HTMLCanvasElement,
