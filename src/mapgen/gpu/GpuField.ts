@@ -88,30 +88,31 @@ export class GpuField {
   }
 
   /**
+   * Read the just-rendered RGBA32F field back and unpack the requested channels (0=r,1=g,2=b,3=a) into a
+   * Float32Array each — one readPixels, the shared core of the readback methods below. Leaves the FBO
+   * bound (the caller unbinds when done; computeBaseField reads it across two passes).
+   */
+  private readChannels(width: number, height: number, count: number, channels: number[]): Float32Array[] {
+    const dst = this.dstBuf!;
+    this.gl.readPixels(0, 0, width, height, this.gl.RGBA, this.gl.FLOAT, dst);
+    return channels.map((ch) => {
+      const out = new Float32Array(count);
+      for (let i = 0; i < count; i++) out[i] = dst[4 * i + ch];
+      return out;
+    });
+  }
+
+  /**
    * Compute the full field for `sites` (length n*3, xyz per cell) under `params`, using the seed's
    * permutation table `perm` (512×4) and plate set `plate`, then READ IT BACK. For validation /
    * benchmarking; the renderer uses renderToTexture (no readback). Returns the channels + timing.
    */
   compute(sites: Float32Array, params: TerrainParams, perm: Float32Array, plate: PlateData): GpuFieldResult {
-    const gl = this.gl;
     const { width, height, count, upload, render } = this.render(sites, params, perm, plate);
-
     const t2 = now();
-    const dst = this.dstBuf!;
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
-    const elevation = new Float32Array(count);
-    const moisture = new Float32Array(count);
-    const ice = new Float32Array(count);
-    const shade = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      elevation[i] = dst[4 * i];
-      moisture[i] = dst[4 * i + 1];
-      ice[i] = dst[4 * i + 2];
-      shade[i] = dst[4 * i + 3];
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const [elevation, moisture, ice, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     const readback = now() - t2;
-
     return {
       fields: { elevation, moisture, ice, shade },
       width,
@@ -133,28 +134,24 @@ export class GpuField {
     perm: Float32Array,
     plate: PlateData
   ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; shade: Float32Array; reportElevation: Float32Array } {
-    const gl = this.gl;
-    // Pass 1 — elevation, moisture, ice, shade.
-    const { width, height, count } = this.render(sites, params, perm, plate);
-    const dst = this.dstBuf!;
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
-    const elevation = new Float32Array(count);
-    const moisture = new Float32Array(count);
-    const ice = new Float32Array(count);
-    const shade = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      elevation[i] = dst[4 * i];
-      moisture[i] = dst[4 * i + 1];
-      ice[i] = dst[4 * i + 2];
-      shade[i] = dst[4 * i + 3];
-    }
-    // Pass 2 — reportElevation (emitReport writes it to .a in place of shade).
-    this.render(sites, params, perm, plate, true);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
-    const reportElevation = new Float32Array(count);
-    for (let i = 0; i < count; i++) reportElevation[i] = dst[4 * i + 3];
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const { width, height, count } = this.render(sites, params, perm, plate); // pass 1
+    const [elevation, moisture, ice, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
+    this.render(sites, params, perm, plate, true); // pass 2 — reportElevation written to .a (emitReport)
+    const [reportElevation] = this.readChannels(width, height, count, [3]);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     return { elevation, moisture, ice, shade, reportElevation };
+  }
+
+  /**
+   * Compute the field and read back ONLY elevation (.r) — the patch country re-grow's land/water test.
+   * One readback, no other channels. The point is to classify land/water with the SAME values the patch
+   * is rendered from, so the re-grown coastline matches the drawn one (no CPU/GPU coast mismatch).
+   */
+  computeElevation(sites: Float32Array, params: TerrainParams, perm: Float32Array, plate: PlateData): Float32Array {
+    const { width, height, count } = this.render(sites, params, perm, plate);
+    const [elevation] = this.readChannels(width, height, count, [0]);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    return elevation;
   }
 
   /**
@@ -171,21 +168,10 @@ export class GpuField {
     perm: Float32Array,
     plate: PlateData
   ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; reportElevation: Float32Array } {
-    const gl = this.gl;
     const { width, height, count } = this.render(sites, params, perm, plate, true);
-    const dst = this.dstBuf!;
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, dst);
-    const elevation = new Float32Array(count);
-    const moisture = new Float32Array(count);
-    const ice = new Float32Array(count);
-    const reportElevation = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      elevation[i] = dst[4 * i];
-      moisture[i] = dst[4 * i + 1];
-      ice[i] = dst[4 * i + 2]; // .b — ice mask (rivers aren't drawn over it)
-      reportElevation[i] = dst[4 * i + 3]; // .a — reportElevation under uEmitReport
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // .a carries reportElevation here (emitReport set), not shade.
+    const [elevation, moisture, ice, reportElevation] = this.readChannels(width, height, count, [0, 1, 2, 3]);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     return { elevation, moisture, ice, reportElevation };
   }
 
@@ -204,6 +190,17 @@ export class GpuField {
     const { width, count } = this.render(sites, params, perm, plate);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     return { texture: this.outTex!, width, count };
+  }
+
+  /** Read back ONLY elevation (.r) from the LAST render — no re-render — so a CPU consumer (the country
+   *  re-grow's land/water) gets the EXACT field that was just drawn, never a second computation that could
+   *  round a hair differently at the waterline. `count` = that render's cell count; call right after
+   *  renderToTexture for the same sites. */
+  readbackElevation(count: number): Float32Array {
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.fbo);
+    const [elevation] = this.readChannels(this.dims.width, this.dims.height, count, [0]);
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+    return elevation;
   }
 
   // Shared upload + render into this.outTex (the FBO colour attachment). Saves/restores DEPTH_TEST so

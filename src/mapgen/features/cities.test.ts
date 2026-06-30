@@ -10,6 +10,7 @@ import { buildAdjacency, coastDistance } from "./adjacency";
 import { assignCities, habitabilityWeight, HABITABILITY_FLOOR, type City } from "./cities";
 import { assignCountries } from "./countries";
 import { EMPTY_RIVERS, type RiverData } from "./rivers";
+import { minLevelForPopulation } from "./settlement";
 
 const PARAMS = snapshotParams();
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
@@ -33,7 +34,7 @@ const build = () => {
 };
 
 describe("assignCities", () => {
-  it("places cities with a valid tier, minLevel, and non-negative population", () => {
+  it("places cities with a valid tier, population-keyed minLevel, and non-negative population", () => {
     const { countries, cities } = build();
     expect(cities.length).toBeGreaterThan(0);
     for (const c of cities) {
@@ -41,7 +42,8 @@ describe("assignCities", () => {
       expect(c.countryIndex).toBeLessThan(countries.length);
       expect(c.population).toBeGreaterThanOrEqual(0);
       expect(["big", "medium", "small"]).toContain(c.tier);
-      expect(c.minLevel).toBe(c.tier === "big" ? 1 : c.tier === "medium" ? 2 : 3);
+      // minLevel tracks population (small-town tail surfaces on zoom); a capital is forced onto the globe.
+      expect(c.minLevel).toBe(c.isCapital ? 1 : minLevelForPopulation(c.population));
     }
   });
 
@@ -102,8 +104,11 @@ describe("assignCities", () => {
     for (const country of countries) {
       const own = cities.filter((c) => c.countryIndex === country.index);
       const urban = own.reduce((sum, c) => sum + c.population, 0);
-      // Rank-size sums to the urban total; dropped sub-5k villages only reduce it, rounding adds < 1/city.
-      expect(urban).toBeLessThanOrEqual(Math.round(POPULATION.URBAN_FRACTION.value * country.population) + own.length);
+      const budget = POPULATION.URBAN_FRACTION.value * country.population;
+      // Rank-size distributes the urban budget across the whole hierarchy; emitting it (capped at the tail)
+      // sums to ≈ the budget — never a blow-up. The slack absorbs per-city rounding (< 1 each) and the
+      // harmonic-number approximation's sub-permille drift; a 1% ceiling still catches any real ballooning.
+      expect(urban).toBeLessThanOrEqual(Math.ceil(budget * 1.01) + own.length);
     }
   });
 

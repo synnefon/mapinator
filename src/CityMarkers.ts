@@ -1,14 +1,16 @@
-import type { InfoPopup } from "./InfoPopup";
+import type { InfoPopup, PopupRow } from "./InfoPopup";
 import type { City } from "./mapgen/features";
+import { settlementClass } from "./mapgen/features/settlement";
 import type { Projector } from "./renderer/projection";
 
 // City markers are interactive DOM dots layered over the globe (so hover/click come for free),
-// reprojected each frame with the same projection as the canvas overlays. A dot's tier sets the zoom
-// level it appears at and its population sets its size; clicking opens the shared InfoPopup. The limb
-// cull + projection are the Projector's (renderer/projection.ts).
+// reprojected each frame with the same projection as the canvas overlays. Two sets share the layer: the
+// STATIC global big cities (placed once with the map) and the DYNAMIC patch-local small towns (the
+// 1400-density tail, swapped in as you zoom/pan over a region — see RegionTownLayer). Both size dots by
+// population, gate by minLevel, and open the shared popup; the limb cull + projection are the Projector's.
 
 // Dot diameter encodes population: dot AREA ∝ population ⇒ diameter ∝ √population, clamped to a legible
-// range. Calibrated so a ~5k town (MIN_CITY_POP) reads small and a ≳250k metropolis hits the ceiling.
+// range. Calibrated so a small hamlet reads as the floor dot and a ≳250k city hits the ceiling.
 const MIN_DOT_PX = 5;
 const MAX_DOT_PX = 20;
 const DOT_POP_SCALE = 0.03; // px per √person
@@ -16,65 +18,97 @@ const dotDiameter = (population: number): number =>
   Math.max(MIN_DOT_PX, Math.min(MAX_DOT_PX, MIN_DOT_PX + DOT_POP_SCALE * Math.sqrt(population)));
 
 /**
- * Manages the interactive city-marker layer: a positioned dot `<div>` per city (population → dot size,
- * tier → reveal zoom; click → the shared info popup). Reprojected + zoom-gated each frame.
+ * Manages the interactive city-marker layer. `setCities` holds the static global set (rebuilt when the map
+ * result changes); `setRegionTowns` holds the dynamic patch-local tail (rebuilt as the live region changes).
+ * `update` reprojects + zoom-gates both each frame and opens the shared info popup on click.
  */
 export class CityMarkers {
   private readonly frame: HTMLElement;
   private readonly popup: InfoPopup;
-  private readonly dots: HTMLDivElement[] = [];
+  private cities: City[] = []; // global big cities (static)
+  private towns: City[] = []; // patch-local small towns (dynamic)
+  private cityDots: HTMLDivElement[] = [];
+  private townDots: HTMLDivElement[] = [];
   private visible = false;
+  // The dots shown after the last update() (centre + radius, screen px) — the declutter pass reserves
+  // these so feature/country labels never cover a city marker. Empty when the layer is off.
+  readonly visibleDots: { x: number; y: number; r: number }[] = [];
 
   constructor(frame: HTMLElement, popup: InfoPopup) {
     this.frame = frame;
     this.popup = popup;
   }
 
-  /** Rebuild the marker DOM for a new city set (called when the cached map result changes). */
+  /** Set the static global big-city set (called when the cached map result changes). */
   setCities(cities: City[]): void {
-    for (const d of this.dots) d.remove();
-    this.dots.length = 0;
-    for (const city of cities) {
-      const dot = document.createElement("div");
-      dot.className = `city-marker ${city.tier}${city.isCapital ? " capital" : ""}`;
-      // Size by population (overrides the tier's CSS size); the tier class still drives the capital ring.
-      const d = dotDiameter(city.population);
-      dot.style.width = dot.style.height = `${d}px`;
-      dot.style.display = "none";
-      dot.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.popup.open({
-          source: "city",
-          anchor: city.anchor,
-          title: city.name,
-          subtitle: `(${city.isCapital ? "capital" : "city"} of ${city.countryName})`,
-          rows: [
-            ["population", this.formatPopulation(city.population)],
-            ["industries", city.industries.join(", ")],
-            ["elevation", this.formatElevation(city.elevationMeters)],
-          ],
-          footer: city.funFact,
-          minLevel: city.minLevel, // popup closes if you zoom out past the marker's tier
-          at: { x: e.clientX, y: e.clientY },
-        });
+    this.cities = cities;
+    this.cityDots = this.rebuild(this.cityDots, cities);
+  }
+
+  /** Set the dynamic patch-local town set (called when the live region's grow lands). */
+  setRegionTowns(towns: City[]): void {
+    this.towns = towns;
+    this.townDots = this.rebuild(this.townDots, towns);
+  }
+
+  private rebuild(dots: HTMLDivElement[], cities: City[]): HTMLDivElement[] {
+    for (const d of dots) d.remove();
+    return cities.map((city) => this.makeDot(city));
+  }
+
+  private makeDot(city: City): HTMLDivElement {
+    const dot = document.createElement("div");
+    dot.className = `city-marker ${city.tier}${city.isCapital ? " capital" : ""}`;
+    // Size by population (overrides the tier's CSS size); the tier class still drives the capital ring.
+    dot.style.width = dot.style.height = `${dotDiameter(city.population)}px`;
+    dot.style.display = "none";
+    dot.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.popup.open({
+        source: "city",
+        anchor: city.anchor,
+        title: city.name,
+        subtitle: `(${city.isCapital ? "capital" : settlementClass(city.population)} of ${city.countryName})`,
+        rows: this.rowsFor(city),
+        footer: city.funFact || undefined,
+        minLevel: city.minLevel, // popup closes if you zoom out past the marker's tier
+        at: { x: e.clientX, y: e.clientY },
       });
-      this.frame.append(dot);
-      this.dots.push(dot);
-    }
+    });
+    this.frame.append(dot);
+    return dot;
+  }
+
+  // Population always; industries / elevation only when present (region towns carry neither → a lean popup).
+  private rowsFor(city: City): PopupRow[] {
+    const rows: PopupRow[] = [["population", this.formatPopulation(city.population)]];
+    if (city.industries.length > 0) rows.push(["industries", city.industries.join(", ")]);
+    if (city.elevationMeters > 0) rows.push(["elevation", this.formatElevation(city.elevationMeters)]);
+    return rows;
   }
 
   setVisible(visible: boolean): void {
     if (this.visible === visible) return;
     this.visible = visible;
-    if (!visible) for (const d of this.dots) d.style.display = "none";
+    if (!visible) {
+      this.visibleDots.length = 0; // layer off → no dots to reserve against
+      for (const d of this.cityDots) d.style.display = "none";
+      for (const d of this.townDots) d.style.display = "none";
+    }
   }
 
-  /** Reproject + reposition every marker. A marker shows only if its tier's reveal level is reached, it
-   *  faces the camera, and the layer is visible — so big cities/capitals appear first, the rest deeper. */
-  update(cities: City[], proj: Projector, level: number): void {
+  /** Reproject + reposition every marker (both sets). A marker shows only if its tier's reveal level is
+   *  reached, it faces the camera, and the layer is visible — big cities first, the small-town tail deeper. */
+  update(proj: Projector, level: number): void {
+    this.visibleDots.length = 0;
     if (!this.visible) return;
-    for (let i = 0; i < this.dots.length; i++) {
-      const dot = this.dots[i];
+    this.project(this.cityDots, this.cities, proj, level);
+    this.project(this.townDots, this.towns, proj, level);
+  }
+
+  private project(dots: HTMLDivElement[], cities: City[], proj: Projector, level: number): void {
+    for (let i = 0; i < dots.length; i++) {
+      const dot = dots[i];
       const city = cities[i];
       const r = proj.project(city.anchor);
       if (city.minLevel > level || !r.front) {
@@ -84,6 +118,7 @@ export class CityMarkers {
       dot.style.left = `${r.x}px`;
       dot.style.top = `${r.y}px`;
       dot.style.display = "block";
+      this.visibleDots.push({ x: r.x, y: r.y, r: dotDiameter(city.population) / 2 });
     }
   }
 

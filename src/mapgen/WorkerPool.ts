@@ -1,5 +1,5 @@
 import type { Vec3 } from "../common/3DMath";
-import type { CountrySeeds, GlobeMap, PatchCountryData } from "../common/map";
+import type { CountrySeeds, GlobeMap, PatchCountryData, TownFieldData } from "../common/map";
 import type { TerrainParams } from "../common/settings";
 import type { GenRequest } from "../renderer/LodPipeline";
 
@@ -7,14 +7,29 @@ import type { GenRequest } from "../renderer/LodPipeline";
 // country seeds the off-thread re-grow needs).
 type PoolConfig = { seed?: string; params?: TerrainParams; countrySeeds?: CountrySeeds };
 
-// An off-thread country re-grow for one patch: the worker reproduces the patch mesh from these exact
-// generation params (deterministic) and re-grows the partition against the configured base seeds.
-type CountryRequest = { kind: "countries"; center: Vec3; halfAngle: number; points: number };
+// An off-thread country re-grow for one patch: the worker reproduces the patch MESH from these exact
+// generation params (deterministic) and re-grows the partition against the configured base seeds, using
+// `elevation` (read back from the GPU — the field the patch is rendered from) for land/water so the
+// re-grown coast matches the drawn one. Omitted on the CPU-fallback path (worker samples it itself).
+type CountryRequest = { kind: "countries"; center: Vec3; halfAngle: number; points: number; elevation?: Float32Array };
 
-// One job posted to a worker — a rung generate or a country re-grow (both carry a `kind` the worker routes on).
-type PoolJob = GenRequest | CountryRequest;
-// Worker reply: a generate yields `map`; a country re-grow yields `country` (absent if it couldn't run).
-type WorkerResponse = { id: number; map?: GlobeMap; country?: PatchCountryData };
+// An off-thread grow of one region's patch-local small towns (the 1400-density tail). The worker samples a
+// deterministic town field over the cap, accepted ∝ local population density (see mapWorker `towns`).
+type TownRequest = {
+  kind: "towns";
+  center: Vec3;
+  capAngle: number;
+  gridAngle: number;
+  minPop: number;
+  ceilingPop: number;
+  perCapita: number;
+  popDensityScale: number;
+};
+
+// One job posted to a worker — a rung generate, a country re-grow, or a town grow (each carries a `kind`).
+type PoolJob = GenRequest | CountryRequest | TownRequest;
+// Worker reply: a generate yields `map`; a country re-grow yields `country`; a town grow yields `towns`.
+type WorkerResponse = { id: number; map?: GlobeMap; country?: PatchCountryData; towns?: TownFieldData };
 
 // Per-worker peak memory while a fine-cap generate is in flight (its transient cap mesh + output
 // typed arrays) plus that worker's small mesh cache — rough, used only to size the pool. Each extra
@@ -52,7 +67,7 @@ export class WorkerPool {
   private readonly workers: Worker[];
   private readonly idle: Worker[] = [];
   private readonly pending = new Map<number, (res: WorkerResponse) => void>();
-  private readonly waiting: { id: number; msg: PoolJob }[] = [];
+  private readonly waiting: { id: number; msg: PoolJob; transfer?: Transferable[] }[] = [];
   private nextId = 0;
 
   constructor(size: number) {
@@ -84,11 +99,27 @@ export class WorkerPool {
 
   /** Re-grow one patch's country partition off the main thread. Resolves null if the worker couldn't
    *  run it (no base seeds configured yet) — the caller then keeps the coarse base borders. */
-  computeCountries(center: Vec3, halfAngle: number, points: number): Promise<PatchCountryData | null> {
+  computeCountries(center: Vec3, halfAngle: number, points: number, elevation?: Float32Array): Promise<PatchCountryData | null> {
     return new Promise((resolve) => {
       const id = ++this.nextId;
       this.pending.set(id, (res) => resolve(res.country ?? null));
-      this.waiting.push({ id, msg: { kind: "countries", center, halfAngle, points } });
+      // Transfer the GPU-read elevation zero-copy — the main thread doesn't keep it after the re-grow.
+      this.waiting.push({
+        id,
+        msg: { kind: "countries", center, halfAngle, points, elevation },
+        transfer: elevation ? [elevation.buffer] : undefined,
+      });
+      this.dispatch();
+    });
+  }
+
+  /** Grow one region's patch-local small towns off the main thread. Resolves null if the worker couldn't
+   *  run it yet (no field / base seeds configured) — the caller then shows just the global big cities. */
+  growTowns(spec: Omit<TownRequest, "kind">): Promise<TownFieldData | null> {
+    return new Promise((resolve) => {
+      const id = ++this.nextId;
+      this.pending.set(id, (res) => resolve(res.towns ?? null));
+      this.waiting.push({ id, msg: { kind: "towns", ...spec } });
       this.dispatch();
     });
   }
@@ -111,7 +142,7 @@ export class WorkerPool {
     while (this.idle.length && this.waiting.length) {
       const w = this.idle.pop()!;
       const job = this.waiting.shift()!;
-      w.postMessage({ id: job.id, ...job.msg });
+      w.postMessage({ id: job.id, ...job.msg }, job.transfer ?? []);
     }
   }
 }

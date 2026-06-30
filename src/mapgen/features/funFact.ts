@@ -2,6 +2,7 @@ import { randomChoice } from "../../common/random";
 import { type CityCondition, matchesCondition } from "./cityCondition";
 import type { BiomeName, CityContext } from "./cityStats";
 import { Authority, Society, Structure, Trait } from "./government";
+import { applySettlementNoun } from "./settlement";
 
 // ===================== Fun facts: the oddity engine =====================
 // One register only: a fun fact is a concrete, surprising, SPECIFIC claim — something that sounds TRUE of
@@ -40,6 +41,8 @@ function renderTemplate(template: string, slots: Record<string, string>, ctx: Ci
 // ===================== The oddity corpus =====================
 // Whole authored fun facts, grouped by the axis they're gated to. Universal entries (no `when`) fit any
 // town and are always eligible, so every city — however plain — still leads with a concrete oddity.
+// Write "town"/"city" freely as the generic place-noun: generateFunFact rewrites it to the size-appropriate
+// word (hamlet/village/town/city/metropolis) by population on the way out. Plurals ("cities") stay generic.
 const cityOddities: FactPart[] = [
   // — universal: civic oddities that fit any town —
   { text: "no two clock towers in town agree on the time, and the council long ago gave up trying to fix it" },
@@ -442,8 +445,8 @@ export function generateFunFact(ctx: CityContext, used?: Set<string>): string {
   const fresh = used ? candidates.filter((c) => !used.has(c)) : candidates;
   const pool = fresh.length > 0 ? fresh : candidates;
   const chosen = randomChoice(pool, ctx.rng);
-  used?.add(chosen);
-  return chosen;
+  used?.add(chosen); // dedupe on the CANONICAL text — the per-population noun is applied only on the way out
+  return applySettlementNoun(chosen, ctx.population);
 }
 
 // Exposed for the offline combo audit (funFactAudit.ts / .test.ts) — NOT part of the app's generation path.

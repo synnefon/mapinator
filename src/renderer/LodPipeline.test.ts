@@ -117,13 +117,13 @@ describe("LodPipeline cache", () => {
   it("evicts at the cap (keeping the live globe)", async () => {
     const view: LodView = { ...BASE_VIEW, zoom: 0, resolution: 0 };
     const h = harness(view);
-    // 25 distinct resolutions → 25 distinct globe (rung-0) keys, each cached then trimmed by LRU.
-    for (let i = 1; i <= 25; i++) {
-      view.resolution = i / 26;
+    // 35 distinct resolutions → 35 distinct globe (rung-0) keys (> the cap), each cached then trimmed by LRU.
+    for (let i = 1; i <= 35; i++) {
+      view.resolution = i / 36;
       h.pipeline.sync();
       await h.drain();
     }
-    expect(h.pipeline.cachedKeys().length).toBeLessThanOrEqual(18); // LOD_CACHE_CAP
+    expect(h.pipeline.cachedKeys().length).toBeLessThanOrEqual(28); // LOD_CACHE_CAP
     expect(h.pipeline.cachedKeys().length).toBeGreaterThan(0);
   });
 });

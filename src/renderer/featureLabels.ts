@@ -16,6 +16,15 @@ const ZOOM_FULL = 0.5; // …ramping back to full size by this zoom (orbit zoom:
 const CASING = "rgba(20,20,20,0.85)";
 const CORE = "rgba(255,255,255,0.96)";
 
+/** Per-frame zoom scale: labels shrink on the whole-globe view, full size once zoomed past ZOOM_FULL. */
+export const labelZoomScale = (zoom: number): number =>
+  ZOOM_OUT_SCALE + (1 - ZOOM_OUT_SCALE) * Math.min(1, zoom / ZOOM_FULL);
+
+/** A feature label's on-screen font px (feature size → font, clamped, then the zoom scale). Exported so
+ *  the declutter pass sizes a label's box exactly as it'll be drawn. */
+export const featureFontPx = (extent: number, proj: Projector): number =>
+  Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, extent * proj.radius * FONT_FRAC) * labelZoomScale(proj.zoom));
+
 /**
  * Draw feature name labels onto the 2D overlay, projected to match the globe (orthographic, same
  * apparent radius + horizontal offset as the active renderer). EVERY feature whose reveal tier the
@@ -26,7 +35,8 @@ export function drawFeatureLabels(
   canvas: HTMLCanvasElement,
   features: LabelItem[],
   proj: Projector,
-  level: number // LOD zoom level — a feature shows only once it reaches its minLevel tier
+  level: number, // LOD zoom level — a feature shows only once it reaches its minLevel tier
+  shown?: ReadonlySet<string> // declutter decision (by name); when given, only these labels are drawn
 ): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -37,24 +47,17 @@ export function drawFeatureLabels(
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
 
-  // Smaller labels when zoomed out, full size once zoomed in — a single per-frame scale on top of
-  // the per-feature size, so the whole-globe view reads calmer.
-  const zoomScale = ZOOM_OUT_SCALE + (1 - ZOOM_OUT_SCALE) * Math.min(1, proj.zoom / ZOOM_FULL);
-
-  // Label every tier-eligible feature (no decluttering). Draw biggest LAST so the major features
-  // sit on top where labels collide; the dark casing keeps any overlap legible.
+  // Draw biggest LAST so where labels still touch the major feature sits on top; the declutter pass
+  // (shown) has already dropped the overlaps, so this is mostly a tie-break on near-misses.
   const order = features
-    .filter((f) => f.minLevel <= level)
+    .filter((f) => f.minLevel <= level && (!shown || shown.has(f.name)))
     .sort((a, b) => a.cellCount - b.cellCount);
 
   for (const f of order) {
     const r = proj.project(f.anchor);
     if (!r.front) continue; // back hemisphere / right at the limb
 
-    const fontPx = Math.max(
-      MIN_FONT_PX,
-      Math.min(MAX_FONT_PX, f.extent * proj.radius * FONT_FRAC) * zoomScale
-    );
+    const fontPx = featureFontPx(f.extent, proj);
     ctx.font = `bold ${fontPx}px 'Roboto Mono', ui-monospace, monospace`;
 
     ctx.lineWidth = Math.max(2, fontPx * 0.18);

@@ -1,0 +1,111 @@
+import type { Vec3 } from "./common/3DMath";
+import type { City, CountryInfo } from "./mapgen/features";
+import { globalCityMinPop } from "./mapgen/features/settlement";
+import type { NameGenerator } from "./mapgen/NameGenerator";
+import type { WorkerPool } from "./mapgen/WorkerPool";
+
+// Drives the patch-local small-town tail: when the view zooms in, it asks the worker pool to grow the
+// in-view region's towns (a deterministic 1400-density field, see mapgen/features/regionTowns) and turns
+// the returned points into City markers, named in their country's tongue. Only ONE region is live at a
+// time — keyed by a quantised view bucket + the feature epoch — so the planet's full small-town tail never
+// exists at once; panning/zooming swaps the live set. Sticky: the previous region stays on screen until the
+// next grow lands (no blank flash), mirroring how the terrain LOD overlay behaves.
+
+const TOWN_MIN_LEVEL = 4; // below this the cap is too wide to hold 1400 density — globe shows big cities only
+const PER_CAPITA = 600; // people per settlement — the RURAL village body (~90% of people lived in villages,
+// ~1 per 500–700 people in 1400); this is the knob that sets how dense the on-zoom sprinkle feels.
+const CAP_MARGIN = 1.3; // grow a little past the view so a small pan doesn't immediately need a re-grow
+const RECENTER_FRACTION = 0.25; // re-grow once the view centre moves this fraction of the cap
+
+// Per-level zoom LOD, paired so the candidate-grid scan stays bounded at every level: a wide (shallow) cap
+// uses a COARSE grid and a HIGH floor (only the larger market towns); a deep cap uses a FINE grid and a low
+// floor (down to the dialled MIN_TOWN_POP). `floor` is the deepest-zoom population floor (the dial);
+// shallower levels scale it up so each level stays legible. Spacing tracks the tier (~10 km / ~5–6 km).
+const minPopForLevel = (level: number, floor: number): number => floor * (level <= 4 ? 4 : level === 5 ? 2 : 1);
+const gridAngleForLevel = (level: number): number => (level <= 4 ? 0.0016 : level === 5 ? 0.001 : 0.0006);
+
+export class RegionTownLayer {
+  private current: City[] = [];
+  private currentKey = "";
+  private requestedKey: string | null = null;
+
+  constructor(
+    private readonly pool: WorkerPool,
+    private readonly namer: NameGenerator,
+    private readonly onReady: () => void
+  ) {}
+
+  /** Return the current region's town markers (sticky), requesting a fresh grow when the view bucket or the
+   *  feature epoch changes. Call each frame; cheap on steady-state frames (a key compare). */
+  sync(args: { level: number; center: Vec3; capAngle: number; countries: CountryInfo[]; epoch: number; popDensityScale: number; minTownPop: number }): City[] {
+    const { level, center, capAngle, countries, epoch, popDensityScale, minTownPop } = args;
+    if (level < TOWN_MIN_LEVEL) {
+      // Zoomed out past the town tier — drop the tail so only the global big cities remain.
+      if (this.current.length) {
+        this.current = [];
+        this.currentKey = "";
+        this.requestedKey = null;
+      }
+      return this.current;
+    }
+    const key = this.regionKey(epoch, level, center, capAngle, minTownPop);
+    if (key === this.currentKey || key === this.requestedKey) return this.current; // already showing / in flight
+    this.requestedKey = key;
+    this.pool
+      .growTowns({
+        center,
+        capAngle: capAngle * CAP_MARGIN,
+        gridAngle: gridAngleForLevel(level),
+        minPop: minPopForLevel(level, minTownPop),
+        ceilingPop: globalCityMinPop(popDensityScale), // hand off to the global set at the live density-scaled split
+        perCapita: PER_CAPITA,
+        popDensityScale,
+      })
+      .then((field) => {
+        if (this.requestedKey !== key) return; // a newer region superseded this request — ignore the stale result
+        this.requestedKey = null;
+        this.current = field ? this.buildCities(field, countries) : [];
+        this.currentKey = key;
+        this.onReady();
+      });
+    return this.current; // sticky: keep the previous region until the new towns land
+  }
+
+  // Quantise the view centre to a bucket sized to a fraction of the cap, so small pans reuse the same grow.
+  private regionKey(epoch: number, level: number, center: Vec3, capAngle: number, minTownPop: number): string {
+    const step = Math.max(1e-4, capAngle * RECENTER_FRACTION);
+    const q = (v: number): number => Math.round(v / step);
+    return `${epoch}|${level}|${minTownPop}|${q(center.x)}|${q(center.y)}|${q(center.z)}`;
+  }
+
+  // Turn the worker's flat town field into City markers, named per country (deterministic per location, so a
+  // town keeps its name across re-grows). Towns whose country index is unknown (edge of a partition) drop.
+  private buildCities(field: { positions: Float32Array; populations: Float32Array; countries: Int32Array }, countries: CountryInfo[]): City[] {
+    const byIndex = new Map<number, CountryInfo>();
+    for (const c of countries) byIndex.set(c.index, c);
+    const cities: City[] = [];
+    for (let i = 0; i < field.populations.length; i++) {
+      const country = byIndex.get(field.countries[i]);
+      if (!country) continue;
+      const anchor: Vec3 = { x: field.positions[3 * i], y: field.positions[3 * i + 1], z: field.positions[3 * i + 2] };
+      const population = Math.round(field.populations[i]);
+      const seed = `town|${anchor.x.toFixed(4)}|${anchor.y.toFixed(4)}|${anchor.z.toFixed(4)}`;
+      cities.push({
+        name: this.namer.generate({ seed, lang: country.language }),
+        anchor,
+        cell: -1, // not tied to a base cell — placed directly in the region field
+        population,
+        tier: "small", // nominal — the dot size + popup noun derive from population (settlementClass), not tier
+        isCapital: false,
+        minLevel: TOWN_MIN_LEVEL,
+        countryIndex: country.index,
+        countryName: country.name,
+        industries: [],
+        elevationMeters: 0,
+        funFact: "",
+        waterKind: "none",
+      });
+    }
+    return cities;
+  }
+}

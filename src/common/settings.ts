@@ -60,6 +60,13 @@ export const LAYERS: Layer[] = [
     defaultOn: true,
   },
   {
+    kind: "view",
+    key: "viewRivers",
+    label: "rivers",
+    doc: "trace rivers downhill from the highlands to the sea",
+    defaultOn: true,
+  },
+  {
     kind: "feature",
     key: "ice",
     label: "ice caps",
@@ -92,13 +99,6 @@ export const LAYERS: Layer[] = [
     key: "viewCities",
     label: "cities",
     doc: "display city markers",
-    defaultOn: false,
-  },
-  {
-    kind: "view",
-    key: "viewRivers",
-    label: "rivers",
-    doc: "trace rivers downhill from the highlands to the sea",
     defaultOn: false,
   },
   {
@@ -242,6 +242,27 @@ export const DIALS = {
       hidden: true,
       doc: "how far a water body looks out (over water) for its largest bordering country",
     },
+    BORDER_DETAIL: {
+      value: 4,
+      min: 0,
+      max: 7,
+      step: 1,
+      doc: "fractal subdivision levels for country borders — higher = finer organic detail that resolves as you zoom in (×2 segments per level). Computed once, no per-patch recompute",
+    },
+    BORDER_WIGGLE: {
+      value: 0.13,
+      min: 0,
+      max: 0.5,
+      step: 0.01,
+      doc: "how much country borders wander — fractal sideways displacement per segment (0 = straight coarse edges)",
+    },
+    CHOROPLETH_OPACITY: {
+      value: 0.6,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      doc: "how strongly the country choropleth tint covers the terrain. Lower = more terrain shows through (but coastal biome variation bleeds as off-colour cells); higher = flatter, more uniform country colour",
+    },
   },
   // CITY — placement of city markers within each country (features/cities.ts). Read LIVE (not terrain gen),
   // so a change re-places cities without a full regen. Each country's cities split into four buckets, each
@@ -250,6 +271,13 @@ export const DIALS = {
   // (at a medium/small-water shore), and the rest sprinkled across the interior. Earth ~1400: rivers the most
   // common settlement water, the SEA a strong second (sea coasts vastly outnumber lake shores), lakes few.
   CITIES: {
+    MIN_TOWN_POP: {
+      value: 800,
+      min: 100,
+      max: 5000,
+      step: 50,
+      doc: "smallest settlement shown as you zoom in — the population floor for the patch-local town tail at the deepest zoom. Higher = fewer, larger towns; lower = a denser sprinkle down to villages/hamlets. Shallower zoom levels scale this up so each level stays legible. (Big cities at/above the global split always show regardless.)",
+    },
     RIVER_FRACTION: {
       value: 0.38,
       min: 0,
@@ -300,10 +328,10 @@ export const DIALS = {
   POPULATION: {
     GLOBAL_POPULATION_DENSITY: {
       value: 2.6,
-      min: 0.5,
-      max: 20,
-      step: 0.5,
-      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land (Earth ~1400 land average ≈ 2.5/km²)",
+      min: 0.05,
+      max: 100,
+      step: 0.05,
+      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land. Earth ~1400 land average ≈ 2.5/km² (the default); modern Earth's global land average ≈ 54/km². The range spans near-empty worlds up to denser-than-modern-Earth (the big-city count stays renderable at any density — the global/patch split scales with it)",
     },
     COAST_STRENGTH: {
       value: 1.6,
@@ -368,7 +396,7 @@ export const DIALS = {
       doc: "how much rainfall weights a cell's water yield (0 = every cell equal, 1 = dry cells feed less) → deserts get fewer rivers",
     },
     SOURCE_MOISTURE: {
-      value: 0.65,
+      value: 0.2,
       min: 0,
       max: 0.9,
       step: 0.05,

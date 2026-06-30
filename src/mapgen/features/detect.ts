@@ -77,9 +77,13 @@ export function coastDistances(cells: number[], adjacency: number[][]): Map<numb
   return dist;
 }
 
-/** The member cell farthest (in hops) from the component's edge — its "pole of inaccessibility".
- *  Labelling here keeps the name in open interior, not on land a concave body wraps around. */
-export function poleOfInaccessibility(cells: number[], adjacency: number[][]): number {
+/** The member cell farthest (in hops) from the component's edge — its "pole of inaccessibility" — AND
+ *  that hop distance, which is the inscribed radius: the largest interior disk centred there fits inside
+ *  the component, so a label may slide that far from the anchor and keep its centre in the interior. */
+export function poleOfInaccessibilityWithRadius(
+  cells: number[],
+  adjacency: number[][]
+): { cell: number; hops: number } {
   const dist = coastDistances(cells, adjacency);
   let best = cells[0];
   let bestDist = -1;
@@ -90,7 +94,13 @@ export function poleOfInaccessibility(cells: number[], adjacency: number[][]): n
       best = c;
     }
   }
-  return best;
+  return { cell: best, hops: Math.max(0, bestDist) };
+}
+
+/** The member cell farthest (in hops) from the component's edge — its "pole of inaccessibility".
+ *  Labelling here keeps the name in open interior, not on land a concave body wraps around. */
+export function poleOfInaccessibility(cells: number[], adjacency: number[][]): number {
+  return poleOfInaccessibilityWithRadius(cells, adjacency).cell;
 }
 
 /** Angular radius (rad) from a cell to the farthest member — a feature's on-sphere reach. */

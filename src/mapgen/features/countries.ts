@@ -1,12 +1,14 @@
 import { createNoise3D } from "simplex-noise";
+import type { Vec3 } from "../../common/3DMath";
 import { Languages, type Language } from "../../common/language";
 import type { GlobeMap, PatchCountryData } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
 import { COUNTRIES } from "../../common/settings";
+import { refineSphereCurve } from "../../common/sphereCurve";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency, coastDistance, vertexKey } from "./adjacency";
 import { buildKdTree, nearestCell } from "./kdTree";
-import { angularExtent, poleOfInaccessibility } from "./detect";
+import { angularExtent, poleOfInaccessibilityWithRadius } from "./detect";
 import { generateGovernment, type GovType } from "./government";
 import { estimatePopulation } from "./population";
 import { cellSlope, cellSuitability, coastBonus } from "./suitability";
@@ -32,18 +34,12 @@ export type Country = {
   population: number;
   anchorCell: number; // label position — the country's interior-most cell
   extent: number; // angular radius (rad) for label sizing
+  insRadius: number; // inscribed radius (rad): how far a label may slide from the anchor + stay interior
 };
-
-/** Assigns any unit-sphere point to a country (compact index, or -1 only when there's no land) by the
- *  nearest BASE land cell — so a finer LOD patch labels its cells the same country the globe grew them
- *  into (the region-grow has no closed form). Land vs. water isn't judged here; callers gate on a
- *  patch's own elevation so the highlight respects that patch's coastline. */
-export type CountryClassifier = (x: number, y: number, z: number) => number;
 
 export type CountryData = {
   countryOf: Int32Array; // per cell: compact country index, or -1 for ocean / uninhabited water
   countries: Country[];
-  classify: CountryClassifier; // classify arbitrary sphere points (used to map LOD patch cells)
 };
 
 // Binary min-heap of (key, value) pairs over typed arrays — the priority queue for the country
@@ -130,7 +126,7 @@ export function assignCountries(
 
   const land: number[] = [];
   for (let i = 0; i < cellCount; i++) if (elevation[i] >= seaLevel) land.push(i);
-  if (land.length === 0) return { countryOf, countries: [], classify: () => -1 };
+  if (land.length === 0) return { countryOf, countries: [] };
 
   // One seed per country — the raw count off the dial, clamped to the land available.
   const n = Math.min(land.length, Math.max(2, Math.round(COUNTRIES.NUM_COUNTRIES.value)));
@@ -249,7 +245,10 @@ export function assignCountries(
     } else {
       language = randomChoice(pool, langRng);
     }
-    const anchorCell = poleOfInaccessibility(cells, adjacency);
+    // The interior-most cell anchors the label; its hop distance to the border is the inscribed radius,
+    // converted to radians via the mean cell spacing (√(4π/N)) — the label's slide budget (see CountryInfo).
+    const { cell: anchorCell, hops: insHops } = poleOfInaccessibilityWithRadius(cells, adjacency);
+    const insRadius = insHops * Math.sqrt((4 * Math.PI) / cellCount);
 
     // Government + population, deterministic per country.
     const polityRng = makeRNG(`${mapSeed}|polity|${k}`);
@@ -292,41 +291,27 @@ export function assignCountries(
       population,
       anchorCell,
       extent: angularExtent(anchorCell, cells, sites),
+      insRadius,
     });
   }
 
   for (const c of land) countryOf[c] = compact[countryOf[c]]; // seed index → compact index
 
-  // A reusable point→country test: the region-grow has no closed form, so classify a point by the
-  // country of the nearest BASE land cell (compact index). Used to map an LOD patch's cells onto the
-  // globe's countries; O(land) per call, so callers cache it per hovered country.
-  const classify: CountryClassifier = (x, y, z) => {
-    let best = -1;
-    let bestDot = -Infinity;
-    for (const c of land) {
-      const d = x * sites[3 * c] + y * sites[3 * c + 1] + z * sites[3 * c + 2];
-      if (d > bestDot) {
-        bestDot = d;
-        best = c;
-      }
-    }
-    return best >= 0 ? countryOf[best] : -1;
-  };
-
-  return { countryOf, countries, classify };
+  return { countryOf, countries };
 }
 
 /**
- * Re-grow the country partition on an LOD detail patch's FINE mesh, so the choropleth, borders, and
- * hover highlight follow the patch's own coastline instead of the coarse base cells. `fineElevation`
- * is the patch's per-cell elevation; it defines land/water here, at the resolution actually drawn.
+ * Re-grow the country partition on an LOD detail patch's FINE mesh, so the choropleth + hover highlight
+ * follow the patch's own coastline instead of the coarse base cells. `fineElevation` is the patch's
+ * per-cell elevation (read back from the GPU — the field actually drawn); it defines land/water here.
  *
  * A fine LAND cell whose nearest BASE cell is itself land is SEEDED with that base cell's country (it's
  * confidently interior to a coarse country). Coast-overhang land — fine land beyond the coarse coast,
  * whose nearest base cell is water — is left unseeded, then filled by a multi-source Dijkstra that grows
  * over fine LAND ONLY. Because water is a hard barrier (never relaxed across), a country can't hop a
- * strait into another landmass — the fix for narrow land with water on multiple sides. Returns the fine
- * per-cell country (or -1 for water/unreached) plus the border segments derived from it.
+ * strait into another landmass — the fix for narrow land with water on multiple sides. Any land the grow
+ * can't reach falls back to its nearest base-land country, so EVERY land cell is covered. Returns the
+ * fine per-cell country: -1 for water, else the owning country.
  *
  * Runs on the worker, off the main thread (see WorkerPool.computeCountries) — `base` is the base
  * assignment's seed arrays, not a full GlobeMap.
@@ -343,12 +328,20 @@ export function patchCountryData(
   const countryOf = new Int32Array(n).fill(-1);
   const isLand = (i: number): boolean => fineElevation[i] >= seaLevel;
 
-  // Seed confidently-interior fine land from the base assignment (nearest base cell, kd-tree).
+  // Seed ONLY confidently-interior fine land — a cell whose every neighbour is land too — from the base
+  // assignment (nearest base cell). A COASTAL fine cell is deliberately left UNSEEDED: its Euclidean-nearest
+  // base land can belong to a different country across a strait, and seeding it directly would strait-hop
+  // (the grow below can't override a seed — it only fills unseeded cells). The land-constrained grow reaches
+  // coastal cells over LAND from the interior instead, so each takes the country it's actually contiguous with.
+  const adjacency = buildAdjacency(patch);
   const tree = buildKdTree(base.sites, base.cellCount);
   const dist = new Float64Array(n).fill(Infinity);
   const heap = new MinHeap(n);
   for (let i = 0; i < n; i++) {
     if (!isLand(i)) continue;
+    let interior = true;
+    for (const nb of adjacency[i]) if (!isLand(nb)) { interior = false; break; }
+    if (!interior) continue; // coastal — leave it for the land-constrained grow (no strait-hop)
     const bc = nearestCell(tree, base.sites, sites[3 * i], sites[3 * i + 1], sites[3 * i + 2]);
     if (bc >= 0 && base.elevation[bc] >= seaLevel) {
       countryOf[i] = baseCountryOf[bc];
@@ -357,16 +350,20 @@ export function patchCountryData(
     }
   }
 
-  // Grow over fine LAND only — water is never crossed, so a country stays on its own landmass.
-  const adjacency = buildAdjacency(patch);
+  // Grow out from the interior seeds. A LAND edge costs its length; a WATER edge costs WATER_COST× that, so
+  // connected land is reached cheaply OVER LAND (a country can't hop a strait to a coast that's reachable
+  // overland — that route is far cheaper), while a coast fragment or island the fine mesh cut off behind a
+  // thin channel is still claimed by the nearest coast ACROSS the water (a few costly steps) instead of a
+  // straight-line hop to a far country. Water only CARRIES the country to reach stranded land; it's reset to
+  // -1 afterwards (water has no country of its own).
+  const WATER_COST = COUNTRIES.WATER_COST.value;
   while (heap.size > 0) {
     const c = heap.pop();
     if (heap.poppedKey > dist[c]) continue; // stale entry (c re-pushed cheaper since)
     const cx = sites[3 * c], cy = sites[3 * c + 1], cz = sites[3 * c + 2];
     for (const nb of adjacency[c]) {
-      if (!isLand(nb)) continue;
       const dx = cx - sites[3 * nb], dy = cy - sites[3 * nb + 1], dz = cz - sites[3 * nb + 2];
-      const nd = dist[c] + Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const nd = dist[c] + Math.sqrt(dx * dx + dy * dy + dz * dz) * (isLand(nb) ? 1 : WATER_COST);
       if (nd < dist[nb]) {
         dist[nb] = nd;
         countryOf[nb] = countryOf[c];
@@ -374,8 +371,34 @@ export function patchCountryData(
       }
     }
   }
+  for (let i = 0; i < n; i++) if (!isLand(i)) countryOf[i] = -1; // water carried the grow; it has no country
 
-  return { countryOf, borders: countryBorderSegments(patch, countryOf) };
+  // Last resort: a land cell the grow STILL couldn't reach (only happens when the patch has NO interior
+  // seeds at all — e.g. nothing but thin coast) takes the nearest BASE-LAND country, so every land cell is
+  // covered. Normally the water-cost grow above reaches everything, so this builds nothing.
+  let unreached = 0;
+  for (let i = 0; i < n; i++) if (isLand(i) && countryOf[i] < 0) unreached++;
+  if (unreached > 0) {
+    const landIdx: number[] = [];
+    for (let b = 0; b < base.cellCount; b++) if (base.elevation[b] >= seaLevel) landIdx.push(b);
+    if (landIdx.length > 0) {
+      const landSites = new Float32Array(landIdx.length * 3);
+      for (let j = 0; j < landIdx.length; j++) {
+        const b = landIdx[j];
+        landSites[3 * j] = base.sites[3 * b];
+        landSites[3 * j + 1] = base.sites[3 * b + 1];
+        landSites[3 * j + 2] = base.sites[3 * b + 2];
+      }
+      const landTree = buildKdTree(landSites, landIdx.length);
+      for (let i = 0; i < n; i++) {
+        if (!isLand(i) || countryOf[i] >= 0) continue;
+        const j = nearestCell(landTree, landSites, sites[3 * i], sites[3 * i + 1], sites[3 * i + 2]);
+        if (j >= 0) countryOf[i] = baseCountryOf[landIdx[j]];
+      }
+    }
+  }
+
+  return { countryOf };
 }
 
 /**
@@ -463,12 +486,113 @@ export function countryBorderSegments(map: GlobeMap, countryOf: Int32Array): Flo
 }
 
 /**
- * Greedy four-colouring of the country adjacency graph: neighbouring countries get different colour
- * classes (0–3) so a choropleth fill never abuts itself. Countries are coloured highest-degree first
- * (Welsh–Powell), each taking the lowest class no neighbour uses; the four-colour theorem says a planar
- * map needs ≤4, and the rare greedy overflow falls back to class 0. Returns a class per country index.
+ * Country borders as REFINED sphere polylines: the coarse inter-country edges (same set as
+ * countryBorderSegments) chained into arcs between junctions, then fractally subdivided via the shared
+ * refineSphereCurve primitive — so a border gains organic, self-similar detail that resolves on ZOOM
+ * with NO per-patch recompute (the vector-overlay pattern, like rivers). Computed ONCE per map.
+ * Returns flat [x0,y0,z0, x1,y1,z1, …] unit-sphere segment pairs for the overlay to project + stroke.
  */
-export function fourColorCountries(
+export function refineCountryBorders(
+  map: GlobeMap,
+  countryOf: Int32Array,
+  opts: { levels: number; amplitude: number }
+): Float32Array {
+  const { cellCount, ringOffsets, ringVerts } = map;
+
+  // 1. Deduped inter-country edges (a cell-polygon edge shared by two LAND cells of different countries),
+  //    keeping each endpoint's vertex key + position so they can be chained.
+  type Edge = { ka: string; kb: string; a: Vec3; b: Vec3; cells: number[] };
+  const edges = new Map<string, Edge>();
+  for (let i = 0; i < cellCount; i++) {
+    if (countryOf[i] < 0) continue;
+    const start = ringOffsets[i];
+    const k = ringOffsets[i + 1] - start;
+    for (let j = 0; j < k; j++) {
+      const a = start + j;
+      const b = start + ((j + 1) % k);
+      const ax = ringVerts[3 * a], ay = ringVerts[3 * a + 1], az = ringVerts[3 * a + 2];
+      const bx = ringVerts[3 * b], by = ringVerts[3 * b + 1], bz = ringVerts[3 * b + 2];
+      const ka = vertexKey(ax, ay, az);
+      const kb = vertexKey(bx, by, bz);
+      if (ka === kb) continue;
+      const ekey = ka < kb ? `${ka}~${kb}` : `${kb}~${ka}`;
+      const e = edges.get(ekey);
+      if (e) e.cells.push(i);
+      else edges.set(ekey, { ka, kb, a: { x: ax, y: ay, z: az }, b: { x: bx, y: by, z: bz }, cells: [i] });
+    }
+  }
+
+  // 2. Vertex graph over the true borders (shared by exactly 2 land cells of differing countries).
+  const pos = new Map<string, Vec3>();
+  const adj = new Map<string, string[]>();
+  const link = (key: string, nb: string): void => {
+    const a = adj.get(key);
+    if (a) a.push(nb);
+    else adj.set(key, [nb]);
+  };
+  for (const e of edges.values()) {
+    if (e.cells.length !== 2 || countryOf[e.cells[0]] === countryOf[e.cells[1]]) continue;
+    pos.set(e.ka, e.a);
+    pos.set(e.kb, e.b);
+    link(e.ka, e.kb);
+    link(e.kb, e.ka);
+  }
+
+  // 3. Walk into polylines: arcs between junctions/ends (degree ≠ 2) first, then any leftover pure loops.
+  //    Each edge is walked once; the fractal hash is deterministic per point, so independent arcs stay
+  //    seamless where they meet.
+  const used = new Set<string>();
+  const ekeyOf = (k1: string, k2: string): string => (k1 < k2 ? `${k1}~${k2}` : `${k2}~${k1}`);
+  const lines: Vec3[][] = [];
+  const walk = (startK: string): void => {
+    for (const first of adj.get(startK)!) {
+      if (used.has(ekeyOf(startK, first))) continue;
+      const line: Vec3[] = [pos.get(startK)!];
+      let prev = startK;
+      let cur = first;
+      used.add(ekeyOf(prev, cur));
+      line.push(pos.get(cur)!);
+      while (adj.get(cur)!.length === 2 && cur !== startK) {
+        const [n0, n1] = adj.get(cur)!;
+        const next = n0 === prev ? n1 : n0;
+        if (used.has(ekeyOf(cur, next))) break;
+        used.add(ekeyOf(cur, next));
+        line.push(pos.get(next)!);
+        prev = cur;
+        cur = next;
+      }
+      lines.push(line);
+    }
+  };
+  for (const [k, nbs] of adj) if (nbs.length !== 2) walk(k);
+  for (const [k, nbs] of adj) if (nbs.length === 2 && !used.has(ekeyOf(k, nbs[0]))) walk(k);
+
+  // 4. Refine each arc + emit as flat segment pairs (values unused — borders carry no per-vertex scalar).
+  const out: number[] = [];
+  for (const line of lines) {
+    if (line.length < 2) continue;
+    const { points } = refineSphereCurve(line, line.map(() => 0), opts);
+    for (let i = 0; i + 1 < points.length; i++) {
+      const p = points[i];
+      const q = points[i + 1];
+      out.push(p.x, p.y, p.z, q.x, q.y, q.z);
+    }
+  }
+  return new Float32Array(out);
+}
+
+// Choropleth colour classes. A planar country map is 4-colourable in theory, but greedy Welsh–Powell
+// isn't guaranteed to FIND a 4-colouring and overflowed in practice (neighbours shared a hue); six gives
+// it enough slack. Must not exceed the HUES palette length (renderer/countryTexture.ts).
+const COLOR_CLASSES = 6;
+
+/**
+ * Greedy colouring of the country adjacency graph: neighbouring countries get different colour classes
+ * (0 … COLOR_CLASSES−1) so a choropleth fill never abuts itself. Countries are coloured highest-degree
+ * first (Welsh–Powell), each taking the lowest class no neighbour uses; a rare overflow falls back to
+ * class 0. Returns a class per country index.
+ */
+export function colorCountries(
   countryOf: Int32Array,
   adjacency: number[][],
   countryCount: number
@@ -493,8 +617,8 @@ export function fourColorCountries(
     const used = new Set<number>();
     for (const nb of neighbors[c]) if (color[nb] >= 0) used.add(color[nb]);
     let chosen = 0;
-    while (chosen < 4 && used.has(chosen)) chosen++;
-    color[c] = chosen < 4 ? chosen : 0; // ≤4 suffices for a planar map; fall back if greedy overflows
+    while (chosen < COLOR_CLASSES && used.has(chosen)) chosen++;
+    color[c] = chosen < COLOR_CLASSES ? chosen : 0; // fall back if greedy overflows the palette
   }
   return color;
 }

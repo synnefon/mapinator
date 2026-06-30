@@ -4,7 +4,7 @@ import { OCEANS, snapshotParams, type MapSettings } from "../../common/settings"
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
-import { assignCountries, countryBorderSegments, fourColorCountries, largestBorderingCountry } from "./countries";
+import { assignCountries, colorCountries, countryBorderSegments, largestBorderingCountry } from "./countries";
 
 const PARAMS = snapshotParams();
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
@@ -84,16 +84,16 @@ describe("largestBorderingCountry", () => {
   });
 });
 
-describe("fourColorCountries", () => {
-  it("assigns each country a class 0–3 and colours bordering countries apart", () => {
+describe("colorCountries", () => {
+  it("assigns each country a class 0–5 and colours bordering countries apart", () => {
     const map = buildMap();
     const adjacency = buildAdjacency(map);
     const { countryOf, countries } = assign(map);
-    const colors = fourColorCountries(countryOf, adjacency, countries.length);
+    const colors = colorCountries(countryOf, adjacency, countries.length);
     expect(colors.length).toBe(countries.length);
     for (const cls of colors) {
       expect(cls).toBeGreaterThanOrEqual(0);
-      expect(cls).toBeLessThanOrEqual(3);
+      expect(cls).toBeLessThanOrEqual(5);
     }
     // Greedy degree-ordered colouring is proper on these planar maps: no two bordering countries share
     // a class (a rare overflow would fall back to 0; this guards that it doesn't bite in practice).

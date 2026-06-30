@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OCEANS, snapshotParams, type MapSettings } from "../common/settings";
 import { buildAdjacency } from "../mapgen/features/adjacency";
-import { assignCountries, fourColorCountries } from "../mapgen/features/countries";
+import { assignCountries, colorCountries } from "../mapgen/features/countries";
 import { MapGenerator } from "../mapgen/MapGenerator";
 import { NameGenerator } from "../mapgen/NameGenerator";
 import { bakeCountryTexture, COUNTRY_TEX_H, COUNTRY_TEX_W } from "./countryTexture";
@@ -9,7 +9,7 @@ import { bakeCountryTexture, COUNTRY_TEX_H, COUNTRY_TEX_W } from "./countryTextu
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
 
 describe("bakeCountryTexture", () => {
-  it("bakes a full equirect RGBA texture of country hues over land and a dark sea", () => {
+  it("flags land vs sea in alpha (255/0) and tints every texel with a dilated country hue", () => {
     const seed = "ctex-seed";
     const map = new MapGenerator(seed, snapshotParams()).generateMap(SETTINGS);
     const seaLevel = OCEANS.SEA_LEVEL.value;
@@ -17,18 +17,21 @@ describe("bakeCountryTexture", () => {
     const { countryOf, countries } = assignCountries(
       map, map.reportElevation, seaLevel, adjacency, seed, "GREEK", ["LATIN"], new NameGenerator("c")
     );
-    const colors = fourColorCountries(countryOf, adjacency, countries.length);
+    const colors = colorCountries(countryOf, adjacency, countries.length);
     const tex = bakeCountryTexture(map, countryOf, colors);
 
     expect(tex.length).toBe(COUNTRY_TEX_W * COUNTRY_TEX_H * 4);
     let land = 0;
     let sea = 0;
     for (let i = 0; i < tex.length; i += 4) {
-      expect(tex[i + 3]).toBeGreaterThan(0); // every texel classified → a non-zero blend amount
-      if (tex[i] === 0 && tex[i + 1] === 0 && tex[i + 2] === 0) sea++; // black = country-less water
-      else land++;
+      const a = tex[i + 3];
+      expect(a === 0 || a === 255).toBe(true); // alpha is a land/sea FLAG, not a blend amount
+      if (a === 255) land++;
+      else sea++;
+      // rgb is the nearest-LAND country hue, dilated over water too → never left black
+      expect(tex[i] + tex[i + 1] + tex[i + 2]).toBeGreaterThan(0);
     }
-    // The kd-tree nearest-cell lookup should split the globe into both tinted land and dark sea.
+    // The globe splits into both land (alpha 255) and sea (alpha 0).
     expect(land).toBeGreaterThan(0);
     expect(sea).toBeGreaterThan(0);
   });

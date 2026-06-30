@@ -21,7 +21,10 @@ const {
 // The global mesh is the curve's zoom-0 anchor (rung 0).
 const GLOBAL_POINTS = globePointCount(MAP_DEFAULTS.resolution);
 
-const LOD_CACHE_CAP = 18; // ~16 patch slots + the live globe(s); finest patches are large, LRU trims
+// ~26 patch slots + the live globe(s). Bigger = panning BACK to a recent region reuses the same cached
+// patch object (so its re-grown country data, held in a WeakMap keyed by that object, survives) instead
+// of regenerating + re-growing. Costs resident mesh memory; the finest patches are large, so LRU trims.
+const LOD_CACHE_CAP = 28;
 // The overlay must cover the view; a rung is (re)queued once nothing covers this much MORE
 // than the view, so a replacement is built before the current patch's margin runs out (>1).
 const PATCH_COMFORT = 1.2;

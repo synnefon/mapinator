@@ -1,7 +1,7 @@
 import type { Vec3 } from "../../common/3DMath";
 import type { Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
-import type { TerrainParams } from "../../common/settings";
+import { COUNTRIES, type TerrainParams } from "../../common/settings";
 import { buildCpuCalc } from "../gpu/cpuField";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
@@ -9,9 +9,9 @@ import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
 import { assignCities, type City } from "./cities";
 import {
   assignCountries,
-  countryBorderSegments,
-  fourColorCountries,
+  colorCountries,
   largestBorderingCountry,
+  refineCountryBorders,
 } from "./countries";
 import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
 import { inlandRisenElevation } from "./inlandElevation";
@@ -43,6 +43,7 @@ export type CountryInfo = {
   areaKm2: number;
   anchor: Vec3; // where the (red) label sits
   extent: number; // angular radius (rad) for label sizing
+  insRadius: number; // inscribed radius (rad) — how far the label may slide from the anchor + stay interior
 };
 
 /** Everything the label/country overlays need, computed once per (map, sea level, language). */
@@ -52,7 +53,7 @@ export type MapFeatures = {
   cities: City[]; // city markers — tier + zoom-gated, with interactive population popups
   borders: Float32Array; // flat [x0,y0,z0, x1,y1,z1, …] unit-sphere border segment pairs
   countryOf: Int32Array; // per cell: country index (matches CountryInfo.index), or -1 for ocean
-  countryColors: Int32Array; // per country index: a 0–3 colour class for the choropleth fill (4-colouring)
+  countryColors: Int32Array; // per country index: a colour class for the choropleth fill (see colorCountries)
 };
 
 const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
@@ -107,7 +108,7 @@ export function computeMapFeatures(
   const { calc } = buildCpuCalc(mapSeed, params);
   const fineLandAt = (p: Vec3): boolean => calc.sampleCell(p).elevation >= seaLevel;
   const cities = assignCities(map, reportElevation, seaLevel, adjacency, countryOf, countries, mapSeed, namer, fineLandAt, rivers);
-  const countryColors = fourColorCountries(countryOf, adjacency, countries.length);
+  const countryColors = colorCountries(countryOf, adjacency, countries.length);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of
   // its largest bordering country. Both fall back to the map language.
@@ -187,9 +188,12 @@ export function computeMapFeatures(
       areaKm2: c.areaKm2,
       anchor: siteVec(map, c.anchorCell),
       extent: c.extent,
+      insRadius: c.insRadius,
     })),
     cities,
-    borders: countryBorderSegments(map, countryOf),
+    // Refined ONCE here (compute-once vector overlay, like rivers): the coarse inter-country edges,
+    // chained + fractally subdivided so detail resolves on zoom with no per-patch recompute.
+    borders: refineCountryBorders(map, countryOf, { levels: COUNTRIES.BORDER_DETAIL.value, amplitude: COUNTRIES.BORDER_WIGGLE.value }),
     countryOf,
     countryColors,
   };

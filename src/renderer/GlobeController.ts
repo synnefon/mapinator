@@ -14,6 +14,7 @@ interface GlobeControllerConfig {
 
 const DEFAULT_ZOOM_SENS = 0.0006; // zoom units per wheel delta (now geometric: ~uniform ratio/notch)
 const PINCH_ZOOM_SENS = 1.2; // zoom units per unit of pinch ratio change
+const CLICK_DRAG_SLOP = 4; // px of pointer travel before a press counts as a drag (and suppresses the click)
 
 // Drag-release inertia (Google-Earth-like): a short, gentle glide you can catch.
 const MOMENTUM_MAX_SPEED = 3.5; // rad/s cap, so a hard flick doesn't whip around
@@ -21,6 +22,11 @@ const MOMENTUM_TAU = 0.3; // s; exponential decay constant (~speed·TAU radians 
 const MOMENTUM_MIN_START = 0.25; // rad/s; below this a release just stops (no coast)
 const MOMENTUM_MIN_STOP = 0.04; // rad/s; the glide ends here
 const MOMENTUM_MAX_IDLE_MS = 60; // release must closely follow a move to coast (else it's a hold)
+
+/** Presses on map-overlay controls (e.g. the north button) keep their own behaviour and don't grab the
+ *  globe; everything else over the map — including the interactive country/city labels — pans + zooms. */
+const isMapControl = (target: EventTarget | null): boolean =>
+  target instanceof Element && target.closest(".map-overlay-btn") !== null;
 
 /**
  * Arcball orbit controls. Drag rotates so the world point under the cursor stays
@@ -37,6 +43,11 @@ export class GlobeController {
   private dragging = false;
   private lastX = 0; // last cursor, in canvas pixels
   private lastY = 0;
+  // Press position (client px) + whether the gesture has travelled past CLICK_DRAG_SLOP — to tell a click
+  // (opens a country/city popup) from a drag (pans, and must NOT open the popup on release).
+  private downClientX = 0;
+  private downClientY = 0;
+  private movedSinceDown = false;
   // Canvas rect, cached at gesture start (client px → canvas px).
   private rectLeft = 0;
   private rectTop = 0;
@@ -173,10 +184,28 @@ export class GlobeController {
     return Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
   }
 
+  /** Flag the gesture as a drag once the pointer travels past CLICK_DRAG_SLOP (client px). */
+  private trackMovement(clientX: number, clientY: number): void {
+    if (this.movedSinceDown) return;
+    if (Math.hypot(clientX - this.downClientX, clientY - this.downClientY) > CLICK_DRAG_SLOP) {
+      this.movedSinceDown = true;
+    }
+  }
+
   private attach(): void {
     const c = this.canvas;
+    // Listen on the frame (the canvas's parent), not the canvas itself: the interactive country/city
+    // labels are sibling DOM nodes layered above the canvas, so a press/scroll that lands on a label never
+    // reaches the canvas — but it does bubble to their shared parent. Driving the controls from there lets
+    // you pan + zoom with the cursor over a label, while the label keeps its own hover/click. The
+    // coordinate math stays on the canvas, which owns the globe geometry.
+    const target = c.parentElement ?? c;
 
-    c.addEventListener("mousedown", (e: MouseEvent) => {
+    target.addEventListener("mousedown", (e: MouseEvent) => {
+      this.movedSinceDown = false;
+      this.downClientX = e.clientX;
+      this.downClientY = e.clientY;
+      if (isMapControl(e.target)) return; // a button press is its own gesture, not a globe grab
       this.cacheRect();
       this.stopMomentum(); // catch a coasting globe
       this.dragging = true;
@@ -187,6 +216,7 @@ export class GlobeController {
     });
     window.addEventListener("mousemove", (e: MouseEvent) => {
       if (!this.dragging) return;
+      this.trackMovement(e.clientX, e.clientY);
       const [x, y] = this.toCanvas(e.clientX, e.clientY);
       this.dragTo(x, y);
     });
@@ -197,7 +227,20 @@ export class GlobeController {
       this.startMomentum();
     });
 
-    c.addEventListener(
+    // A drag that ends over a label/marker would otherwise fire that element's click (opening its popup).
+    // Swallow that click in the capture phase — before the label sees it — whenever the gesture actually
+    // moved. A true click (press + release in place) never trips the threshold, so it still opens the popup.
+    target.addEventListener(
+      "click",
+      (e: MouseEvent) => {
+        if (!this.movedSinceDown) return;
+        e.stopPropagation();
+        this.movedSinceDown = false;
+      },
+      true
+    );
+
+    target.addEventListener(
       "wheel",
       (e: WheelEvent) => {
         e.preventDefault();
@@ -208,11 +251,15 @@ export class GlobeController {
       { passive: false }
     );
 
-    c.addEventListener(
+    target.addEventListener(
       "touchstart",
       (e: TouchEvent) => {
+        this.movedSinceDown = false;
+        if (isMapControl(e.target)) return; // a button tap is its own gesture, not a globe grab
         this.cacheRect();
         if (e.touches.length === 1) {
+          this.downClientX = e.touches[0].clientX;
+          this.downClientY = e.touches[0].clientY;
           this.stopMomentum();
           this.dragging = true;
           this.velSpeed = 0;
@@ -233,11 +280,12 @@ export class GlobeController {
       },
       { passive: false }
     );
-    c.addEventListener(
+    target.addEventListener(
       "touchmove",
       (e: TouchEvent) => {
         if (e.touches.length === 1 && this.dragging) {
           e.preventDefault();
+          this.trackMovement(e.touches[0].clientX, e.touches[0].clientY);
           const [x, y] = this.toCanvas(e.touches[0].clientX, e.touches[0].clientY);
           this.dragTo(x, y);
         } else if (e.touches.length === 2 && this.pinchDistance !== null) {
@@ -263,7 +311,7 @@ export class GlobeController {
       }
       if (e.touches.length < 2) this.pinchDistance = null;
     };
-    c.addEventListener("touchend", endTouch);
-    c.addEventListener("touchcancel", endTouch);
+    target.addEventListener("touchend", endTouch);
+    target.addEventListener("touchcancel", endTouch);
   }
 }

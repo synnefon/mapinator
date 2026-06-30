@@ -141,7 +141,7 @@ export type CellColors = { palette: string[]; colorIdx: Int32Array };
 export type ChoroplethTint = {
   map: GlobeMap; // the BASE map (countryOf / sites index into it)
   countryOf: Int32Array; // per base cell: country index, or -1 for ocean / water
-  countryColors: Int32Array; // per country index: 0–3 colour class
+  countryColors: Int32Array; // per country index: choropleth colour class
   key: string; // identity for the renderer's texture cache (changes with the data + toggle)
 };
 

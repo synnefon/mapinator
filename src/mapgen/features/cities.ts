@@ -9,6 +9,7 @@ import { cityProfile } from "./cityStats";
 import type { Country } from "./countries";
 import { detectComponents } from "./detect";
 import type { RiverData } from "./rivers";
+import { globalCityMinPop, minLevelForPopulation } from "./settlement";
 
 export type CityTier = "big" | "medium" | "small";
 
@@ -26,7 +27,8 @@ export type City = {
   population: number;
   tier: CityTier;
   isCapital: boolean;
-  minLevel: number; // lowest LOD zoom level the marker shows at (big 1, medium 2, small 3)
+  minLevel: number; // lowest LOD zoom level the marker shows at — by population (minLevelForPopulation), so
+  // the small-town tail only surfaces as you zoom in; capitals are forced to 1. See assignCities.
   countryIndex: number;
   countryName: string; // owning country's name — for the "(capital of …)" card line
   industries: string[]; // 1–3 leading industries (biome + government tags + size + water proximity)
@@ -35,23 +37,17 @@ export type City = {
   waterKind: CityWaterKind; // nearest water, by priority — for the flavour split + a debug marker tint
 };
 
-// Tiering grounded in ~1400 sizes: a handful of "great cities" (≳75k — Paris, Cairo, Hangzhou…), a
-// band of sizeable towns, and many small market towns. The capital is always big (politically primary),
-// however modest. Below the floor it's a village, not a marked city. All tunable.
+// CityTier grounded in ~1400 sizes: a handful of "great cities" (≳75k — Paris, Cairo, Hangzhou…), a band
+// of sizeable towns, and many small market towns. The capital is always big (politically primary), however
+// modest. Tier drives the marker class + flavour/industry gating — NOT the size NOUN (settlementClass) nor
+// the zoom-reveal level (minLevelForPopulation), each of which keys on population on its own thresholds.
 const BIG_POP = 75_000;
 const MEDIUM_POP = 20_000;
-const MIN_CITY_POP = 5_000;
 // The small market town at the BOTTOM of the urban hierarchy — where the rank-size tail bottoms out. The
 // largest city ≈ urbanPop / H(urbanPop / TYPICAL_TOWN_POP), so LOWER ⇒ a more primate (bigger) capital,
-// higher ⇒ a flatter spread. ~1400 market towns ran a few thousand people.
+// higher ⇒ a flatter spread. ~1400 market towns ran a few thousand people. Also sets how many settlements
+// the hierarchy holds (urbanPop / TYPICAL_TOWN_POP), i.e. how deep the small-town tail runs.
 const TYPICAL_TOWN_POP = 4_000;
-const TIER_MIN_LEVEL: Record<CityTier, number> = { big: 1, medium: 2, small: 3 };
-
-const MAX_CITIES_PER_COUNTRY = 16;
-const CITY_COUNT_SCALE = 250_000; // city count ≈ √(urban population / scale); larger ⇒ fewer cities
-// The urban fraction the count scale is calibrated at: at this fraction the count matches the original
-// √(country population / scale), so the default map is unchanged while raising URBAN_FRACTION adds cities.
-const URBAN_FRACTION_REF = 0.1;
 // The capital is one of the largest few cities, with these odds by size rank (biggest first).
 const CAPITAL_RANK_WEIGHTS = [0.5, 0.25, 0.125, 0.125];
 
@@ -251,6 +247,10 @@ export function assignCities(
   const seaDist = waterHopDistance(map, seaLevel, adjacency, (i) => largeWater[i] === 1);
   const elevCap = elevationCaps(map);
   const urbanFraction = POPULATION.URBAN_FRACTION.value;
+  // The live global/patch split: at/above this a city shows globally; the dense sub-threshold tail is the
+  // patch-local town layer. Scales with density so the global (static-marker) count stays bounded. The
+  // RegionTownLayer computes the SAME value for its ceiling, so the two meet with no gap or overlap.
+  const cityMinPop = globalCityMinPop(POPULATION.GLOBAL_POPULATION_DENSITY.value);
 
   // The drawn large-river network (rivers.ts), hashed for fast nearest-vertex lookup. `riverStrength[c]` is
   // the flow strength of the large river running THROUGH cell c (0 = none) — the river bucket's pool +
@@ -297,14 +297,14 @@ export function assignCities(
     const rng = makeRNG(`${mapSeed}|cities|${country.index}`);
 
     const urbanPop = urbanFraction * country.population;
-    // City COUNT scales with the URBAN population (not just total), so dialing URBAN_FRACTION up grows
-    // both the number of cities AND (via urbanPop's rank-size split in placeCities) their size.
-    // Dividing by URBAN_FRACTION_REF keeps the default fraction at the original √(population/scale) count.
-    const nCities = Math.min(
-      MAX_CITIES_PER_COUNTRY,
-      cells.length,
-      Math.max(1, Math.round(Math.sqrt(urbanPop / (CITY_COUNT_SCALE * URBAN_FRACTION_REF))))
-    );
+    // The GLOBAL set is the big-city HEAD only — every settlement at/above cityMinPop (density-scaled). No arbitrary
+    // cap: the count is whatever the 1400 rank-size yields (≈ urbanPop / (threshold · H)). The sub-threshold
+    // tail is the patch-local town layer (regionTowns), grown per region on zoom. placeCities still
+    // normalises sizes over the FULL hierarchy (its own settlements = round(urbanPop / TYPICAL_TOWN_POP) ≥ n),
+    // so the big cities are sized identically; we just stop emitting once they drop below the threshold. The
+    // capital always shows (≥1) even where the country is too small to field a city that big.
+    const hierarchy = Math.max(1, Math.round(urbanPop / TYPICAL_TOWN_POP));
+    const nCities = Math.min(cells.length, Math.max(1, Math.floor(urbanPop / (cityMinPop * harmonicNumber(hierarchy)))));
     // `placed` is size-ordered (largest first). A slot with no habitable site is dropped, so a country with
     // nowhere to live simply gets fewer cities.
     const placed = placeCities(map, cells, coastDist, seaDist, riverStrength, habitability, elevCap, nCities, urbanPop, rng);
@@ -314,7 +314,7 @@ export function assignCities(
 
     placed.forEach(({ cell, population }, idx) => {
       const isCapital = idx === capitalIdx;
-      if (!isCapital && population < MIN_CITY_POP) return; // a village, not a marked city
+      if (!isCapital && population < cityMinPop) return; // the sub-threshold tail is the patch-local town layer
       const tier = tierOf(population, isCapital);
       // Name is globally unique (the namer re-rolls on collision); stats are seeded on a SEPARATE stream
       // so adding them never shifts placement/population (which consume the per-country `rng` above).
@@ -365,7 +365,7 @@ export function assignCities(
         population,
         tier,
         isCapital,
-        minLevel: TIER_MIN_LEVEL[tier],
+        minLevel: isCapital ? 1 : minLevelForPopulation(population), // capital always on the globe (zoom 1)
         countryIndex: country.index,
         countryName: country.name,
         industries: profile.industries,

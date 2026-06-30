@@ -54,10 +54,18 @@ export type CountrySeeds = {
     seaLevel: number;
 };
 
-/** A patch's fine country layer, re-grown on the worker: per-cell country index (-1 = water/uninhabited)
- *  aligned to the patch's cells, plus the border segments derived from it (flat xyz pairs). */
+/** A patch's fine country layer, re-grown on the worker: per-cell country index aligned to the patch's
+ *  cells — -1 = water, else the owning country (every land cell is covered). Feeds the GPU per-cell
+ *  choropleth fill + hover highlight; the border LINES come separately from refineCountryBorders. */
 export type PatchCountryData = {
     countryOf: Int32Array;
-    borders: Float32Array;
+};
+
+/** The patch-local small towns for one in-view region, grown off-thread (mapWorker `towns` job). Flat,
+ *  transferable arrays: anchor xyz per town in `positions`, plus its population and owning country index. */
+export type TownFieldData = {
+    positions: Float32Array; // [x0,y0,z0, x1,y1,z1, …] unit-sphere anchors
+    populations: Float32Array;
+    countries: Int32Array; // owning country index per town (matches countryOf / CountryInfo.index)
 };
 

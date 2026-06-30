@@ -1,27 +1,32 @@
 import type { GlobeMap } from "../common/map";
+import { buildAdjacency } from "../mapgen/features/adjacency";
 import { buildKdTree, nearestCell } from "../mapgen/features/kdTree";
 
-// Equirectangular country-colour texture for the choropleth. Each texel is the country colour of the
-// NEAREST base cell in that direction (or a dark sea for country-less water), so the globe and the
-// detail-patch shaders can sample the tint by world direction at ANY zoom — the tint follows the patch
-// without per-patch classification. RGB = tint colour, A = blend amount (alpha doubles as the mix).
+// Equirectangular country texture for the choropleth, sampled by world direction so the globe + detail
+// patches tint at ANY zoom with no per-patch classification. RGB = the OWNING country's hue — land cells
+// keep their own; water cells take the coast they're CONTIGUOUS with (a BFS out from land), so a fine
+// patch cell that's land just past the blocky coarse coast reads the country it's attached to, not
+// whatever foreign coast is Euclidean-nearest. ALPHA = a land/water flag (255 land / 0 sea) for the base
+// globe's own coast; the detail patches ignore it and gate the tint on their OWN per-cell coast instead.
 export const COUNTRY_TEX_W = 1024;
 export const COUNTRY_TEX_H = 512;
 
-// Same four hues as the old per-cell choropleth; opaque, since the blend amount lives in alpha.
-const HUES: ReadonlyArray<readonly [number, number, number]> = [
-  [220, 70, 70],
-  [70, 120, 220],
-  [80, 180, 90],
-  [220, 180, 60],
+// Choropleth palette, one RGB per colour class from colorCountries. Six classes (not four) give the
+// greedy colouring enough slack to keep neighbours apart. Keep the entry count ≥ COLOR_CLASSES in
+// mapgen/features/countries.ts.
+export const HUES: ReadonlyArray<readonly [number, number, number]> = [
+  [220, 70, 70], // red
+  [235, 140, 50], // orange (was a water-like blue)
+  [80, 180, 90], // green
+  [220, 180, 60], // gold
+  [150, 90, 205], // purple
+  [55, 180, 200], // teal
 ];
-const LAND_BLEND = Math.round(0.5 * 255); // country hue mixed over the terrain
-const OCEAN_BLEND = Math.round(0.6 * 255); // black mixed over the sea
-
 /**
- * Bake the equirect country texture (RGBA8, COUNTRY_TEX_W×COUNTRY_TEX_H). Texel (tx,ty) maps to a
- * direction on the unit sphere; its nearest base cell's country sets the texel's colour + blend amount.
- * The shader's inverse mapping must match: u = atan2(z,x)/2π + ½, v = asin(y)/π + ½. Run per map / toggle.
+ * Bake the equirect country texture (RGBA8, COUNTRY_TEX_W×COUNTRY_TEX_H). First attribute EVERY cell to a
+ * country by surface contiguity (BFS out from land over water — see `grown`), then per texel direction:
+ * RGB = the nearest cell's owning country hue; ALPHA = 255 if that cell is land else 0 (the base globe's
+ * own coast). Shader inverse mapping: u = atan2(z,x)/2π + ½, v = asin(y)/π + ½.
  */
 export function bakeCountryTexture(
   map: GlobeMap,
@@ -29,6 +34,33 @@ export function bakeCountryTexture(
   countryColors: Int32Array
 ): Uint8Array {
   const tree = buildKdTree(map.sites, map.cellCount);
+  // Attribute every cell to a country by SURFACE CONTIGUITY, not Euclidean distance: seed from the land
+  // cells (each its own country) and BFS outward over water by hop distance, so a water cell — and the
+  // fine coastal land that sits over it, past the blocky coarse coast — is owned by the coast it's
+  // actually CONNECTED to. Nearest-land-cell alone hops across straits + mis-colours small-island rings,
+  // because the Euclidean-closest coarse land can belong to a different country than the cell's own coast.
+  const adjacency = buildAdjacency(map);
+  const grown = new Int32Array(map.cellCount).fill(-1);
+  let frontier: number[] = [];
+  for (let c = 0; c < map.cellCount; c++) {
+    if (countryOf[c] >= 0) {
+      grown[c] = countryOf[c];
+      frontier.push(c);
+    }
+  }
+  while (frontier.length) {
+    const next: number[] = [];
+    for (const c of frontier) {
+      for (const nb of adjacency[c]) {
+        if (grown[nb] < 0) {
+          grown[nb] = grown[c];
+          next.push(nb);
+        }
+      }
+    }
+    frontier = next;
+  }
+
   const data = new Uint8Array(COUNTRY_TEX_W * COUNTRY_TEX_H * 4);
   for (let ty = 0; ty < COUNTRY_TEX_H; ty++) {
     const lat = ((ty + 0.5) / COUNTRY_TEX_H - 0.5) * Math.PI;
@@ -36,18 +68,18 @@ export function bakeCountryTexture(
     const dy = Math.sin(lat);
     for (let tx = 0; tx < COUNTRY_TEX_W; tx++) {
       const lon = ((tx + 0.5) / COUNTRY_TEX_W - 0.5) * 2 * Math.PI;
-      const cell = nearestCell(tree, map.sites, cosLat * Math.cos(lon), dy, cosLat * Math.sin(lon));
-      const ci = countryOf[cell];
+      const x = cosLat * Math.cos(lon);
+      const z = cosLat * Math.sin(lon);
       const o = (ty * COUNTRY_TEX_W + tx) * 4;
+      const c = nearestCell(tree, map.sites, x, dy, z);
+      const ci = grown[c]; // owning country (land = its own; water = nearest coast by contiguity)
       if (ci >= 0) {
         const hue = HUES[countryColors[ci]] ?? HUES[0];
         data[o] = hue[0];
         data[o + 1] = hue[1];
         data[o + 2] = hue[2];
-        data[o + 3] = LAND_BLEND;
-      } else {
-        data[o + 3] = OCEAN_BLEND; // rgb left 0 = black sea
       }
+      data[o + 3] = countryOf[c] >= 0 ? 255 : 0; // land flag (the base globe's own coast)
     }
   }
   return data;

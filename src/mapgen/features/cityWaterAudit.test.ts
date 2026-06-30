@@ -104,9 +104,11 @@ describe("city–water placement audit", () => {
       ].join("\n")
     );
 
-    // Loose sanity rails (the table above is the real signal):
+    // Loose sanity rails (the table above is the real signal). Biggest cities are placed first and claim the
+    // prime water, so they sit overwhelmingly on it; with a dense enough river network the small-town tail
+    // finds water too, so the aggregate lands near the 1400 record — most on water, rivers a leading water.
     expect(total).toBeGreaterThan(0);
-    expect(waterAccess).toBeGreaterThan(55); // premodern cities sat mostly on water
-    expect(pct("river")).toBeGreaterThan(20); // rivers are the leading settlement water
+    expect(waterAccess).toBeGreaterThan(55); // premodern settlements sat mostly on water
+    expect(pct("river")).toBeGreaterThan(20); // rivers are a leading settlement water
   });
 });

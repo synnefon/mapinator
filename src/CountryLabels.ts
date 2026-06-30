@@ -13,6 +13,13 @@ const ZOOM_OUT_SCALE = 0.5; // smaller on the whole-globe view, full size by ZOO
 const ZOOM_FULL = 0.5;
 const KM2_PER_MI2 = 2.589988;
 
+/** A country label's on-screen font px (country size → font, clamped, then the zoom scale). Exported so
+ *  the declutter pass sizes a label's box exactly as it'll be drawn. */
+export const countryFontPx = (extent: number, proj: Projector): number => {
+  const zoomScale = ZOOM_OUT_SCALE + (1 - ZOOM_OUT_SCALE) * Math.min(1, proj.zoom / ZOOM_FULL);
+  return Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, extent * proj.radius * FONT_FRAC) * zoomScale);
+};
+
 /**
  * Manages the interactive country-name layer: a positioned `<div>` per country (hover → territory
  * highlight via `onHover`; click → the shared info popup with land area + language + population).
@@ -50,9 +57,9 @@ export class CountryLabels {
           // One row per stat — add a tuple here to surface another fact (extensible by design).
           rows: [
             ["government", info.government],
+            ["population", this.formatPopulation(info.population)],
             ["language", languageName(info.language)],
             ["land area", this.formatArea(info.areaKm2)],
-            ["population", this.formatPopulation(info.population)],
           ],
           at: { x: e.clientX, y: e.clientY },
         });
@@ -69,21 +76,27 @@ export class CountryLabels {
   }
 
   /** Reproject + reposition every label. The canvas is in 1:1 px with the frame, so its projected
-   *  coordinates place the divs directly. Labels behind the limb are hidden. */
-  update(countries: CountryInfo[], proj: Projector): void {
+   *  coordinates place the divs directly. When a declutter result is given, a label shows only if it
+   *  placed, nudged by the offset the layout chose (the label may slide off its anchor to dodge an
+   *  overlap while staying inside the country). Labels behind the limb are always hidden. */
+  update(
+    countries: CountryInfo[],
+    proj: Projector,
+    placed?: ReadonlyMap<string, { dx: number; dy: number }>
+  ): void {
     if (!this.visible) return;
-    const zoomScale = ZOOM_OUT_SCALE + (1 - ZOOM_OUT_SCALE) * Math.min(1, proj.zoom / ZOOM_FULL);
     for (let i = 0; i < this.divs.length; i++) {
       const div = this.divs[i];
       const info = countries[i];
       const r = proj.project(info.anchor);
-      if (!r.front) {
+      const p = placed?.get(info.name);
+      if (!r.front || (placed && !p)) {
         div.style.display = "none";
         continue;
       }
-      const fontPx = Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, info.extent * proj.radius * FONT_FRAC) * zoomScale);
-      div.style.left = `${r.x}px`;
-      div.style.top = `${r.y}px`;
+      const fontPx = countryFontPx(info.extent, proj);
+      div.style.left = `${r.x + (p?.dx ?? 0)}px`;
+      div.style.top = `${r.y + (p?.dy ?? 0)}px`;
       div.style.fontSize = `${fontPx}px`;
       div.style.display = "block";
     }
