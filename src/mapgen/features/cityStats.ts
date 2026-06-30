@@ -154,12 +154,8 @@ const MEDIUM_POP = 20_000;
 const HEAD_GRID_ANGLE = 0.012; // ~0.7° candidate spacing for the global big-city scan
 const HEAD_PER_CAPITA = 100_000; // people per big-city candidate — the head's density target (tune for count)
 
-// A country the coarse head scan missed (its largest settlement falls below the split) still gets a capital:
-// a FINE scan over just that country's region finds its actual largest settlement — engine-placed on its
-// water like any other — and promotes THAT, rather than stranding a synthetic capital at the inland anchor.
-// Cheap: each is a small cap. Falls back to the anchor only if the country has no habitable site at all.
-const CAPITAL_SCAN_GRID = 0.004;
-const CAPITAL_SCAN_PER_CAPITA = 4_000;
+// A country the coarse head scan missed (no settlement cleared the split) still gets a capital: it's placed
+// at the country's most habitable OWN cell (assembleHeadSettlements), so every populated country keeps one.
 
 const siteVec = (sites: Float32Array, cell: number): Vec3 => ({ x: sites[3 * cell], y: sites[3 * cell + 1], z: sites[3 * cell + 2] });
 
@@ -223,10 +219,11 @@ export function assembleHeadSettlements(args: {
   seaLevel: number;
   world: SettlementWorld;
   countries: Country[];
+  countryOf: Int32Array; // land partition (cell → country index, -1 = water): a missed country's capital cell
   mapSeed: string;
   namer: NameGenerator;
 }): Settlement[] {
-  const { map, seaLevel, world, countries, mapSeed, namer } = args;
+  const { map, seaLevel, world, countries, countryOf, mapSeed, namer } = args;
   const cityMinPop = globalCityMinPop(POPULATION.GLOBAL_POPULATION_DENSITY.value);
   // The big-city HEAD: the field over the whole sphere, only settlements ≥ the split. Centre is arbitrary
   // (capAngle ≥ π is the whole sphere); the field is global-cell-id keyed, so it's the same set every time.
@@ -241,38 +238,36 @@ export function assembleHeadSettlements(args: {
     world,
     seed: `${mapSeed}|cities`,
   });
-
   // Group by country, largest first — the largest is the capital.
   const byCountry: PlacedSite[][] = countries.map(() => []);
   for (const s of head) if (s.countryIndex >= 0 && s.countryIndex < countries.length) byCountry[s.countryIndex].push(s);
   for (const list of byCountry) list.sort((a, b) => b.population - a.population);
+  // Land cells per country — so a country the coarse scan missed gets a capital at its most habitable OWN
+  // cell (O(its cells), once), rather than a fine sub-cell re-scan of the whole country (the former freeze).
+  const cellsByCountry: number[][] = countries.map(() => []);
+  for (let c = 0; c < countryOf.length; c++) {
+    const ci = countryOf[c];
+    if (ci >= 0 && ci < countries.length) cellsByCountry[ci].push(c);
+  }
 
   const settlements: Settlement[] = [];
   for (const country of countries) {
     const list = byCountry[country.index];
-    // A country the coarse scan missed still gets a capital: find its LARGEST settlement by a fine scan over
-    // its own region and promote that (engine-placed on its water). Fall back to the interior anchor only if
-    // the country has no habitable site at all.
     if (list.length === 0) {
-      const center = siteVec(map.sites, country.anchorCell);
-      const local = growSettlements({
-        center,
-        capAngle: Math.max(country.extent, CAPITAL_SCAN_GRID * 4),
-        gridAngle: CAPITAL_SCAN_GRID,
-        minPop: 1,
-        ceilingPop: Infinity,
-        perCapita: CAPITAL_SCAN_PER_CAPITA,
-        planetRadiusKm: PLANET_RADIUS_KM,
-        world,
-        seed: `${mapSeed}|capital|${country.index}`,
-      }).filter((s) => s.countryIndex === country.index);
-      if (local.length > 0) {
-        list.push(local.reduce((a, b) => (b.population > a.population ? b : a)));
-      } else {
-        const f = world.fieldAt(center);
-        const { anchor, waterKind } = world.routeAt(center);
-        list.push({ anchor, population: Math.round(cityMinPop), countryIndex: country.index, waterKind, ...f });
+      // The coarse global scan found no big city here. Place the capital at the country's most habitable OWN
+      // cell — O(its cells), reusing the same density model — instead of a fine sub-cell re-scan of the whole
+      // country region (which sampled multi-octave noise at thousands of grid points per missed country).
+      const cells = cellsByCountry[country.index];
+      let bestCell = country.anchorCell;
+      let bestDensity = -Infinity;
+      for (const cell of cells) {
+        const d = world.popDensityAt(siteVec(map.sites, cell));
+        if (d > bestDensity) { bestDensity = d; bestCell = cell; }
       }
+      const center = siteVec(map.sites, bestCell);
+      const f = world.fieldAt(center);
+      const { anchor, waterKind } = world.routeAt(center);
+      list.push({ anchor, population: Math.round(cityMinPop), countryIndex: country.index, waterKind, ...f });
     }
     const usedFunFacts = new Set<string>(); // dedupe fun facts within this country
     list.forEach((s, idx) => {

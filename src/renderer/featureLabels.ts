@@ -53,12 +53,16 @@ export function drawFeatureLabels(
     .filter((f) => f.minLevel <= level && (!shown || shown.has(f.name)))
     .sort((a, b) => a.cellCount - b.cellCount);
 
+  let lastFontPx = -1; // labels share a handful of distinct sizes per frame — only rebuild the font string on change
   for (const f of order) {
     const r = proj.project(f.anchor);
     if (!r.front) continue; // back hemisphere / right at the limb
 
     const fontPx = featureFontPx(f.extent, proj);
-    ctx.font = `bold ${fontPx}px 'Roboto Mono', ui-monospace, monospace`;
+    if (fontPx !== lastFontPx) {
+      ctx.font = `bold ${fontPx}px 'Roboto Mono', ui-monospace, monospace`;
+      lastFontPx = fontPx;
+    }
 
     ctx.lineWidth = Math.max(2, fontPx * 0.18);
     ctx.strokeStyle = CASING;

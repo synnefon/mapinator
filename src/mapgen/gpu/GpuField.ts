@@ -42,6 +42,8 @@ export class GpuField {
   private srcBuf: Float32Array | null = null;
   private dstBuf: Float32Array | null = null;
   private plateBuf: Float32Array | null = null;
+  private lastPerm: Float32Array | null = null; // seed table last uploaded — skip the re-upload when unchanged
+  private lastPlate: PlateData | null = null; // plate set last uploaded — same
 
   private constructor(gl: WebGL2RenderingContext, program: WebGLProgram, vao: WebGLVertexArrayObject) {
     this.gl = gl;
@@ -180,7 +182,9 @@ export class GpuField {
     perm: Float32Array,
     plate: PlateData
   ): { texture: WebGLTexture; width: number; count: number } {
-    const { width, count } = this.render(sites, params, perm, plate);
+    // No readback + no consumer needs a CPU sync here (the patch draw that samples this texture is
+    // queued on the same context right after), so skip gl.finish() — it would only stall the pipeline.
+    const { width, count } = this.render(sites, params, perm, plate, false, false);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     return { texture: this.outTex!, width, count };
   }
@@ -192,7 +196,8 @@ export class GpuField {
     params: TerrainParams,
     perm: Float32Array,
     plate: PlateData,
-    emitReport = false
+    emitReport = false,
+    sync = true
   ): { width: number; height: number; count: number; upload: number; render: number } {
     const gl = this.gl;
     const n = (sites.length / 3) | 0;
@@ -227,7 +232,7 @@ export class GpuField {
     gl.bindTexture(gl.TEXTURE_2D, this.plateTex);
     this.setUniforms(params, plate.count, width, n, emitReport);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.finish();
+    if (sync) gl.finish();
     gl.bindVertexArray(null);
     if (depthWasOn) gl.enable(gl.DEPTH_TEST);
     return { width, height, count: n, upload: t1 - t0, render: now() - t1 };
@@ -269,14 +274,17 @@ export class GpuField {
   // Upload the seed's 512×1 permutation/gradient table (8 KB; re-uploaded each compute).
   private uploadPerm(perm: Float32Array): void {
     const gl = this.gl;
+    if (this.permTex && this.lastPerm === perm) return; // same seed table → already resident
     this.permTex ??= makeDataTexture(gl);
     gl.bindTexture(gl.TEXTURE_2D, this.permTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, perm.length / 4, 1, 0, gl.RGBA, gl.FLOAT, perm);
+    this.lastPerm = perm;
   }
 
   // Upload the plate set as a (count×2) RGBA32F texture: row 0 = seeds, row 1 = Euler poles.
   private uploadPlates(plate: PlateData): void {
     const gl = this.gl;
+    if (this.plateTex && this.lastPlate === plate) return; // same plate set → already resident
     const k = plate.count;
     if (!this.plateBuf || this.plateBuf.length !== k * 2 * 4) this.plateBuf = new Float32Array(k * 2 * 4);
     const buf = this.plateBuf;
@@ -292,6 +300,7 @@ export class GpuField {
     this.plateTex ??= makeDataTexture(gl);
     gl.bindTexture(gl.TEXTURE_2D, this.plateTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, k, 2, 0, gl.RGBA, gl.FLOAT, buf);
+    this.lastPlate = plate;
   }
 
   private setUniforms(p: TerrainParams, plateCount: number, width: number, count: number, emitReport: boolean): void {

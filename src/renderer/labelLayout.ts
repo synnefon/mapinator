@@ -50,13 +50,20 @@ const MOVE_CANDIDATES: ReadonlyArray<{ ux: number; uy: number }> = [
 ];
 
 // Slots to try, in order: last frame's winning slot first (so a placed label stays put), then the table.
-// A pinned label (budget ≤ 0) only ever uses the anchor slot.
-function candidateOrder(budget: number, prevIdx: number | undefined): number[] {
-  if (budget <= 0) return [0];
-  const order: number[] = [];
-  if (prevIdx !== undefined && prevIdx >= 0 && prevIdx < MOVE_CANDIDATES.length) order.push(prevIdx);
-  for (let i = 0; i < MOVE_CANDIDATES.length; i++) if (i !== prevIdx) order.push(i);
-  return order;
+// A pinned label (budget ≤ 0) only ever uses the anchor slot. The orders are FIXED (the candidate table is),
+// so precompute every variant once — the per-label layout loop reads a shared array and allocates nothing.
+const N_CANDIDATES = MOVE_CANDIDATES.length;
+const ORDER_PINNED: readonly number[] = [0];
+const ORDER_NO_PREV: readonly number[] = Array.from({ length: N_CANDIDATES }, (_, i) => i);
+const ORDERS_BY_PREV: ReadonlyArray<readonly number[]> = ORDER_NO_PREV.map((prev) => [
+  prev,
+  ...ORDER_NO_PREV.filter((i) => i !== prev),
+]);
+
+function candidateOrder(budget: number, prevIdx: number | undefined): readonly number[] {
+  if (budget <= 0) return ORDER_PINNED;
+  if (prevIdx !== undefined && prevIdx >= 0 && prevIdx < N_CANDIDATES) return ORDERS_BY_PREV[prevIdx];
+  return ORDER_NO_PREV;
 }
 
 let buf = new Uint8Array(0);

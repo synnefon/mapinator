@@ -71,6 +71,11 @@ let calc: ReturnType<typeof buildCpuCalc>["calc"] | null = null;
 // cell at GENERATION and each town candidate (countrySeeds.countryOf is the grown base partition, so every
 // cell maps to a country). Rebuilt when the base partition changes.
 let baseTree: KdNode | null = null;
+// The drawn-river snap grid, cached across town grows: it depends only on the river network (stable within
+// a config) + the live river floor, so rebuilding it per grow (string-keyed bucket Map) is wasted on a pan.
+let cachedRiverGrid: ReturnType<typeof buildRiverGrid> | null = null;
+let riverGridSeeds: CountrySeeds | null = null; // the countrySeeds the cached grid was built from (identity)
+let riverGridMinStrength = -1; // and the live river floor it used
 
 function handleConfigRequest(req: ConfigRequest) {
   if (req.seed !== undefined) seed = req.seed;
@@ -85,7 +90,12 @@ function handleConfigRequest(req: ConfigRequest) {
     if (req.seed !== undefined || req.params !== undefined) calc = buildCpuCalc(seed, params).calc;
   }
   // Index the base sites for nearest-base-cell country lookups (the per-patch stamp + the town field).
-  if (req.countrySeeds !== undefined) baseTree = buildKdTree(req.countrySeeds.sites, req.countrySeeds.sites.length / 3);
+  // Only rebuild when the base map actually changed (baseChanged) — a feature-only re-derive ships the
+  // SAME sites, so the existing tree (an index structure read against the passed sites) stays valid and
+  // the O(n log n) build would be wasted. `!baseTree` covers the first config / any worker without one.
+  if (req.countrySeeds !== undefined && (req.countrySeeds.baseChanged || !baseTree)) {
+    baseTree = buildKdTree(req.countrySeeds.sites, req.countrySeeds.sites.length / 3);
+  }
 }
 
 function handleTownsRequest(req: TownsRequest) {
@@ -102,9 +112,14 @@ function handleTownsRequest(req: TownsRequest) {
   const tree = baseTree;
   const sample = calc;
   const cellSpacing = Math.sqrt((4 * Math.PI) / (seeds.sites.length / 3));
-  // The drawn-river grid is rebuilt per grow so the live RIVER_MIN_STRENGTH applies (cheap: the network is
-  // a bounded vertex set); the rest of the world is the shipped per-base-cell water arrays.
-  const riverGrid = buildRiverGrid(seeds.riverPositions, seeds.riverWidths, req.riverMinStrength, RIVER_GRID_CELLS * cellSpacing);
+  // Rebuild the drawn-river snap grid only when the network (seeds identity) or the live RIVER_MIN_STRENGTH
+  // changed — otherwise reuse it across grows (a pan re-runs this with the same network + floor).
+  if (!cachedRiverGrid || riverGridSeeds !== seeds || riverGridMinStrength !== req.riverMinStrength) {
+    cachedRiverGrid = buildRiverGrid(seeds.riverPositions, seeds.riverWidths, req.riverMinStrength, RIVER_GRID_CELLS * cellSpacing);
+    riverGridSeeds = seeds;
+    riverGridMinStrength = req.riverMinStrength;
+  }
+  const riverGrid = cachedRiverGrid;
   const world = makeSettlementWorld({
     sampleCell: (p) => sample.sampleCell(p),
     seaLevel: seeds.seaLevel,

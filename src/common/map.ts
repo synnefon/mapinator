@@ -63,6 +63,11 @@ export type CountrySeeds = {
     coastDir: Float32Array; // 3 per cell: unit direction to nearest water — the shore snap marches along it
     riverPositions: Float32Array; // the drawn large-river network (rivers.ts): 3 per vertex
     riverWidths: Float32Array; // 1 per vertex, normalized flow strength — river settlements snap to it
+    // True only when `sites` differs from the last broadcast (a new base map), false on a feature-only
+    // re-derive (sea level / language / dials). Lets each worker skip rebuilding its base KD-tree (an
+    // O(n log n) sort) when the sites are unchanged — structured clone gives a fresh array each time, so
+    // the worker can't tell by identity. Set by main, which holds the canonical base map.
+    baseChanged: boolean;
 };
 
 /** The patch-local settlement tail for one in-view region, grown off-thread (mapWorker `towns` job) by the

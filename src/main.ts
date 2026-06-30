@@ -325,6 +325,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // Interactive country labels (DOM) + the hover state that drives the territory highlight.
   let hoveredCountry: number | null = null;
   let labelResult: MapFeatures | null = null; // the result the DOM labels were last built from
+  let lastPoolBaseSites: Float32Array | null = null; // base sites last broadcast to workers (→ baseChanged flag)
   let featureEpoch = 0; // bumps when the feature result changes — keys the GPU choropleth colour cache
   // One shared info popup for both countries and cities; it follows its anchor + self-closes (InfoPopup).
   const infoPopup = new InfoPopup();
@@ -367,6 +368,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // Re-measure once the web font actually loads (the first measure may hit the fallback monospace).
   if (document.fonts) void document.fonts.ready.then(() => { monoMeasured = false; });
   let prevPlacedLabels: ReadonlyMap<string, Placement> = new Map();
+  // Per-frame declutter scratch, reused across frames (cleared + refilled) so the 60fps label path doesn't
+  // reallocate these arrays — or the city-dot Rects — every frame.
+  const featureItems: LabelItem[] = [];
+  const textLabels: TextLabel[] = [];
+  const reserved: Rect[] = [];
 
   // Country FILL + hover HIGHLIGHT use the patch's PER-CELL country, stamped AT GENERATION (each patch cell
   // takes the nearest base cell of the broadcast grown partition — see mapWorker + growCountriesOverWater)
@@ -430,6 +436,10 @@ document.addEventListener("DOMContentLoaded", () => {
         // the worker grows the patch-local tail with the SAME engine + routes the head used. Cloned to every
         // worker; refreshed each result change (which also refires on any dial that re-derives features).
         const riverData = derivations.rivers(baseMap);
+        // sites change only when the base map regenerates — tell the workers so they can skip rebuilding
+        // their base KD-tree on a feature-only re-derive (sea level / language / dial change).
+        const baseChanged = baseMap.sites !== lastPoolBaseSites;
+        lastPoolBaseSites = baseMap.sites;
         pool.configure({
           countrySeeds: {
             sites: baseMap.sites,
@@ -440,6 +450,7 @@ document.addEventListener("DOMContentLoaded", () => {
             coastDir: result.settlementSeeds.coastDir,
             riverPositions: riverData.positions,
             riverWidths: riverData.widths,
+            baseChanged,
           },
         });
       }
@@ -526,11 +537,11 @@ document.addEventListener("DOMContentLoaded", () => {
     // returns the set that fits (drop on collision, highest priority first). Feature + river names share
     // the label canvas, so they're collected together for the draw too.
     ensureMonoAdvance();
-    const featureItems: LabelItem[] = [];
+    featureItems.length = 0;
     if (showLabels && result) featureItems.push(...result.features);
     if (showRivers) featureItems.push(...derivations.rivers(baseMap).labels);
 
-    const textLabels: TextLabel[] = [];
+    textLabels.length = 0;
     const sizeFrac = (cellCount: number): number => Math.min(0.999, cellCount / Math.max(1, baseMap.cellCount));
     const pushCanvasLabel = (item: LabelItem, band: number): void => {
       if (item.minLevel > viewLevel) return;
@@ -560,7 +571,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    const reserved: Rect[] = cityMarkers.visibleDots.map((d) => ({ x: d.x, y: d.y, halfW: d.r, halfH: d.r }));
+    const dots = cityMarkers.visibleDots;
+    for (let i = 0; i < dots.length; i++) {
+      const d = dots[i];
+      const rect = reserved[i];
+      if (rect) { rect.x = d.x; rect.y = d.y; rect.halfW = d.r; rect.halfH = d.r; }
+      else reserved[i] = { x: d.x, y: d.y, halfW: d.r, halfH: d.r };
+    }
+    reserved.length = dots.length;
     const placed = layoutLabels(textLabels, {
       width: canvas.width,
       height: canvas.height,

@@ -337,11 +337,12 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
       }).then((map) => {
         lodActive.delete(job.key);
         if (epoch === seedEpoch) {
-          cacheLod(getView(), job.key, map);
+          const v = getView(); // one consistent view sample for both the cache-keep key and the overlay refresh
+          cacheLod(v, job.key, map);
           if (job.level === 0) {
             baseMap = map; // sticky base: swaps only when a fresh globe lands → never blanks
           } else {
-            refreshOverlay(getView()); // a new patch landed → upgrade the overlay if it's finest covering
+            refreshOverlay(v); // a new patch landed → upgrade the overlay if it's finest covering
           }
           onReady();
         }

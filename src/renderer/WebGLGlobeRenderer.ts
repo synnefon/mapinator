@@ -253,6 +253,11 @@ type GLState = {
   gpuField?: GpuField | null;
   riverField?: GpuField | null; // separate field sampler for river routing (readback) — keeps the patch texture undisturbed
   patchGeom: Map<GlobeMap, PatchGeomEntry>; // pos + fan idx + cell index + per-cell country tex, LRU by count
+  // The patch field is a pure function of (sites, params, perm, plate); cache the last render so orbit/zoom
+  // frames over an unchanged overlay reuse its texture instead of recomputing the field + re-uploading + syncing.
+  lastPatchField?: { texture: WebGLTexture; width: number; count: number } | null;
+  lastPatchFieldMap?: GlobeMap | null;
+  lastPatchFieldInputs?: GpuFieldInputs | null;
 };
 
 type PatchProgram = {
@@ -540,8 +545,16 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     const geom = this.getPatchGeom(st, map);
     if (geom.indexCount === 0) return false;
 
-    // Compute the field into a GPU texture (no readback). Restores DEPTH_TEST for our draw.
-    const field = st.gpuField.renderToTexture(map.sites, inputs.params, inputs.perm, inputs.plate);
+    // Compute the field into a GPU texture (no readback) — but only when the patch or its inputs actually
+    // changed. The field is static for a resident patch, so during orbit/zoom/momentum (same map + inputs)
+    // we reuse the texture from the last render, skipping the full multi-octave pass + texture uploads + sync.
+    let field = st.lastPatchField;
+    if (!field || st.lastPatchFieldMap !== map || st.lastPatchFieldInputs !== inputs) {
+      field = st.gpuField.renderToTexture(map.sites, inputs.params, inputs.perm, inputs.plate);
+      st.lastPatchField = field;
+      st.lastPatchFieldMap = map;
+      st.lastPatchFieldInputs = inputs;
+    }
 
     const p = st.patch;
     gl.viewport(0, 0, canvas.width, canvas.height);

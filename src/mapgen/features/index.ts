@@ -148,7 +148,7 @@ export function computeMapFeatures(
     desertAversion: CITIES.DESERT_AVERSION.value,
     iceAversion: CITIES.ICE_AVERSION.value,
   });
-  const cities = assembleHeadSettlements({ map, seaLevel, world, countries, mapSeed, namer });
+  const cities = assembleHeadSettlements({ map, seaLevel, world, countries, countryOf, mapSeed, namer });
   const countryColors = colorCountries(countryOf, adjacency, countries.length);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of

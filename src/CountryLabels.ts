@@ -30,6 +30,7 @@ export class CountryLabels {
   private readonly popup: InfoPopup;
   private readonly divs: HTMLDivElement[] = [];
   private visible = false;
+  private lastRadius = -1; // font size depends only on proj.radius — skip the per-label fontSize writes when it's unchanged
 
   constructor(frame: HTMLElement, opts: { onHover: (index: number | null) => void; popup: InfoPopup }) {
     this.frame = frame;
@@ -41,6 +42,7 @@ export class CountryLabels {
   setCountries(countries: CountryInfo[]): void {
     for (const d of this.divs) d.remove();
     this.divs.length = 0;
+    this.lastRadius = -1; // fresh divs carry no fontSize yet → force the next update() to write them
     for (const info of countries) {
       const div = document.createElement("div");
       div.className = "country-label";
@@ -85,6 +87,7 @@ export class CountryLabels {
     placed?: ReadonlyMap<string, { dx: number; dy: number }>
   ): void {
     if (!this.visible) return;
+    const writeFonts = proj.radius !== this.lastRadius;
     for (let i = 0; i < this.divs.length; i++) {
       const div = this.divs[i];
       const info = countries[i];
@@ -94,12 +97,12 @@ export class CountryLabels {
         div.style.display = "none";
         continue;
       }
-      const fontPx = countryFontPx(info.extent, proj);
       div.style.left = `${r.x + (p?.dx ?? 0)}px`;
       div.style.top = `${r.y + (p?.dy ?? 0)}px`;
-      div.style.fontSize = `${fontPx}px`;
+      if (writeFonts) div.style.fontSize = `${countryFontPx(info.extent, proj)}px`;
       div.style.display = "block";
     }
+    this.lastRadius = proj.radius;
   }
 
   private formatArea(km2: number): string {

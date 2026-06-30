@@ -29,6 +29,8 @@ export class CityMarkers {
   private towns: Settlement[] = []; // patch-local small towns (dynamic)
   private cityDots: HTMLDivElement[] = [];
   private townDots: HTMLDivElement[] = [];
+  private cityRadii: number[] = []; // dot radius px per city (dotDiameter/2), cached so project() skips a per-frame sqrt
+  private townRadii: number[] = [];
   private visible = false;
   // The dots shown after the last update() (centre + radius, screen px) — the declutter pass reserves
   // these so feature/country labels never cover a city marker. Empty when the layer is off.
@@ -43,12 +45,14 @@ export class CityMarkers {
   setCities(cities: Settlement[]): void {
     this.cities = cities;
     this.cityDots = this.rebuild(this.cityDots, cities);
+    this.cityRadii = cities.map((c) => dotDiameter(c.population) / 2);
   }
 
   /** Set the dynamic patch-local town set (called when the live region's grow lands). */
   setRegionTowns(towns: Settlement[]): void {
     this.towns = towns;
     this.townDots = this.rebuild(this.townDots, towns);
+    this.townRadii = towns.map((c) => dotDiameter(c.population) / 2);
   }
 
   private rebuild(dots: HTMLDivElement[], cities: Settlement[]): HTMLDivElement[] {
@@ -102,11 +106,11 @@ export class CityMarkers {
   update(proj: Projector, level: number): void {
     this.visibleDots.length = 0;
     if (!this.visible) return;
-    this.project(this.cityDots, this.cities, proj, level);
-    this.project(this.townDots, this.towns, proj, level);
+    this.project(this.cityDots, this.cities, this.cityRadii, proj, level);
+    this.project(this.townDots, this.towns, this.townRadii, proj, level);
   }
 
-  private project(dots: HTMLDivElement[], cities: Settlement[], proj: Projector, level: number): void {
+  private project(dots: HTMLDivElement[], cities: Settlement[], radii: number[], proj: Projector, level: number): void {
     for (let i = 0; i < dots.length; i++) {
       const dot = dots[i];
       const city = cities[i];
@@ -118,7 +122,7 @@ export class CityMarkers {
       dot.style.left = `${r.x}px`;
       dot.style.top = `${r.y}px`;
       dot.style.display = "block";
-      this.visibleDots.push({ x: r.x, y: r.y, r: dotDiameter(city.population) / 2 });
+      this.visibleDots.push({ x: r.x, y: r.y, r: radii[i] });
     }
   }
 
