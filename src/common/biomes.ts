@@ -1,7 +1,4 @@
-import { clamp } from "./util";
-import { mixHex } from "./colorUtils";
 import {
-  ELEVATION_BAND_BREAKS,
   type ElevationBand,
   type ElevationFamily,
 } from "./elevationBands";
@@ -206,56 +203,9 @@ export const BiomeColors: Record<Theme, Record<BiomeKey, string>> = {
   },
 } as const;
 
-// ===================== Lightness & Theme overrides =====================
-export const BASE_LIGHTNESS: Record<ElevationBand, number> = {
-  OCEAN_3: -0.06, // deep - darkest
-  OCEAN_2: -0.03, // medium depth
-  OCEAN_1: 0.01, // shallow
-  LOW_1: -0.02,
-  LOW_2: 0,
-  MEDIUM_1: -0.05,
-  MEDIUM_2: 0,
-  HIGH_1: -0.05,
-  HIGH_2: 0,
-  VERY_HIGH_1: -0.05,
-  VERY_HIGH_2: 0,
-};
-
-// Band centers (midpoint of each band's [prevBreak, break] span) — the x-positions used to turn
-// the discrete BASE_LIGHTNESS lookup into a continuous ramp (see bandLightnessAt).
-const BAND_CENTERS: { center: number; band: ElevationBand }[] =
-  ELEVATION_BAND_BREAKS.map((b, i) => ({
-    center: ((i > 0 ? ELEVATION_BAND_BREAKS[i - 1].breakPoint : -1) + b.breakPoint) / 2,
-    band: b.band,
-  }));
-
-/**
- * The per-band lightness nudge as a CONTINUOUS function of elevation. BASE_LIGHTNESS (merged with
- * any theme override) is a hard per-band lookup, so it steps at every band break — a visible
- * contour line between elevation zones. Interpolating those same values across the band centers
- * turns that square-wave step into a smooth ramp: the gentle within-band shading is kept, but there
- * are no firm lines. `e` is the shaped elevation in [-1, 1] (ocean negative, land [0, 1]).
- */
-export function bandLightnessAt(
-  e: number,
-  lightnessByBand: Record<ElevationBand, number>
-): number {
-  const first = BAND_CENTERS[0];
-  if (e <= first.center) return lightnessByBand[first.band];
-  for (let i = 0; i < BAND_CENTERS.length - 1; i++) {
-    const lo = BAND_CENTERS[i];
-    const hi = BAND_CENTERS[i + 1];
-    if (e <= hi.center) {
-      const t = (e - lo.center) / (hi.center - lo.center);
-      const a = lightnessByBand[lo.band];
-      return a + (lightnessByBand[hi.band] - a) * t;
-    }
-  }
-  return lightnessByBand[BAND_CENTERS[BAND_CENTERS.length - 1].band];
-}
-
+// ===================== Theme overrides =====================
+// Biome colour now comes from the Köppen palette (common/koppen.ts); themes only scale saturation.
 export type ThemeAdjust = {
-  lightness?: Partial<Record<ElevationBand, number>>;
   saturationScale?: number;
 };
 
@@ -264,47 +214,16 @@ export const THEME_OVERRIDES: Record<Theme, ThemeAdjust> = {
   arid: { saturationScale: 0.95 },
   lush: { saturationScale: 1.07 },
   rainbow: { saturationScale: 1.12 },
-  oasis: {
-    lightness: {
-      OCEAN_3: 0,
-      OCEAN_2: 0,
-      OCEAN_1: 0,
-      LOW_1: 0,
-      LOW_2: 0,
-      MEDIUM_1: 0,
-      MEDIUM_2: 0,
-      HIGH_1: 0,
-      HIGH_2: 0,
-      VERY_HIGH_1: 0,
-      VERY_HIGH_2: 0,
-    },
-    saturationScale: 0.85,
-  },
+  oasis: { saturationScale: 0.85 },
   // winter: { saturationScale: 0.95 },
   // autumn: { saturationScale: 1.12 },
-  grayscale: {
-    saturationScale: 0.0,
-    lightness: {
-      OCEAN_3: 0,
-      OCEAN_2: 0,
-      OCEAN_1: 0,
-    },
-  },
-  volcano: {
-    saturationScale: 1.12,
-    lightness: {
-      OCEAN_3: 0,
-      OCEAN_2: 0,
-      OCEAN_1: 0,
-    },
-  },
+  grayscale: { saturationScale: 0.0 },
+  volcano: { saturationScale: 1.12 },
 };
 
-// ===================== Color lookup (blended) =====================
-// Family + moisture "stops" at representative positions; the color is bilinearly
-// blended between the surrounding stops so biomes transition smoothly instead of
-// snapping at band edges. The result is quantized downstream (colorAt) so the
-// total palette stays small.
+// ===================== Family / moisture stops =====================
+// Representative positions for the elevation families and moisture bands; terrainClassOf snaps a
+// cell's shaped elevation + moisture to the nearest stop to classify deserts / forests / ranges.
 export const LAND_FAMILY_STOPS: { family: ElevationFamily; center: number }[] = [
   { family: "LOW", center: 0.11 },
   { family: "MEDIUM", center: 0.37 },
@@ -317,48 +236,3 @@ export const MOISTURE_STOPS: { band: MoistureBand; center: number }[] = [
   { band: "WET", center: 0.8 },
 ];
 
-/** Color for a family, blended across the moisture stops. */
-const familyMoistureColor = (
-  theme: Theme,
-  family: ElevationFamily,
-  moisture: number
-): string => {
-  const colorAtBand = (band: MoistureBand) =>
-    (BiomeColors[theme][`${band}_${family}` as BiomeKey] ??
-      BiomeColors.default[`${band}_${family}` as BiomeKey])!;
-  for (let i = 0; i < MOISTURE_STOPS.length - 1; i++) {
-    const lo = MOISTURE_STOPS[i];
-    const hi = MOISTURE_STOPS[i + 1];
-    if (moisture <= hi.center) {
-      const t = clamp((moisture - lo.center) / (hi.center - lo.center));
-      return mixHex(colorAtBand(lo.band), colorAtBand(hi.band), t);
-    }
-  }
-  return colorAtBand(MOISTURE_STOPS[MOISTURE_STOPS.length - 1].band);
-};
-
-export function colorFor(
-  theme: Theme,
-  elevation: number,
-  moisture: number
-): string {
-  if (elevation < 0) return BiomeColors[theme].OCEAN;
-  for (let i = 0; i < LAND_FAMILY_STOPS.length - 1; i++) {
-    const lo = LAND_FAMILY_STOPS[i];
-    const hi = LAND_FAMILY_STOPS[i + 1];
-    if (elevation <= hi.center) {
-      const t = clamp((elevation - lo.center) / (hi.center - lo.center));
-      return mixHex(
-        familyMoistureColor(theme, lo.family, moisture),
-        familyMoistureColor(theme, hi.family, moisture),
-        t
-      );
-    }
-  }
-  const top = LAND_FAMILY_STOPS[LAND_FAMILY_STOPS.length - 1];
-  return familyMoistureColor(theme, top.family, moisture);
-}
-
-/** Per-theme polar-ice color: matches the theme's snowiest peak (WET_VERY_HIGH). */
-export const iceColorFor = (theme: Theme): string =>
-  BiomeColors[theme].WET_VERY_HIGH;

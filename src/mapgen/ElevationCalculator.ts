@@ -6,10 +6,18 @@ import { INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import {
+  CLIMATE_LAT_JITTER_DEG,
+  CLIMATE_LAT_JITTER_OFFSET_X,
+  CLIMATE_LAT_JITTER_OFFSET_Y,
+  CLIMATE_LAT_JITTER_OFFSET_Z,
   LAND_HAIR,
   MOISTURE_NOISE_OFFSET,
   RANGE_ENVELOPE_OFFSET,
   RANGE_ENVELOPE_WAVELENGTH,
+  RIVER_ROUGH_GAIN,
+  RIVER_ROUGH_LACUNARITY,
+  RIVER_ROUGH_OCTAVES,
+  RIVER_ROUGH_WAVELENGTH,
   CONTINENT_WARP_OFFSET_X as WARP_OFFSET_X,
   CONTINENT_WARP_OFFSET_Y as WARP_OFFSET_Y,
   CONTINENT_WARP_OFFSET_Z as WARP_OFFSET_Z
@@ -68,6 +76,16 @@ export class ElevationCalculator {
    *  overlay — a pure function of position, independent of any field or dial. */
   public plateAt(site: Vec3): number {
     return this.tectonics.plateAt(site.x, site.y, site.z);
+  }
+
+  /** The unit-amplitude river-routing micro-relief at a point — the CPU twin of the shader's
+   *  uEmitReport term (terrainShader.ts field(): RIVER_ROUGH_* fbm). The caller scales by the
+   *  RIVERS.ROUGHNESS dial and folds it into the routing height on land only. */
+  public riverRoughnessAt(site: Vec3): number {
+    return fbm3(
+      this.noise3D, site.x, site.y, site.z,
+      RIVER_ROUGH_WAVELENGTH, 1, RIVER_ROUGH_OCTAVES, RIVER_ROUGH_GAIN, RIVER_ROUGH_LACUNARITY
+    );
   }
 
   /** Plate-motion arrows (leading-edge samples) for the "tectonic plates" overlay (see
@@ -418,12 +436,23 @@ export class ElevationCalculator {
     const absLat = Math.abs(latDeg);
     const jT = JITTER * 8 * fbm3(this.noise3D, site.x + 11.3, site.y + 4.7, site.z + 19.1, JITTER_SCALE, 1, 5, 0.5, 2);
     const jM = JITTER * 0.18 * fbm3(this.noise3D, site.x + 31.7, site.y + 23.9, site.z + 7.5, JITTER_SCALE, 1, 5, 0.5, 2);
+    // Latitude jitter for the classifier's precipitation-REGIME windows only (temperature/hadley
+    // stay on the true latitude): the mediterranean/monsoon bands are raw-latitude windows, and
+    // without this their edges draw perfect circles (see fieldConstants CLIMATE_LAT_JITTER_*).
+    const jLat =
+      JITTER * CLIMATE_LAT_JITTER_DEG *
+      fbm3(
+        this.noise3D,
+        site.x + CLIMATE_LAT_JITTER_OFFSET_X, site.y + CLIMATE_LAT_JITTER_OFFSET_Y, site.z + CLIMATE_LAT_JITTER_OFFSET_Z,
+        JITTER_SCALE, 1, 5, 0.5, 2
+      );
+    const regimeLat = Math.min(90, Math.abs(absLat + jLat)); // reflects at the equator, clamps at the pole
     const matC = meanAnnualTempC(latDeg, reportElevation, SEA_LEVEL) + jT;
     const moist = clamp(moisture + jM);
     const continentality = smoothstep(SHELF[1], 1, continentalness);
     const amp = seasonalAmplitudeC(absLat / 90, continentality, SEASONALITY, CONTINENTAL_SEASONALITY);
     const precipMm = moistureToPrecipMm(moist) * hadleyPrecipFactor(absLat, CLIMATE.HADLEY);
-    return classifyKoppen(matC, matC + amp, matC - amp, precipMm, absLat, moist, elevation, SEA_LEVEL, continentality);
+    return classifyKoppen(matC, matC + amp, matC - amp, precipMm, regimeLat, moist, elevation, SEA_LEVEL, continentality);
   }
 
   /**

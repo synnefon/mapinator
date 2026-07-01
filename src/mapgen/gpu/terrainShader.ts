@@ -1,4 +1,30 @@
+import { SHADE_MIN_LAND_E } from "../../common/elevationBands";
+import { INVARIANTS, type TerrainParams } from "../../common/settings";
+import {
+  CONTINENT_WARP_OFFSET_X,
+  CONTINENT_WARP_OFFSET_Y,
+  CONTINENT_WARP_OFFSET_Z,
+  CONVERGENCE_SOFTNESS,
+  JUNCTION_FADE_WIDTH,
+  LAND_HAIR,
+  MIN_OCTAVE_AMPLITUDE,
+  MOISTURE_NOISE_OFFSET,
+  RANGE_ENVELOPE_OFFSET,
+  RANGE_ENVELOPE_WAVELENGTH,
+  REPORT_INLAND_RISE,
+  RIDGE_FEEDBACK,
+  RIDGE_SHARPNESS,
+  RIVER_ROUGH_GAIN,
+  RIVER_ROUGH_LACUNARITY,
+  RIVER_ROUGH_OCTAVES,
+  RIVER_ROUGH_WAVELENGTH,
+  TECTONIC_WARP_OFFSET_X,
+  TECTONIC_WARP_OFFSET_Y,
+  TECTONIC_WARP_OFFSET_Z,
+  TECTONIC_WARP_WAVELENGTH,
+} from "../fieldConstants";
 import { EXACT_SNOISE_GLSL } from "./exactSnoise.glsl";
+import { glslConstBlock, glslFloat } from "./glslConst";
 import { KOPPEN_GLSL } from "./koppen.glsl";
 
 /**
@@ -18,41 +44,124 @@ import { KOPPEN_GLSL } from "./koppen.glsl";
  * it's omitted). Non-dial constants are baked in; every tuned value is a uniform from TerrainParams.
  */
 
+/**
+ * Every scalar dial uniform the field shader reads, with its TerrainParams source — the ONE table
+ * that drives BOTH the GLSL `uniform float` declarations (below) and GpuField's uploads, so a
+ * uniform can't be declared without being set (silent 0.0) or set without being declared. The
+ * getter typechecks against TerrainParams, so a renamed dial fails compile, not render.
+ */
+export type FieldUniformSpec = { name: string; get: (p: TerrainParams) => number };
+export const FIELD_PARAM_UNIFORMS: readonly FieldUniformSpec[] = [
+  // CONTINENT
+  { name: "uContWavelength", get: (p) => p.CONTINENTS.WAVELENGTH },
+  { name: "uContAmplitude", get: (p) => p.CONTINENTS.AMPLITUDE },
+  { name: "uContOctaves", get: (p) => p.CONTINENTS.OCTAVES },
+  { name: "uContGain", get: (p) => p.CONTINENTS.GAIN },
+  { name: "uContLacunarity", get: (p) => p.CONTINENTS.LACUNARITY },
+  { name: "uContWarp", get: (p) => p.CONTINENTS.WARP },
+  { name: "uBaseHeight", get: (p) => p.CONTINENTS.BASE_HEIGHT },
+  { name: "uElevationContrast", get: (p) => p.CONTINENTS.ELEVATION_CONTRAST },
+  // OCEAN
+  { name: "uSeaLevel", get: (p) => p.OCEANS.SEA_LEVEL },
+  { name: "uOceanWavelength", get: (p) => p.OCEANS.WAVELENGTH },
+  { name: "uOceanAmplitude", get: (p) => p.OCEANS.AMPLITUDE },
+  { name: "uOceanOctaves", get: (p) => p.OCEANS.OCTAVES },
+  { name: "uOceanGain", get: (p) => p.OCEANS.GAIN },
+  { name: "uOceanLacunarity", get: (p) => p.OCEANS.LACUNARITY },
+  // COAST
+  { name: "uCoastWavelength", get: (p) => p.COASTS.WAVELENGTH },
+  { name: "uCoastAmplitude", get: (p) => p.COASTS.AMPLITUDE },
+  { name: "uCoastOctaves", get: (p) => p.COASTS.OCTAVES },
+  { name: "uCoastGain", get: (p) => p.COASTS.GAIN },
+  { name: "uCoastLacunarity", get: (p) => p.COASTS.LACUNARITY },
+  // MOUNTAIN
+  { name: "uRidgeWavelength", get: (p) => p.MOUNTAINS.RIDGE_WAVELENGTH },
+  { name: "uRidgeAmplitude", get: (p) => p.MOUNTAINS.RIDGE_AMPLITUDE },
+  { name: "uMountainOctaves", get: (p) => p.MOUNTAINS.OCTAVES },
+  { name: "uMountainGain", get: (p) => p.MOUNTAINS.GAIN },
+  { name: "uMountainLacunarity", get: (p) => p.MOUNTAINS.LACUNARITY },
+  { name: "uSwellFraction", get: (p) => p.MOUNTAINS.SWELL_FRACTION },
+  // LAND RELIEF — gentle continental uplands (fills the mid-elevation band the flat land cap omits).
+  { name: "uLandReliefWavelength", get: (p) => p.LAND_RELIEF.WAVELENGTH },
+  { name: "uLandReliefAmplitude", get: (p) => p.LAND_RELIEF.AMPLITUDE },
+  { name: "uLandReliefOctaves", get: (p) => p.LAND_RELIEF.OCTAVES },
+  { name: "uLandReliefGain", get: (p) => p.LAND_RELIEF.GAIN },
+  { name: "uLandReliefLacunarity", get: (p) => p.LAND_RELIEF.LACUNARITY },
+  // TECTONICS
+  { name: "uRangeWidth", get: (p) => p.TECTONICS.RANGE_WIDTH },
+  { name: "uSinuosity", get: (p) => p.TECTONICS.SINUOSITY },
+  { name: "uConvergenceThreshold", get: (p) => p.TECTONICS.CONVERGENCE_THRESHOLD },
+  { name: "uVariation", get: (p) => p.TECTONICS.VARIATION },
+  { name: "uCoastBias", get: (p) => p.TECTONICS.COAST_BIAS },
+  // MOISTURE
+  { name: "uMoistWavelength", get: (p) => p.MOISTURE.WAVELENGTH },
+  { name: "uMoistAmplitude", get: (p) => p.MOISTURE.AMPLITUDE },
+  { name: "uMoistOctaves", get: (p) => p.MOISTURE.OCTAVES },
+  { name: "uMoistGain", get: (p) => p.MOISTURE.GAIN },
+  { name: "uMoistLacunarity", get: (p) => p.MOISTURE.LACUNARITY },
+  { name: "uMoistContrast", get: (p) => p.MOISTURE.CONTRAST },
+  { name: "uMoistRainfall", get: (p) => p.MOISTURE.RAINFALL },
+  { name: "uWaterProximityEffect", get: (p) => p.MOISTURE.WATER_PROXIMITY_EFFECT },
+  { name: "uDesertSteepness", get: (p) => p.MOISTURE.DESERT_STEEPNESS },
+  { name: "uWaterSizeOctaves", get: (p) => p.MOISTURE.WATER_SIZE_OCTAVES },
+  { name: "uInteriorDryness", get: (p) => p.MOISTURE.INTERIOR_DRYNESS },
+  // CLIMATE — the Köppen classifier's knobs.
+  { name: "uSeasonality", get: (p) => p.CLIMATE.SEASONALITY },
+  { name: "uContinentalSeasonality", get: (p) => p.CLIMATE.CONTINENTAL_SEASONALITY },
+  { name: "uJitter", get: (p) => p.CLIMATE.JITTER },
+  { name: "uJitterScale", get: (p) => p.CLIMATE.JITTER_SCALE },
+  { name: "uHadley", get: (p) => p.CLIMATE.HADLEY },
+  // HILLSHADE scalars (uLight is derived from the azimuth/altitude dials — hand-set, vec3).
+  { name: "uExaggeration", get: (p) => p.HILLSHADE.EXAGGERATION },
+  { name: "uEpsilon", get: (p) => p.HILLSHADE.EPSILON },
+  { name: "uShadeFloor", get: (p) => p.HILLSHADE.FLOOR },
+  { name: "uShadeLowlandFloor", get: (p) => p.HILLSHADE.LOWLAND_FLOOR },
+  { name: "uShadeMinLandE", get: () => SHADE_MIN_LAND_E },
+  // features
+  { name: "uMountainsOn", get: (p) => (p.features.mountains ? 1 : 0) },
+];
+
+const PARAM_UNIFORM_DECLS = FIELD_PARAM_UNIFORMS.map((s) => `uniform float ${s.name};`).join("\n");
+
+// The fixed (non-dial) constants — GENERATED from fieldConstants.ts / INVARIANTS (one numeric
+// source; terrainShader.test.ts guards the emitted block). GLSL keeps its short local names.
+const FIXED_CONSTS = glslConstBlock(
+  {
+    MIN_OCTAVE_AMPLITUDE,
+    LAND_HAIR,
+    REPORT_INLAND_RISE, // ElevationCalculator: coast→interior rise restored for reportElevation
+    RIVER_ROUGH_WL: RIVER_ROUGH_WAVELENGTH, // river routing-height micro-relief (uRiverRoughAmp scales it)
+    RIVER_ROUGH_OCT: RIVER_ROUGH_OCTAVES,
+    RIVER_ROUGH_GAIN,
+    RIVER_ROUGH_LAC: RIVER_ROUGH_LACUNARITY,
+    NEUTRAL: INVARIANTS.NEUTRAL_CENTER_POINT,
+    RANGE_ENV_WL: RANGE_ENVELOPE_WAVELENGTH, // mountain along-strike envelope
+    RANGE_ENV_OFF: RANGE_ENVELOPE_OFFSET,
+    MOIST_OFF: MOISTURE_NOISE_OFFSET, // moisture noise decorrelation offset
+    RIDGE_FEEDBACK,
+    RIDGE_SHARPNESS,
+    CONVERGENCE_SOFTNESS, // Tectonics
+    JUNCTION_FADE_WIDTH,
+    TEC_WARP_WL: TECTONIC_WARP_WAVELENGTH,
+    TEC_WARP_OFF_X: TECTONIC_WARP_OFFSET_X,
+    TEC_WARP_OFF_Y: TECTONIC_WARP_OFFSET_Y,
+    TEC_WARP_OFF_Z: TECTONIC_WARP_OFFSET_Z,
+  },
+  ""
+);
+
 const FIELD_GLSL = /* glsl */ `
-// --- fixed (non-dial) constants, mirroring fbm.ts / ElevationCalculator / Tectonics ---
-const float MIN_OCTAVE_AMPLITUDE = 0.006;
-const float LAND_HAIR = 0.02;
-const float REPORT_INLAND_RISE = 0.07;                // ElevationCalculator: coast→interior rise restored for reportElevation
-const float RIVER_ROUGH_WL = 0.06;                    // wavelength of the river routing-height micro-relief (uRiverRoughAmp scales it)
-const float NEUTRAL = 0.5;
+// --- fixed (non-dial) constants — GENERATED from fieldConstants.ts (do not hand-edit values here) ---
+${FIXED_CONSTS}
+// GLSL-only loop bounds (the CPU loops are dynamic; GLSL needs static bounds).
 const int   MAX_OCTAVES = 16;
-const vec3  WARP_OFF = vec3(5.2, 1.7, 9.3);          // continent domain-warp offsets
-const float RANGE_ENV_WL = 0.5;                       // mountain along-strike envelope
-const float RANGE_ENV_OFF = 19.7;
-const float MOIST_OFF = 25.0;                         // moisture noise decorrelation offset
-const float RIDGE_FEEDBACK = 2.5;
-const float RIDGE_SHARPNESS = 3.5;
-const float CONVERGENCE_SOFTNESS = 0.1;               // Tectonics
-const float JUNCTION_FADE_WIDTH = 0.06;
-const float TEC_WARP_WL = 0.7;
-const float TEC_WARP_OFF_X = 8.3;
-const float TEC_WARP_OFF_Y = 27.1;
-const float TEC_WARP_OFF_Z = 53.9;
+const vec3  WARP_OFF = vec3(${glslFloat(CONTINENT_WARP_OFFSET_X)}, ${glslFloat(CONTINENT_WARP_OFFSET_Y)}, ${glslFloat(CONTINENT_WARP_OFFSET_Z)}); // continent domain-warp offsets
 const int   MAX_PLATES = 64;
 
-// --- dials (TerrainParams snapshot) ---
-uniform float uContWavelength, uContAmplitude, uContOctaves, uContGain, uContLacunarity, uContWarp, uBaseHeight, uElevationContrast;
-uniform float uSeaLevel, uOceanWavelength, uOceanAmplitude, uOceanOctaves, uOceanGain, uOceanLacunarity;
-uniform float uCoastWavelength, uCoastAmplitude, uCoastOctaves, uCoastGain, uCoastLacunarity;
+// --- dials (TerrainParams snapshot) — declarations GENERATED from FIELD_PARAM_UNIFORMS ---
+${PARAM_UNIFORM_DECLS}
 uniform vec2  uShelf;
-uniform float uRidgeWavelength, uRidgeAmplitude, uMountainOctaves, uMountainGain, uMountainLacunarity, uSwellFraction;
-uniform float uRangeWidth, uSinuosity, uConvergenceThreshold, uVariation, uCoastBias;
-uniform float uLandReliefWavelength, uLandReliefAmplitude, uLandReliefOctaves, uLandReliefGain, uLandReliefLacunarity;
-uniform float uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity, uMoistContrast, uMoistRainfall, uWaterProximityEffect, uDesertSteepness, uWaterSizeOctaves;
-uniform float uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uInteriorDryness, uHadley;  // CLIMATE (Köppen)
 uniform vec3  uLight;                 // hillshade light in (east, north, up)
-uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeLowlandFloor, uShadeMinLandE;
-uniform float uMountainsOn;   // feature switch (1 = on)
 uniform float uEmitReport;            // rivers: 1 = write reportElevation (routing height) into .a instead of shade
 uniform float uRiverRoughAmp;         // rivers: micro-relief amplitude folded into the routing height (so trunk flow converges)
 uniform int   uPlateCount;
@@ -274,7 +383,7 @@ vec4 field(vec3 site) {
     a = reportElev;
     // Micro-relief on LAND so trunk flow CONVERGES into a dendritic network instead of running parallel
     // down the smooth continental ramp (the "lined-up" look). Ocean stays a clean sink.
-    if (elev >= uSeaLevel) a += uRiverRoughAmp * fbm3(site, RIVER_ROUGH_WL, 1.0, 5.0, 0.55, 2.0);
+    if (elev >= uSeaLevel) a += uRiverRoughAmp * fbm3(site, RIVER_ROUGH_WL, 1.0, RIVER_ROUGH_OCT, RIVER_ROUGH_GAIN, RIVER_ROUGH_LAC);
   } else {
     a = hillshadeAt(site, full, elev);
   }

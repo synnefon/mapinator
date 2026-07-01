@@ -133,12 +133,12 @@ export function cellSuitability(env: CellEnv, seaLevel: number): number {
 
 /** Coastal / lakeshore population multiplier from BFS hops to the nearest water (0 = on the shore).
  *  Pre-modern trade + fishing clustered people on the water; the bonus fades exponentially inland.
- *  A negative distance (no water reached) is neutral. */
-export function coastBonus(coastDistHops: number): number {
+ *  A negative distance (no water reached) is neutral; a drawn river may count as hops 0 (you're ON
+ *  the water). Takes its dials explicitly, so country population and settlement placement read the
+ *  SAME curve from call-site-supplied values — the ONE implementation of how strongly water pulls. */
+export function coastBonus(coastDistHops: number, strength: number, falloff: number): number {
   if (coastDistHops < 0) return 1;
-  return (
-    1 + POPULATION.COAST_STRENGTH.value * Math.exp(-coastDistHops / POPULATION.COAST_FALLOFF.value)
-  );
+  return 1 + strength * Math.exp(-coastDistHops / falloff);
 }
 
 /** Per-cell local relief: the max absolute raw-elevation difference to any neighbour. O(total edges).

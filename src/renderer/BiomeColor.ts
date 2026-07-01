@@ -1,10 +1,8 @@
 import {
-  BASE_LIGHTNESS,
   BiomeColors,
   LAND_FAMILY_STOPS,
   MOISTURE_STOPS,
   THEME_OVERRIDES,
-  type ElevationBand,
   type ElevationFamily,
   type MoistureBand,
   type Theme,
@@ -188,21 +186,7 @@ export function koppenPaletteRgb(theme: Theme): Float32Array {
 /** ================================================
  *  Theme helpers
  *  ================================================ */
-// Theme adjustments are constant per theme, but colorAt runs per cell — cache the
-// resolved object so each cell doesn't rebuild a fresh lightness map (alloc churn).
-const resolvedThemeCache = new Map<
-  Theme,
-  { lightness: Record<ElevationBand, number>; saturationScale: number }
->();
-function resolveTheme(theme: Theme) {
-  const cached = resolvedThemeCache.get(theme);
-  if (cached) return cached;
-  const o = THEME_OVERRIDES[theme] ?? {};
-  const lightness: Record<ElevationBand, number> = {
-    ...BASE_LIGHTNESS,
-    ...(o.lightness ?? {}),
-  };
-  const resolved = { lightness, saturationScale: o.saturationScale ?? 1.0 };
-  resolvedThemeCache.set(theme, resolved);
-  return resolved;
+// A theme's one remaining adjustment is its saturation scale over the Köppen palette.
+function resolveTheme(theme: Theme): { saturationScale: number } {
+  return { saturationScale: THEME_OVERRIDES[theme]?.saturationScale ?? 1.0 };
 }

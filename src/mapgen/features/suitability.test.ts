@@ -60,12 +60,17 @@ describe("ruggednessFactor", () => {
 
 describe("coastBonus", () => {
   it("is strongest on the shore and fades to 1 far inland", () => {
-    expect(coastBonus(0)).toBeGreaterThan(coastBonus(5));
-    expect(coastBonus(1000)).toBeCloseTo(1, 5);
+    expect(coastBonus(0, 1.5, 3)).toBeGreaterThan(coastBonus(5, 1.5, 3));
+    expect(coastBonus(1000, 1.5, 3)).toBeCloseTo(1, 5);
   });
 
   it("is neutral (1) where no water was reached", () => {
-    expect(coastBonus(-1)).toBe(1);
+    expect(coastBonus(-1, 1.5, 3)).toBe(1);
+  });
+
+  it("scales with strength on the shore (1 + strength at hops 0)", () => {
+    expect(coastBonus(0, 2, 3)).toBeCloseTo(3, 10);
+    expect(coastBonus(0, 0, 3)).toBeCloseTo(1, 10);
   });
 });
 

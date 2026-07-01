@@ -132,8 +132,8 @@ export const KOPPEN_RGB: Float32Array = (() => {
 export const MAT_EQUATOR_C = 27;
 export const MAT_POLE_C = -25;
 export const LATITUDE_FALLOFF = 1.4;
-const LAPSE_C_PER_M = 0.0065;
-const EVEREST_M = 8849;
+export const LAPSE_C_PER_M = 0.0065;
+export const EVEREST_M = 8849;
 
 /** A cell's mean annual temperature in °C, from latitude and lapse-rate-cooled elevation. */
 export function meanAnnualTempC(latDeg: number, displayElevation: number, seaLevel: number): number {
@@ -144,8 +144,9 @@ export function meanAnnualTempC(latDeg: number, displayElevation: number, seaLev
 }
 
 // ===================== Synthetic Earth-like climate generation =====================
-// These are tunable generator knobs. They are NOT Köppen thresholds.
-const EARTH_CLIMATE = {
+// These are tunable generator knobs. They are NOT Köppen thresholds. Exported because the GLSL
+// twin's constant block is GENERATED from this object (koppen.glsl.ts) — edit here, both realms move.
+export const EARTH_CLIMATE = {
   PRECIP_MAX_MM: 3200,
   // Below 2.0 on purpose: the moisture field has already been maritime-boosted and interior-dried upstream.
   // A heavier exponent makes too much mid-latitude land fail B before it can become C/D.
@@ -167,8 +168,10 @@ const EARTH_CLIMATE = {
 } as const;
 
 // ===================== Locked Köppen constants =====================
-// These are the classification rules. Avoid tuning these for visual distribution; tune EARTH_CLIMATE instead.
-const KOPPEN = {
+// These are the classification rules. Avoid tuning these for visual distribution; tune EARTH_CLIMATE
+// instead. Exported: the GLSL twin's K_* constant block is GENERATED from this object.
+export const KOPPEN = {
+  ARIDITY_TEMP_MULTIPLIER: 2, // pth = this × mean annual temp + seasonal offset (mm)
   TROPICAL_COLD_MONTH_MIN_C: 18,
   POLAR_WARM_MONTH_MAX_C: 6,
   ICE_CAP_WARM_MONTH_MAX_C: 0,
@@ -191,7 +194,8 @@ const KOPPEN = {
 
 // ===================== Terrain override constants =====================
 // Highland is deliberately outside real Köppen. It is a terrain/color override for rendered mountains.
-const HIGHLAND = {
+// Exported: the GLSL twin's HIGHLAND_* constant block is GENERATED from this object.
+export const HIGHLAND = {
   MOUNTAIN_LAND_E: 0.18,
   PERENNIAL_SNOW_TWARM_C: -8,
   BARE_ROCK_TWARM_C: 3,
@@ -252,6 +256,8 @@ function lerpNumber(a: number, b: number, t: number): number {
 function precipMode(absLatDeg: number, moisture: number, continentality: number): number {
   // 1 = dry summer, 2 = dry winter, 0 = no strong dry season. This only shapes synthetic monthly rainfall;
   // the final s/w/f label is still decided by locked Köppen precipitation-ratio constants.
+  // The latitude windows below are RAW comparisons — callers pass a JITTERED latitude (see
+  // koppenZoneAt / the GLSL koppenZone), so the band edges meander instead of drawing perfect circles.
   const mediterranean =
     absLatDeg >= EARTH_CLIMATE.MEDITERRANEAN_LAT_MIN &&
     absLatDeg <= EARTH_CLIMATE.MEDITERRANEAN_LAT_MAX &&
@@ -334,7 +340,7 @@ function aridityThresholdMm(c: SyntheticClimate): number {
       : winterShare >= 0.7
         ? KOPPEN.ARID_SUMMER_DRY_OFFSET_MM
         : KOPPEN.ARID_EVEN_OFFSET_MM;
-  return Math.max(0, 2 * c.meanAnnualTempC + offset);
+  return Math.max(0, KOPPEN.ARIDITY_TEMP_MULTIPLIER * c.meanAnnualTempC + offset);
 }
 
 function seasonalDrynessLetter(c: SyntheticClimate): number {
@@ -359,6 +365,13 @@ function heatLetter(c: SyntheticClimate): number {
 
 export const isWater = (elevation: number, seaLevel: number): boolean => elevation < seaLevel;
 
+// Ocean depth bands across [0, seaLevel] (fraction of the waterline). Exported: the GLSL twin's
+// OCEAN_* constant block is GENERATED from this object.
+export const OCEAN_DEPTH_BANDS = {
+  DEEP_MAX_FRAC: 0.34,
+  MID_MAX_FRAC: 0.7,
+} as const;
+
 /**
  * Classify one cell into a Köppen zone index (KZ.*). The API remains scalar for CPU/GPU callers, but the
  * classifier immediately reconstructs a synthetic 12-month climate and applies locked Köppen rules to it.
@@ -380,8 +393,8 @@ export function classifyKoppen(
   // --- ocean: three depth bands across [0, seaLevel] ---
   if (isWater(elevation, seaLevel)) {
     const d = elevation / Math.max(seaLevel, 1e-6);
-    if (d < 0.34) return KZ.OCEAN_DEEP;
-    if (d < 0.7) return KZ.OCEAN_MID;
+    if (d < OCEAN_DEPTH_BANDS.DEEP_MAX_FRAC) return KZ.OCEAN_DEEP;
+    if (d < OCEAN_DEPTH_BANDS.MID_MAX_FRAC) return KZ.OCEAN_MID;
     return KZ.OCEAN_SHALLOW;
   }
 

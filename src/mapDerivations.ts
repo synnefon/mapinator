@@ -1,8 +1,8 @@
 import type { Language } from "./common/language";
 import type { GlobeMap } from "./common/map";
-import { OCEANS, RIVERS, snapshotParams } from "./common/settings";
-import { computeMapFeatures, type MapFeatures } from "./mapgen/features";
-import { computeRivers, type RiverData, type RiverFieldSampler } from "./mapgen/features/rivers";
+import { OCEANS, RIVERS, snapshotParams, type TerrainParams } from "./common/settings";
+import type { MapFeatures } from "./mapgen/features";
+import { computeRivers, ROUTING_DIAL_KEYS, type RiverData, type RiverFieldSampler } from "./mapgen/features/rivers";
 import type { NameGenerator } from "./mapgen/NameGenerator";
 
 // The per-map inputs that aren't global dials — read LIVE through a getter so a seed / language /
@@ -17,32 +17,53 @@ export type DerivationView = {
   paramsKey: string;
 };
 
+/** Everything one feature derivation reads — posted whole to the worker (self-contained job). */
+export type FeatureComputeArgs = {
+  map: GlobeMap;
+  seaLevel: number;
+  language: Language;
+  mapSeed: string;
+  languagePool: Language[];
+  params: TerrainParams;
+  rivers: RiverData;
+};
+
 export type MapDerivationsDeps = {
   sampleRiverField: RiverFieldSampler; // GPU field sampler (null when there's no float RT → no rivers)
-  featureNamer: NameGenerator;
   riverNamer: NameGenerator;
   view: () => DerivationView;
+  /** Run one feature derivation OFF the main thread (main wires this to WorkerPool.computeFeatures;
+   *  tests inject an in-process fake). Resolves with the derived feature set. */
+  postFeatures: (args: FeatureComputeArgs) => Promise<MapFeatures>;
+  /** A requested derivation landed and is now the current result — re-render (main: scheduleRender). */
+  onFeaturesReady: () => void;
 };
 
 /**
  * Owns the derived data for the current base globe — the river network AND the feature set (labels,
  * countries, cities, choropleth) — computed RIVERS FIRST so each city is placed against the final
- * river network in ONE synchronous pass. Generating rivers therefore never moves cities after the
- * fact: there is no async debounce and no "rivers finished → drop the feature cache" invalidation. The
- * feature cache simply keys on the river network it was built from, so a NEW network re-derives the
- * features once, declaratively — the coupling lives in the cache key, not in a hand-written delete.
+ * river network. Rivers route synchronously here (the GPU samples their field; the graph work is
+ * comparatively light); the FEATURE derivation (~600ms) runs OFF-THREAD via postFeatures, with the
+ * LodPipeline discipline:
+ *   - STICKY: while a new derivation is in flight, features() keeps returning the previous result
+ *     (or null before the first ever lands) — the frame never blocks and never blanks.
+ *   - LATEST-WINS: a landing result is dropped unless it's still the one the current dials want
+ *     (key compared by reference-captured request), so stale jobs can't overwrite fresh ones.
+ *   - DEDUP: an in-flight request for the wanted key is never re-posted.
+ * When a wanted result lands, onFeaturesReady fires so the caller re-renders with it.
  *
  * Both caches key on the base GlobeMap (a regen → a new map object → fresh derivations) plus the live
  * dials that actually affect each: rivers on the seed + terrain + routing dials; features on sea level
- * + language + the river network. Cheap on steady-state frames (cache hits); only discrete events (a
- * new map, a debounced dial change) recompute. No DOM / WebGL here — the module is unit-testable with a
- * fake sampler + plain GlobeMap.
+ * + language + the river network — the rivers-features coupling lives in the cache key, not in a
+ * hand-written delete. No DOM / WebGL here — unit-testable with a fake sampler + fake postFeatures.
  */
 export type MapDerivations = {
   rivers(baseMap: GlobeMap): RiverData;
-  features(baseMap: GlobeMap): MapFeatures;
+  /** The feature set for the current dials — the cached result when fresh; otherwise KICKS an
+   *  off-thread derivation and returns the previous (sticky) result, or null before the first. */
+  features(baseMap: GlobeMap): MapFeatures | null;
   // The cached features WITHOUT forcing a compute — for the hover overlay, which only runs while the
-  // country layer (hence a prior features() this frame) is live. Null if nothing's cached yet.
+  // country layer (hence a prior features() this frame) is live. Null if nothing's landed yet.
   peekFeatures(baseMap: GlobeMap): MapFeatures | null;
   // Drop the feature cache for a base map: a feature-only dial (CITY / POPULATION / COUNTRY) changed,
   // which touches neither the river network nor the terrain, so only cities/countries re-derive.
@@ -51,20 +72,23 @@ export type MapDerivations = {
 
 export function createMapDerivations(deps: MapDerivationsDeps): MapDerivations {
   type RiverEntry = { sig: string; rivers: RiverData };
-  type FeatureEntry = { seaLevel: number; language: Language; rivers: RiverData; result: MapFeatures };
+  // What the feature derivation was computed against. Compared by field (rivers by reference); the
+  // wanted-key OBJECT is also the in-flight token, so a landing job checks it superseded itself.
+  type FeatureKey = { seaLevel: number; language: Language; rivers: RiverData };
+  type FeatureEntry = {
+    key: FeatureKey | null; // what `result` was derived for (null until the first result lands)
+    result: MapFeatures | null; // latest landed result — possibly for an OLDER key (sticky display)
+    inFlight: FeatureKey | null; // the key being derived off-thread right now (dedup + latest-wins)
+  };
   const riverCache = new WeakMap<GlobeMap, RiverEntry>();
   const featureCache = new WeakMap<GlobeMap, FeatureEntry>();
 
-  // Everything the routed network depends on. Draw-time dials (WIDTH_* / ZOOM_REVEAL) are deliberately
-  // absent — they only affect stroking, not routing. paramsKey covers terrain shape AND sea level.
+  // Everything the routed network depends on: the seed + terrain (paramsKey covers shape AND sea
+  // level) + the routing dials — whose list lives WITH RiverOptions (rivers.ts:ROUTING_DIAL_KEYS),
+  // so a new routing dial can't be forgotten here.
   const riverSignature = (): string => {
     const { mapSeed, paramsKey } = deps.view();
-    return [
-      mapSeed, paramsKey,
-      RIVERS.MIN_DRAINAGE.value, RIVERS.MOISTURE_WEIGHT.value, RIVERS.SOURCE_MOISTURE.value,
-      RIVERS.WATER_SCALING.value, RIVERS.ROUGHNESS.value, RIVERS.BRANCHING.value,
-      RIVERS.MEANDER.value, RIVERS.MEANDER_DETAIL.value,
-    ].join("|");
+    return [mapSeed, paramsKey, ...ROUTING_DIAL_KEYS.map((k) => RIVERS[k].value)].join("|");
   };
 
   const rivers = (baseMap: GlobeMap): RiverData => {
@@ -89,19 +113,40 @@ export function createMapDerivations(deps: MapDerivationsDeps): MapDerivations {
     return result;
   };
 
-  const features = (baseMap: GlobeMap): MapFeatures => {
+  const sameKey = (a: FeatureKey, b: FeatureKey): boolean =>
+    a.seaLevel === b.seaLevel && a.language === b.language && a.rivers === b.rivers;
+
+  const features = (baseMap: GlobeMap): MapFeatures | null => {
     const seaLevel = OCEANS.SEA_LEVEL.value;
     const { mapSeed, language, languagePool } = deps.view();
     const riverData = rivers(baseMap); // RIVERS FIRST — cities snap to the final network, placed once
-    const cached = featureCache.get(baseMap);
-    if (cached && cached.seaLevel === seaLevel && cached.language === language && cached.rivers === riverData) {
-      return cached.result;
+    let entry = featureCache.get(baseMap);
+    if (!entry) {
+      entry = { key: null, result: null, inFlight: null };
+      featureCache.set(baseMap, entry);
     }
-    const result = computeMapFeatures(
-      baseMap, seaLevel, language, mapSeed, deps.featureNamer, languagePool, snapshotParams(), riverData
-    );
-    featureCache.set(baseMap, { seaLevel, language, rivers: riverData, result });
-    return result;
+    const wanted: FeatureKey = { seaLevel, language, rivers: riverData };
+    if (entry.key && sameKey(entry.key, wanted)) return entry.result; // fresh — the common frame
+
+    if (!entry.inFlight || !sameKey(entry.inFlight, wanted)) {
+      entry.inFlight = wanted; // replacing a stale in-flight key makes that job land as a no-op
+      deps
+        .postFeatures({ map: baseMap, seaLevel, language, mapSeed, languagePool, params: snapshotParams(), rivers: riverData })
+        .then((result) => {
+          // Accept only if this entry is still live (not invalidated/replaced) and this job is still
+          // the one the dials want — latest-wins.
+          if (featureCache.get(baseMap) !== entry || entry.inFlight !== wanted) return;
+          entry.key = wanted;
+          entry.result = result;
+          entry.inFlight = null;
+          deps.onFeaturesReady();
+        })
+        .catch((err) => {
+          if (featureCache.get(baseMap) === entry && entry.inFlight === wanted) entry.inFlight = null; // allow a retry
+          console.error("feature derivation failed:", err);
+        });
+    }
+    return entry.result; // sticky: the previous result while the new one derives (null before the first)
   };
 
   return {

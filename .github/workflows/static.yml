@@ -37,6 +37,9 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      # The suite gates the deploy: a red test (e.g. a CPU/GPU parity guard) must never ship again.
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
       - name: Setup Pages

@@ -4,7 +4,7 @@ import { OCEANS, snapshotParams, type MapSettings } from "../../common/settings"
 import { MapGenerator } from "../MapGenerator";
 import { NameGenerator } from "../NameGenerator";
 import { buildAdjacency } from "./adjacency";
-import { assignCountries, colorCountries, countryBorderSegments, largestBorderingCountry } from "./countries";
+import { assignCountries, colorCountries, largestBorderingCountry } from "./countries";
 
 const PARAMS = snapshotParams();
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
@@ -52,17 +52,6 @@ describe("assignCountries", () => {
     for (let ci = 0; ci < countries.length; ci++) {
       expect(countryOf[countries[ci].anchorCell]).toBe(ci); // label sits inside the country
     }
-  });
-});
-
-describe("countryBorderSegments", () => {
-  it("emits border segments only between differing countries (flat xyz pairs)", () => {
-    const map = buildMap();
-    const { countryOf } = assign(map);
-    const segs = countryBorderSegments(map, countryOf);
-    expect(segs.length).toBeGreaterThan(0);
-    expect(segs.length % 6).toBe(0); // [x0,y0,z0, x1,y1,z1]
-    for (let i = 0; i < segs.length; i++) expect(Number.isFinite(segs[i])).toBe(true);
   });
 });
 

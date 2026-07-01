@@ -1,8 +1,7 @@
-import { SHADE_MIN_LAND_E } from "../../common/elevationBands";
-import { RIVERS, type TerrainParams } from "../../common/settings";
+import type { TerrainParams } from "../../common/settings";
 import { fieldTextureDims } from "./gpuFieldLayout";
 import type { PlateData } from "./plateData";
-import { FIELD_FRAG_SRC, FIELD_VERT_SRC } from "./terrainShader";
+import { FIELD_FRAG_SRC, FIELD_PARAM_UNIFORMS, FIELD_VERT_SRC } from "./terrainShader";
 
 /** The full per-cell field computed on the GPU (one Float32Array per channel) + a wall-clock split:
  *  `upload` = pack sites/perm/plates + texImage2D; `render` = draw + gl.finish(); `readback` =
@@ -127,11 +126,12 @@ export class GpuField {
     sites: Float32Array,
     params: TerrainParams,
     perm: Float32Array,
-    plate: PlateData
+    plate: PlateData,
+    riverRoughAmp: number
   ): { elevation: Float32Array; moisture: Float32Array; koppenZone: Float32Array; shade: Float32Array; reportElevation: Float32Array } {
     const { width, height, count } = this.render(sites, params, perm, plate); // pass 1
     const [elevation, moisture, koppenZone, shade] = this.readChannels(width, height, count, [0, 1, 2, 3]);
-    this.render(sites, params, perm, plate, true); // pass 2 — reportElevation written to .a (emitReport)
+    this.render(sites, params, perm, plate, true, true, riverRoughAmp); // pass 2 — reportElevation written to .a (emitReport)
     const [reportElevation] = this.readChannels(width, height, count, [3]);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
     return { elevation, moisture, koppenZone, shade, reportElevation };
@@ -161,9 +161,10 @@ export class GpuField {
     sites: Float32Array,
     params: TerrainParams,
     perm: Float32Array,
-    plate: PlateData
+    plate: PlateData,
+    riverRoughAmp: number
   ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; reportElevation: Float32Array } {
-    const { width, height, count } = this.render(sites, params, perm, plate, true);
+    const { width, height, count } = this.render(sites, params, perm, plate, true, true, riverRoughAmp);
     // .a carries reportElevation here (emitReport set), not shade.
     const [elevation, moisture, ice, reportElevation] = this.readChannels(width, height, count, [0, 1, 2, 3]);
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
@@ -191,13 +192,16 @@ export class GpuField {
 
   // Shared upload + render into this.outTex (the FBO colour attachment). Saves/restores DEPTH_TEST so
   // it composes with a renderer that keeps depth testing on for its globe draws. Leaves the FBO bound.
+  // `riverRoughAmp` is the RIVERS.ROUGHNESS dial, passed explicitly (read only under emitReport) —
+  // this class stays a pure function of its arguments, never the live global dials.
   private render(
     sites: Float32Array,
     params: TerrainParams,
     perm: Float32Array,
     plate: PlateData,
     emitReport = false,
-    sync = true
+    sync = true,
+    riverRoughAmp = 0
   ): { width: number; height: number; count: number; upload: number; render: number } {
     const gl = this.gl;
     const n = (sites.length / 3) | 0;
@@ -230,7 +234,7 @@ export class GpuField {
     gl.bindTexture(gl.TEXTURE_2D, this.permTex);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.plateTex);
-    this.setUniforms(params, plate.count, width, n, emitReport);
+    this.setUniforms(params, plate.count, width, n, emitReport, riverRoughAmp);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (sync) gl.finish();
     gl.bindVertexArray(null);
@@ -303,85 +307,30 @@ export class GpuField {
     this.lastPlate = plate;
   }
 
-  private setUniforms(p: TerrainParams, plateCount: number, width: number, count: number, emitReport: boolean): void {
+  private setUniforms(
+    p: TerrainParams,
+    plateCount: number,
+    width: number,
+    count: number,
+    emitReport: boolean,
+    riverRoughAmp: number
+  ): void {
     const gl = this.gl;
     const u = (name: string): WebGLUniformLocation | null =>
       (this.loc[name] ??= gl.getUniformLocation(this.program, name));
     const f = (name: string, v: number): void => gl.uniform1f(u(name), v);
-    // CONTINENT
-    f("uContWavelength", p.CONTINENTS.WAVELENGTH);
-    f("uContAmplitude", p.CONTINENTS.AMPLITUDE);
-    f("uContOctaves", p.CONTINENTS.OCTAVES);
-    f("uContGain", p.CONTINENTS.GAIN);
-    f("uContLacunarity", p.CONTINENTS.LACUNARITY);
-    f("uContWarp", p.CONTINENTS.WARP);
-    f("uBaseHeight", p.CONTINENTS.BASE_HEIGHT);
-    f("uElevationContrast", p.CONTINENTS.ELEVATION_CONTRAST);
-    // OCEAN
-    f("uSeaLevel", p.OCEANS.SEA_LEVEL);
-    f("uOceanWavelength", p.OCEANS.WAVELENGTH);
-    f("uOceanAmplitude", p.OCEANS.AMPLITUDE);
-    f("uOceanOctaves", p.OCEANS.OCTAVES);
-    f("uOceanGain", p.OCEANS.GAIN);
-    f("uOceanLacunarity", p.OCEANS.LACUNARITY);
+    // Every scalar dial uniform comes from the ONE table that also generated its GLSL declaration
+    // (terrainShader.ts:FIELD_PARAM_UNIFORMS) — declared ⇔ uploaded, by construction.
+    for (const spec of FIELD_PARAM_UNIFORMS) f(spec.name, spec.get(p));
+    // The non-scalar / call-time uniforms, hand-set:
     gl.uniform2f(u("uShelf"), p.OCEANS.SHELF[0], p.OCEANS.SHELF[1]);
-    // COAST
-    f("uCoastWavelength", p.COASTS.WAVELENGTH);
-    f("uCoastAmplitude", p.COASTS.AMPLITUDE);
-    f("uCoastOctaves", p.COASTS.OCTAVES);
-    f("uCoastGain", p.COASTS.GAIN);
-    f("uCoastLacunarity", p.COASTS.LACUNARITY);
-    // MOUNTAIN
-    f("uRidgeWavelength", p.MOUNTAINS.RIDGE_WAVELENGTH);
-    f("uRidgeAmplitude", p.MOUNTAINS.RIDGE_AMPLITUDE);
-    f("uMountainOctaves", p.MOUNTAINS.OCTAVES);
-    f("uMountainGain", p.MOUNTAINS.GAIN);
-    f("uMountainLacunarity", p.MOUNTAINS.LACUNARITY);
-    f("uSwellFraction", p.MOUNTAINS.SWELL_FRACTION);
-    // LAND RELIEF — gentle continental uplands (fills the mid-elevation band the flat land cap omits).
-    f("uLandReliefWavelength", p.LAND_RELIEF.WAVELENGTH);
-    f("uLandReliefAmplitude", p.LAND_RELIEF.AMPLITUDE);
-    f("uLandReliefOctaves", p.LAND_RELIEF.OCTAVES);
-    f("uLandReliefGain", p.LAND_RELIEF.GAIN);
-    f("uLandReliefLacunarity", p.LAND_RELIEF.LACUNARITY);
-    // TECTONICS
-    f("uRangeWidth", p.TECTONICS.RANGE_WIDTH);
-    f("uSinuosity", p.TECTONICS.SINUOSITY);
-    f("uConvergenceThreshold", p.TECTONICS.CONVERGENCE_THRESHOLD);
-    f("uVariation", p.TECTONICS.VARIATION);
-    f("uCoastBias", p.TECTONICS.COAST_BIAS);
     gl.uniform1i(u("uPlateCount"), plateCount);
-    // MOISTURE
-    f("uMoistWavelength", p.MOISTURE.WAVELENGTH);
-    f("uMoistAmplitude", p.MOISTURE.AMPLITUDE);
-    f("uMoistOctaves", p.MOISTURE.OCTAVES);
-    f("uMoistGain", p.MOISTURE.GAIN);
-    f("uMoistLacunarity", p.MOISTURE.LACUNARITY);
-    f("uMoistContrast", p.MOISTURE.CONTRAST);
-    f("uMoistRainfall", p.MOISTURE.RAINFALL);
-    f("uWaterProximityEffect", p.MOISTURE.WATER_PROXIMITY_EFFECT);
-    f("uDesertSteepness", p.MOISTURE.DESERT_STEEPNESS);
-    f("uWaterSizeOctaves", p.MOISTURE.WATER_SIZE_OCTAVES);
-    // CLIMATE — the Köppen classifier's knobs (+ interior dryness, which lives in MOISTURE).
-    f("uSeasonality", p.CLIMATE.SEASONALITY);
-    f("uContinentalSeasonality", p.CLIMATE.CONTINENTAL_SEASONALITY);
-    f("uJitter", p.CLIMATE.JITTER);
-    f("uJitterScale", p.CLIMATE.JITTER_SCALE);
-    f("uHadley", p.CLIMATE.HADLEY);
-    f("uInteriorDryness", p.MOISTURE.INTERIOR_DRYNESS);
-    // HILLSHADE — light precomputed from the azimuth/altitude dials (mirrors ElevationCalculator).
+    // HILLSHADE light — precomputed from the azimuth/altitude dials (mirrors ElevationCalculator).
     const az = (p.HILLSHADE.AZIMUTH_DEG * Math.PI) / 180;
     const alt = (p.HILLSHADE.ALTITUDE_DEG * Math.PI) / 180;
     gl.uniform3f(u("uLight"), Math.sin(az) * Math.cos(alt), Math.cos(az) * Math.cos(alt), Math.sin(alt));
-    f("uExaggeration", p.HILLSHADE.EXAGGERATION);
-    f("uEpsilon", p.HILLSHADE.EPSILON);
-    f("uShadeFloor", p.HILLSHADE.FLOOR);
-    f("uShadeLowlandFloor", p.HILLSHADE.LOWLAND_FLOOR);
-    f("uShadeMinLandE", SHADE_MIN_LAND_E);
-    // features
-    f("uMountainsOn", p.features.mountains ? 1 : 0);
     f("uEmitReport", emitReport ? 1 : 0); // rivers: emit reportElevation in .a instead of shade
-    f("uRiverRoughAmp", RIVERS.ROUGHNESS.value); // rivers: routing-height micro-relief (unused unless uEmitReport)
+    f("uRiverRoughAmp", riverRoughAmp); // rivers: routing-height micro-relief (unused unless uEmitReport)
     // samplers + layout
     gl.uniform1i(u("uSites"), 0);
     gl.uniform1i(u("uPerm"), 1);

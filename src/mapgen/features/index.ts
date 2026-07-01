@@ -1,10 +1,8 @@
 import type { Vec3 } from "../../common/3DMath";
 import type { Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
-import { CITIES, COUNTRIES, POPULATION, type TerrainParams } from "../../common/settings";
-import { buildCpuCalc } from "../gpu/cpuField";
+import { COUNTRIES, CITIES, POPULATION, type TerrainParams } from "../../common/settings";
 import type { NameGenerator } from "../NameGenerator";
-import { buildAdjacency, buildCoastDir, coastDistance, largeWaterMask, waterHopDistance } from "./adjacency";
 import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
 import { assembleCities } from "./cityStats";
 import {
@@ -14,15 +12,14 @@ import {
   largestBorderingCountry,
   refineCountryBorders,
 } from "./countries";
-import { angularExtent, detectComponents, poleOfInaccessibility, type RawComponent } from "./detect";
+import { angularExtent, poleOfInaccessibility, type RawComponent } from "./detect";
 import type { Tags } from "./government";
-import { inlandRisenElevation } from "./inlandElevation";
-import { buildKdTree, nearestCell } from "./kdTree";
 import { nameFeature } from "./name";
 import { subdivideOcean } from "./ocean";
 import type { RiverData } from "./rivers";
-import { buildRiverGrid, makeSettlementWorld, RIVER_GRID_CELLS, type Settlement } from "./settlements";
+import { makeSettlementWorld, type Settlement } from "./settlements";
 import { detectTerrainFeatures } from "./terrain";
+import { buildWorldContext } from "./worldContext";
 
 export type { Settlement, SettlementTier, SettlementWaterKind } from "./settlements";
 export { CLASSIFY, type FeatureKind } from "./classify";
@@ -89,12 +86,10 @@ export function computeMapFeatures(
   params: TerrainParams,
   rivers: RiverData
 ): MapFeatures {
-  const adjacency = buildAdjacency(map);
-  const components = detectComponents(map, seaLevel, adjacency);
-  // The continental inland rise as an explicit display-elevation field (pure — no map mutation), computed
-  // BEFORE countries, which take it as a named input so the coast→interior gradient that feeds the
-  // population lapse rate can't be reordered away.
-  const reportElevation = inlandRisenElevation(map, seaLevel, adjacency, components);
+  // Every country-independent lookup (adjacency, components, risen elevation, the water fields,
+  // the river grid, the fine CPU field, the kd-tree) — assembled + documented in ONE tested unit.
+  const ctx = buildWorldContext(map, seaLevel, mapSeed, params, rivers);
+  const { adjacency, components, reportElevation } = ctx;
   // Start a clean uniqueness namespace for this generation: countries claim names first, then cities,
   // then features (all via `namer`), so no two named things anywhere share a name. Resetting each call
   // keeps it deterministic — a fixed seed re-derives the same names instead of drifting across regens.
@@ -115,30 +110,17 @@ export function computeMapFeatures(
   // patch cell is country-stamped at GENERATION (nearest base cell), and the SAME partition seeds the head +
   // tail settlement field's countryAt.
   const grownCountryOf = growCountriesOverWater(adjacency, countryOf, map.cellCount);
-  // The water arrays the one settlement engine routes + biases on, computed here where the mesh adjacency
-  // lives; the SAME arrays are shipped to the worker so the patch-local tail routes identically (main.ts).
-  const largeWater = largeWaterMask(components, map.cellCount);
-  const coastDist = coastDistance(map, seaLevel, adjacency);
-  const seaDist = waterHopDistance(map, seaLevel, adjacency, (i) => largeWater[i] === 1);
-  const coastDir = buildCoastDir(map, adjacency, seaLevel);
-  const cellSpacing = Math.sqrt((4 * Math.PI) / map.cellCount);
-  const riverGrid = buildRiverGrid(rivers.positions, rivers.widths, CITIES.RIVER_MIN_STRENGTH.value, RIVER_GRID_CELLS * cellSpacing);
-  // Re-derive the generator's FINE field on this thread (the base map was built in a worker) so the engine's
-  // density + coastal snap read the same field the renderer draws (`elev >= seaLevel`).
-  const { calc } = buildCpuCalc(mapSeed, params);
-  const tree = buildKdTree(map.sites, map.cellCount);
-  const nearestCellAt = (p: Vec3): number => nearestCell(tree, map.sites, p.x, p.y, p.z);
   // The one SettlementWorld — the SAME engine + routes the worker builds for the tail (makeSettlementWorld).
   const world = makeSettlementWorld({
-    sampleCell: (p) => calc.sampleCell(p),
+    sampleCell: (p) => ctx.cpu.calc.sampleCell(p),
     seaLevel,
-    nearestCell: nearestCellAt,
+    nearestCell: ctx.nearestCellAt,
     countryOf: grownCountryOf,
-    coastDist,
-    seaDist,
-    coastDir,
-    riverGrid,
-    cellSpacing,
+    coastDist: ctx.coastDist,
+    seaDist: ctx.seaDist,
+    coastDir: ctx.coastDir,
+    riverGrid: ctx.riverGrid,
+    cellSpacing: ctx.cellSpacing,
     densityScale: POPULATION.GLOBAL_POPULATION_DENSITY.value,
     coastStrength: POPULATION.COAST_STRENGTH.value,
     coastFalloff: POPULATION.COAST_FALLOFF.value,

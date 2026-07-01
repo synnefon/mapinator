@@ -3,9 +3,8 @@ import { AppState, type MapState } from "./AppState";
 import { Quat } from "./common/3DMath";
 import type { GlobeMap } from "./common/map";
 import { Languages, type Language } from "./common/language";
-import { applyTuning, LOD, OCEANS, snapshotParams } from "./common/settings";
+import { applyTuning, LOD, snapshotParams } from "./common/settings";
 import { applyThemeUIColors, generateThemeButtonCSS } from "./common/themeColors";
-import { type MapFeatures } from "./mapgen/features";
 import { type RiverFieldSampler } from "./mapgen/features/rivers";
 import { createMapDerivations } from "./mapDerivations";
 import { NameGenerator } from "./mapgen/NameGenerator";
@@ -13,45 +12,20 @@ import { recommendedWorkerCount, WorkerPool } from "./mapgen/WorkerPool";
 import { MAX_TITLE_LEN, setupMenuBar } from "./MenuBar";
 import { createCompassNeedle } from "./renderer/compassNeedle";
 import { GlobeController } from "./renderer/GlobeController";
+import { createGlobeScene, type GlobeScene } from "./renderer/GlobeScene";
 import { createLodPipeline, type GenRequest } from "./renderer/LodPipeline";
 import { CityMarkers } from "./CityMarkers";
-import { CountryLabels, countryFontPx } from "./CountryLabels";
+import { CountryLabels } from "./CountryLabels";
 import { InfoPopup } from "./InfoPopup";
-import { drawCountries } from "./renderer/countryLayer";
-import { drawFeatureLabels, featureFontPx, type LabelItem } from "./renderer/featureLabels";
-import { layoutLabels, type Placement, type Rect, type TextLabel } from "./renderer/labelLayout";
-import { drawPlateArrows } from "./renderer/plateArrows";
-import { drawRivers } from "./renderer/rivers";
-import { createGlobeRenderer, WebGLGlobeRenderer, type GpuFieldInputs } from "./renderer/WebGLGlobeRenderer";
-import { makeProjector, type Projector } from "./renderer/projection";
-import { buildPermTextureData } from "./mapgen/gpu/permTable";
-import { buildPlateData } from "./mapgen/gpu/plateData";
+import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
 import { sliderDefs, UIManager } from "./UIManager";
 
 // --- Setup & State ---
 
 // The LOD ladder + generation pipeline (cache, queue, view→rung math, staleness epoch) live in
-// renderer/LodPipeline.ts. main keeps only the zoomed-in PNG export-density floor.
+// renderer/LodPipeline.ts; the frame itself (draw order, overlays, label declutter) is
+// renderer/GlobeScene.ts. main keeps only the zoomed-in PNG export-density floor.
 const { MIN_EXPORT_POINTS } = LOD;
-
-// --- Label declutter tuning ---
-// A greedy occupancy-bitmap pass (renderer/labelLayout.ts) keeps overlapping text labels off each other
-// AND off the city dots. A label's priority is an integer type BAND (×10, so the fractional size tiebreak
-// in [0,1) can never cross a band) plus its size, so within a band the bigger feature wins. Bands, high to
-// low: countries, then oceans/seas, then everything else (other features + rivers).
-const LABEL_BAND_COUNTRY = 3;
-const LABEL_BAND_WATER = 2;
-const LABEL_BAND_OTHER = 1;
-const LABEL_GUTTER_PX = 3; // gap a label needs to APPEAR (collision-test inflation)
-// Gap a label that's already shown needs to STAY — negative, so it tolerates a little overlap before
-// dropping. LABEL_GUTTER_PX − this is the dead-band; kept wider than the 8px raster cell so a label near
-// the threshold can't flicker in/out as the globe rotates or momentum settles.
-const LABEL_STICKY_GUTTER_PX = -6;
-const LABEL_HYSTERESIS = 4; // priority bump for a label shown last frame (< band spacing) — anti-flicker
-// A country label may slide off its anchor to dodge a collision by up to this fraction of the country's
-// inscribed radius (anchor→nearest-border distance). < 1 keeps the label's centre inside the country, so
-// most of the name stays on home territory; raise toward 1 for more dodging room, lower to keep it centred.
-const LABEL_MOVE_FRACTION = 0.75;
 
 document.addEventListener("DOMContentLoaded", () => {
   // Inject theme styles
@@ -79,10 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const appState = new AppState();
   const ui = new UIManager();
   const nameGenerator = new NameGenerator(uuid());
-  // A dedicated namer for feature labels: every call passes an explicit per-feature seed (so names
-  // are deterministic), which keeps the title namer's stream above untouched.
-  const featureNamer = new NameGenerator("features");
-  const riverNamer = new NameGenerator("rivers"); // separate stream so river names don't perturb feature naming
+  // The feature namer now lives IN the worker (mapWorker builds one per features job — every feature
+  // name is explicitly seeded, so it reproduces the old main-thread instance exactly). Rivers still
+  // name on this thread: a dedicated stream so river names don't perturb the title namer above.
+  const riverNamer = new NameGenerator("rivers");
 
   // The map's language: ONE per map, used for both the title and the feature labels (so they match).
   // Picked from the selected languages — all of them by default. Stored on appState + saved in the
@@ -117,39 +91,11 @@ document.addEventListener("DOMContentLoaded", () => {
     appState.language = pickMapLanguage(); // a seed came from the URL — give its labels a language
   }
 
-  const globeRenderer = createGlobeRenderer();
-  // GPU detail-patch path: when the renderer is WebGL2 with a float render target, detail patches are
+  // GPU detail-patch path: when the renderer can (WebGL2 + float render target), detail patches are
   // generated MESH-ONLY (no CPU noise) and the renderer computes their field on the GPU + samples it
-  // (no readback). The base globe + saves stay CPU (canonical). gpuFieldInputs carries the per-seed
-  // perm/plate the GPU field needs; it's rebuilt whenever the seed or dials change.
-  const webglRenderer = globeRenderer instanceof WebGLGlobeRenderer ? globeRenderer : null;
-  const gpuPatches = webglRenderer !== null && WebGLGlobeRenderer.canRenderGpuPatches();
-  let gpuFieldInputs: GpuFieldInputs | null = null;
-  const rebuildGpuFieldInputs = (): void => {
-    if (!gpuPatches) return;
-    const params = snapshotParams();
-    gpuFieldInputs = {
-      params,
-      perm: buildPermTextureData(appState.mapName),
-      plate: buildPlateData(appState.mapName, params),
-    };
-  };
-  // Replace the base globe's CPU-sampled noise fields with the GPU readback (the same field the renderer
-  // draws), so feature placement lands on the rendered coast — once per base map, before features derive.
-  // No-op without float-RT (CPU fields stand, the fallback). Plate stays CPU (not a noise field).
-  const gpuFilledBases = new WeakSet<GlobeMap>();
-  function fillBaseFieldsFromGpu(base: GlobeMap): void {
-    if (!gpuPatches || !webglRenderer || !gpuFieldInputs || gpuFilledBases.has(base)) return;
-    gpuFilledBases.add(base); // mark first: a failed/again attempt shouldn't re-run the readback
-    const f = webglRenderer.computeBaseField(canvas, base.sites, gpuFieldInputs);
-    if (!f) return; // GPU path unavailable → keep the worker's CPU fields
-    base.elevation.set(f.elevation);
-    base.moisture.set(f.moisture);
-    // ice stays the worker's CPU value — the GPU field now carries the KÖPPEN ZONE in that channel, not ice.
-    base.koppenZone.set(f.koppenZone);
-    base.shade.set(f.shade);
-    base.reportElevation.set(f.reportElevation);
-  }
+  // (no readback). The base globe + saves stay CPU (canonical). The renderer OWNS the per-seed GPU
+  // field inputs — reconfigured alongside the worker pool (configureGeneration) on seed/dial change.
+  const globeRenderer = createGlobeRenderer();
   // The live view orientation (world→view quaternion), driven by the orbit controls, lives on
   // appState (so it rides along in snapshot/restore) — see appState.orientation.
   // rAF handle for the north-align animation (see orientNorth); any user view change
@@ -225,32 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
     },
   });
 
-  // The map canvas fills the whole page; keep its bitmap matched to the viewport so the globe
-  // is neither letterboxed nor stretched. (The WebGL renderer reads canvas.width/height each
-  // draw.) The initial call only sizes it — the first render comes through the normal init flow.
-  const resizeCanvas = (): boolean => {
-    const w = Math.round(window.innerWidth);
-    const h = Math.round(window.innerHeight);
-    if (w > 0 && h > 0 && (canvas.width !== w || canvas.height !== h)) {
-      canvas.width = w;
-      canvas.height = h;
-      arrowCanvas.width = w; // keep the arrow overlay's bitmap matched to the map's, 1:1
-      arrowCanvas.height = h;
-      labelCanvas.width = w; // and the feature-label overlay
-      labelCanvas.height = h;
-      countryCanvas.width = w; // and the country overlay
-      countryCanvas.height = h;
-      riverCanvas.width = w; // and the river overlay
-      riverCanvas.height = h;
-      return true;
-    }
-    return false;
-  };
-  resizeCanvas();
-  window.addEventListener("resize", () => {
-    if (resizeCanvas()) drawMap();
-  });
-
   // --- Map Rendering ---
   // Terrain generation runs in a POOL of Web Workers so heavy meshing/noise never blocks the UI
   // thread AND independent LOD rungs build in parallel; the globe's typed arrays transfer back
@@ -281,29 +201,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }),
     onReady: scheduleRender,
     maxInFlight: pool.size, // up to one concurrent generate per worker
-    detailGeometryOnly: gpuPatches, // GPU path: detail rungs are mesh-only; the renderer computes fields
+    detailGeometryOnly: globeRenderer.canDetail(), // GPU path: detail rungs are mesh-only; the renderer computes fields
     // A country layer on ⇒ detail patches must carry per-cell country, so patches cached while it was off
     // are regenerated (not reused with the coarse equirect tint). Mirrors requestMap's withCountry gate.
     wantsCountry: () => (appState.settings.viewCountries ?? false) || (appState.settings.viewCountryColors ?? false),
   });
 
+  // ONE resolved params snapshot configures BOTH generation consumers — the worker pool and the
+  // renderer's GPU field — so they cannot desync (the old code paired two separate snapshot calls
+  // by comment). Call whenever the seed or the generation dials change.
+  const configureGeneration = (seed: string): void => {
+    const params = snapshotParams(); // reads the live dials, post-applyTuning
+    pool.configure({ seed, params }); // broadcast to EVERY worker (postMessage ordering keeps it first)
+    globeRenderer.reconfigure(seed, params); // GPU patch field uses the same seed + dials
+  };
+
   const reseedWorker = (seed: string) => {
     pipeline.reset(); // bump the staleness epoch + drop cached maps from the previous seed
-    // Config carries the seed + the current resolved generation params (snapshotParams reads the live
-    // dials, post-applyTuning), broadcast to EVERY worker. Per-worker postMessage ordering keeps it
-    // ahead of that worker's first generate.
-    pool.configure({ seed, params: snapshotParams() });
-    rebuildGpuFieldInputs(); // GPU patch field uses the same seed + dials as the worker
+    configureGeneration(seed);
   };
 
   // Seed every worker before the first generate (per-worker postMessage ordering keeps it first).
   reseedWorker(appState.mapName);
 
   // The river routing field is sampled on the GPU (no float RT ⇒ null ⇒ no rivers — graceful degradation).
-  const sampleRiverField: RiverFieldSampler = (sites) =>
-    gpuPatches && webglRenderer && gpuFieldInputs
-      ? webglRenderer.computeRiverField(canvas, sites, gpuFieldInputs)
-      : null;
+  const sampleRiverField: RiverFieldSampler = (sites) => globeRenderer.riverField(canvas, sites);
 
   // The generation-params token from the last apply: a tuning change leaving it untouched produces an
   // identical globe + detail patches (so applyAdvancedTuning can skip a regen), and the river signature
@@ -311,11 +233,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let lastParamsKey = JSON.stringify(snapshotParams());
 
   // Derived data for the current base globe — rivers AND the feature set (labels / countries / cities /
-  // choropleth), computed RIVERS FIRST so each city is placed against the final network in one pass. One
-  // module owns the caching + invalidation; render() just asks for the current derivations (mapDerivations.ts).
+  // choropleth), computed RIVERS FIRST so each city is placed against the final network. The heavy
+  // feature derivation runs OFF-THREAD (postFeatures → the worker pool; ~600ms that used to jank the
+  // main thread on every sea-level / language change); while it's in flight the scene keeps drawing
+  // the previous result, and onFeaturesReady re-renders the moment the new one lands.
   const derivations = createMapDerivations({
     sampleRiverField,
-    featureNamer,
     riverNamer,
     view: () => ({
       mapSeed: appState.mapName,
@@ -323,272 +246,50 @@ document.addEventListener("DOMContentLoaded", () => {
       languagePool: appState.selectedLanguages,
       paramsKey: lastParamsKey,
     }),
+    postFeatures: (args) => pool.computeFeatures(args),
+    onFeaturesReady: scheduleRender,
   });
 
-  // Interactive country labels (DOM) + the hover state that drives the territory highlight.
-  let hoveredCountry: number | null = null;
-  let labelResult: MapFeatures | null = null; // the result the DOM labels were last built from
-  let lastPoolBaseSites: Float32Array | null = null; // base sites last broadcast to workers (→ baseChanged flag)
-  let featureEpoch = 0; // bumps when the feature result changes — keys the GPU choropleth colour cache
   // One shared info popup for both countries and cities; it follows its anchor + self-closes (InfoPopup).
   const infoPopup = new InfoPopup();
+  // Interactive country labels (DOM); hover drives the scene's territory highlight (forward ref —
+  // the scene is constructed just below, and hover only fires after init).
+  let scene: GlobeScene;
   const countryLabels = new CountryLabels(canvas.parentElement as HTMLElement, {
     onHover: (index) => {
-      hoveredCountry = index;
-      scheduleRender(); // the highlight is now a per-cell GPU tint on the patch → redraw it (+ the 2D borders)
+      scene.setHoveredCountry(index);
+      scheduleRender(); // the highlight is a per-cell GPU tint on the patch → redraw it (+ the 2D borders)
     },
     popup: infoPopup,
   });
   // Interactive city markers (DOM dots over the globe), revealed by zoom tier; default on.
   const cityMarkers = new CityMarkers(canvas.parentElement as HTMLElement, infoPopup);
 
-  // The view → screen projection for THIS frame — orientation + zoom + the active renderer's horizontal
-  // offset — shared by every overlay so the projection + limb cull live in ONE place (renderer/projection.ts)
-  // rather than being re-derived (and the renderer's offset re-fetched) in each.
-  const currentProjector = (): Projector =>
-    makeProjector(canvas.width, canvas.height, appState.orientation, appState.settings.zoom, globeRenderer.horizontalOffsetFraction());
+  // The frame owner: everything "draw the current view correctly" — base + patch draw order, the
+  // annotation overlays, the shared per-frame projection, label declutter, and the per-base-map
+  // side effects — lives in renderer/GlobeScene.ts. main decides WHEN frames happen (below).
+  scene = createGlobeScene({
+    canvases: { map: canvas, rivers: riverCanvas, arrows: arrowCanvas, labels: labelCanvas, countries: countryCanvas },
+    renderer: globeRenderer,
+    pipeline,
+    derivations,
+    appState,
+    cityMarkers,
+    countryLabels,
+    infoPopup,
+    needle,
+    broadcastCountrySeeds: (countrySeeds) => pool.configure({ countrySeeds }),
+  });
 
-  // Label declutter carries two bits of per-frame state. The advance width of the (monospace) label font,
-  // measured once so a label box's width is exact with no DOM reflow; and the set of labels shown last
-  // frame, fed back so a label on the bubble stays put as the globe rotates (anti-flicker).
-  let monoAdvance = 0.6; // Roboto Mono advance ≈ 0.6em/char — measured below for exactness
-  let monoMeasured = false;
-  const ensureMonoAdvance = (): void => {
-    if (monoMeasured) return;
-    const ctx = labelCanvas.getContext("2d");
-    if (!ctx) return;
-    ctx.font = "bold 100px 'Roboto Mono', ui-monospace, monospace";
-    const w = ctx.measureText("MMMMMMMMMM").width;
-    if (w > 0) {
-      monoAdvance = w / (10 * 100);
-      monoMeasured = true;
-    }
-  };
-  // Re-measure once the web font actually loads (the first measure may hit the fallback monospace).
-  if (document.fonts) void document.fonts.ready.then(() => { monoMeasured = false; });
-  let prevPlacedLabels: ReadonlyMap<string, Placement> = new Map();
-  // Per-frame declutter scratch, reused across frames (cleared + refilled) so the 60fps label path doesn't
-  // reallocate these arrays — or the city-dot Rects — every frame.
-  const featureItems: LabelItem[] = [];
-  const textLabels: TextLabel[] = [];
-  const reserved: Rect[] = [];
-
-  // Country FILL + hover HIGHLIGHT use the patch's PER-CELL country, stamped AT GENERATION (each patch cell
-  // takes the nearest base cell of the broadcast grown partition — see mapWorker + growCountriesOverWater)
-  // and carried on the mesh as `overlay.countryOf`. So they colour correctly the instant the patch exists —
-  // no async re-grow, no GPU-elevation readback; it's cached + preloaded with the mesh by the LOD pipeline.
-  // The equirect choropleth (bakeCountryTexture) is now only the coarse FALLBACK: the base globe, the CPU
-  // path, and any patch built while the country layer was off. BORDER LINES stay compute-once (refined
-  // sphere polylines from the derivation — refineCountryBorders).
-
-  function drawCountryOverlay(proj: Projector = currentProjector()): void {
-    const baseMap = pipeline.base();
-    const result = baseMap ? derivations.peekFeatures(baseMap) : null;
-    if (!baseMap || !result || !(appState.settings.viewCountries ?? false)) {
-      countryCanvas.getContext("2d")?.clearRect(0, 0, countryCanvas.width, countryCanvas.height);
-      return;
-    }
-    // Borders: the refined coarse polylines from the derivation. Highlight: when the shown patch carries
-    // per-cell country (stamped at gen), the GPU patch fills the hovered country per-pixel (drawPatchGpu) —
-    // skip the 2D fill; otherwise (no patch / equirect-fallback patch / CPU path) fall back to a 2D fill.
-    const gpuHighlight = gpuPatches && pipeline.overlay()?.countryOf != null;
-    const highlight =
-      hoveredCountry !== null && !gpuHighlight ? { map: baseMap, countryOf: result.countryOf, index: hoveredCountry } : null;
-    drawCountries(countryCanvas, result.borders, highlight, proj);
-  }
-
-  function render() {
-    // Spin the 3D compass needle to point along north's direction in view space (x right,
-    // y up, z toward camera) — a live compass that foreshortens as north tilts in/out and,
-    // being a solid, never collapses to nothing when you face a pole.
-    if (needle) {
-      needle.update(Quat.rotate(appState.orientation, { x: 0, y: 1, z: 0 }));
-    }
-    const baseMap = pipeline.base();
-    const overlay = pipeline.overlay();
-    if (!baseMap) return;
-    fillBaseFieldsFromGpu(baseMap); // GPU-canonical base fields (once per map) before features derive
-
-    const viewLevel = pipeline.view().level;
-    const showLabels = appState.settings.viewLabels ?? false;
-    const showCountries = appState.settings.viewCountries ?? false;
-    const showCities = appState.settings.viewCities ?? false;
-    const showCountryColors = appState.settings.viewCountryColors ?? false;
-    const showRivers = appState.settings.viewRivers ?? false;
-    const clear = (c: HTMLCanvasElement) =>
-      c.getContext("2d")?.clearRect(0, 0, c.width, c.height);
-
-    // Labels, country borders, and cities share one feature set (countries drive naming). The derivations
-    // module computes it RIVERS FIRST (so each city is placed against the final network, once) and caches
-    // it. Resolved BEFORE the globe draw so the choropleth can tint the globe's per-cell colours on the GPU.
-    let result: MapFeatures | null = null;
-    if (showLabels || showCountries || showCities || showCountryColors) {
-      result = derivations.features(baseMap);
-      // Rebuild the interactive labels/markers when the underlying result changes (new map / dials).
-      if (result !== labelResult) {
-        labelResult = result;
-        featureEpoch++;
-        hoveredCountry = null;
-        countryLabels.setCountries(result.countries);
-        cityMarkers.setCities(result.cities);
-        // Broadcast the base partition to the workers so each detail patch stamps its per-cell country at
-        // generation (nearest base cell → grown partition). Cloned to every worker; refreshed each result
-        // change (which also refires on any dial that re-derives features).
-        // sites change only when the base map regenerates — tell the workers so they can skip rebuilding
-        // their base KD-tree on a feature-only re-derive (sea level / language / dial change).
-        const baseChanged = baseMap.sites !== lastPoolBaseSites;
-        lastPoolBaseSites = baseMap.sites;
-        pool.configure({
-          countrySeeds: {
-            sites: baseMap.sites,
-            countryOf: result.grownCountryOf,
-            seaLevel: OCEANS.SEA_LEVEL.value,
-            baseChanged,
-          },
-        });
-      }
-    }
-
-    // Choropleth — the equirect texture is the FALLBACK: the base globe, the CPU path, and any detail patch
-    // whose per-cell country wasn't stamped at generation (the country layer was off when it was built). When
-    // the patch DOES carry per-cell country (the common case), the GPU patch prefers it (patchCountry) below.
-    const choropleth =
-      showCountryColors && result
-        ? { map: baseMap, countryOf: result.countryOf, countryColors: result.countryColors, key: `${featureEpoch}` }
-        : undefined;
-    // Per-cell country for the GPU patch: the patch's OWN gen-stamped countryOf + colour classes + hovered
-    // country. Present the instant the mesh exists (no async re-grow, no readback); absent ⇒ equirect tints.
-    const patchCountry =
-      overlay?.countryOf && result
-        ? { countryOf: overlay.countryOf, colors: result.countryColors, hovered: hoveredCountry ?? -1 }
-        : undefined;
-
-    // The globe (rung 0) is the base; an overlaid detail patch (if any) sits on top. When a patch is
-    // overlaid, the base skips the cells it hides (its cap), so a zoomed-in view doesn't redraw a full
-    // globe under the patch.
-    globeRenderer.draw(canvas, baseMap, appState.settings, appState.orientation, true, overlay?.cap, choropleth);
-    if (overlay) {
-      // GPU path ON: the patch is mesh-only (no CPU fields), so the renderer MUST compute its field on
-      // the GPU + sample it (no readback). The probe (canRenderGpuPatches) guarantees the shaders
-      // compile, so this won't fail; if it ever does, skip the patch rather than CPU-draw garbage.
-      // GPU path OFF: the patch carries CPU fields → the normal CPU draw. Tint follows at any zoom.
-      if (gpuPatches) {
-        if (gpuFieldInputs) {
-          webglRenderer!.drawPatchGpu(canvas, overlay, gpuFieldInputs, appState.settings, appState.orientation, patchCountry);
-        }
-      } else {
-        globeRenderer.draw(canvas, overlay, appState.settings, appState.orientation, false, undefined, choropleth);
-      }
-    }
-    // Every overlay below shares ONE projection for this frame (orientation + zoom + the renderer's
-    // horizontal offset) — the project + limb cull live in renderer/projection.ts, not in each overlay.
-    const proj = currentProjector();
-
-    // Plate-motion arrows: a 2D overlay, drawn only with the plate view on (geometry is sampled in
-    // the worker; here we just project it to match the globe). Otherwise wipe it.
-    if ((appState.settings.viewPlates ?? false) && baseMap.arrowPositions.length) {
-      drawPlateArrows(arrowCanvas, baseMap.arrowPositions, baseMap.arrowDirections, proj);
-    } else {
-      arrowCanvas.getContext("2d")?.clearRect(0, 0, arrowCanvas.width, arrowCanvas.height);
-    }
-
-    // Rivers: routed downhill, drawn under the annotation overlays. Generated WITH the map (rivers-first
-    // in the derivations module), so this is a cached lookup — drawing them never moves cities.
-    if (showRivers) {
-      drawRivers(riverCanvas, derivations.rivers(baseMap), proj);
-    } else {
-      clear(riverCanvas);
-    }
-
-    // 2D / DOM overlays over the globe. Settlement markers update FIRST so their dot positions are known: the
-    // declutter pass reserves them, then places the text labels (feature + river names on the canvas,
-    // country names in the DOM) so nothing overlaps a dot or another label.
-    if (result && showCities) {
-      cityMarkers.setVisible(true);
-      cityMarkers.update(proj, viewLevel);
-    } else {
-      cityMarkers.setVisible(false);
-    }
-
-    // Assemble every text label into ONE declutter pass. Each is zoom-gated + limb-culled + sized exactly
-    // as it'll be drawn, then turned into a screen box; names are globally unique → the stable id. The pass
-    // returns the set that fits (drop on collision, highest priority first). Feature + river names share
-    // the label canvas, so they're collected together for the draw too.
-    ensureMonoAdvance();
-    featureItems.length = 0;
-    if (showLabels && result) featureItems.push(...result.features);
-    if (showRivers) featureItems.push(...derivations.rivers(baseMap).labels);
-
-    textLabels.length = 0;
-    const sizeFrac = (cellCount: number): number => Math.min(0.999, cellCount / Math.max(1, baseMap.cellCount));
-    const pushCanvasLabel = (item: LabelItem, band: number): void => {
-      if (item.minLevel > viewLevel) return;
-      const r = proj.project(item.anchor);
-      if (!r.front) return;
-      const fontPx = featureFontPx(item.extent, proj);
-      const halfW = 0.5 * item.name.length * monoAdvance * fontPx;
-      textLabels.push({ id: item.name, priority: band * 10 + sizeFrac(item.cellCount), x: r.x, y: r.y, halfW, halfH: 0.5 * fontPx });
-    };
-    if (showLabels && result) {
-      for (const f of result.features) pushCanvasLabel(f, f.kind === "OCEAN" || f.kind === "SEA" ? LABEL_BAND_WATER : LABEL_BAND_OTHER);
-    }
-    if (showRivers) {
-      for (const rl of derivations.rivers(baseMap).labels) pushCanvasLabel(rl, LABEL_BAND_OTHER);
-    }
-    if (showCountries && result) {
-      for (const info of result.countries) {
-        const r = proj.project(info.anchor);
-        if (!r.front) continue;
-        const fontPx = countryFontPx(info.extent, proj);
-        const halfW = 0.5 * info.name.length * monoAdvance * fontPx;
-        const frac = Math.min(0.999, info.extent / Math.PI); // bigger country wins within the country band
-        // A country label may slide off its anchor (the pole of inaccessibility) to dodge an overlap, up to
-        // a fraction of its inscribed radius — far enough to dodge, near enough the name stays in-country.
-        const moveBudgetPx = LABEL_MOVE_FRACTION * info.insRadius * proj.radius;
-        textLabels.push({ id: info.name, priority: LABEL_BAND_COUNTRY * 10 + frac, x: r.x, y: r.y, halfW, halfH: 0.5 * fontPx, moveBudgetPx });
-      }
-    }
-
-    const dots = cityMarkers.visibleDots;
-    for (let i = 0; i < dots.length; i++) {
-      const d = dots[i];
-      const rect = reserved[i];
-      if (rect) { rect.x = d.x; rect.y = d.y; rect.halfW = d.r; rect.halfH = d.r; }
-      else reserved[i] = { x: d.x, y: d.y, halfW: d.r, halfH: d.r };
-    }
-    reserved.length = dots.length;
-    const placed = layoutLabels(textLabels, {
-      width: canvas.width,
-      height: canvas.height,
-      gutterPx: LABEL_GUTTER_PX,
-      stickyGutterPx: LABEL_STICKY_GUTTER_PX,
-      reserved,
-      prevPlaced: prevPlacedLabels,
-      hysteresisBonus: LABEL_HYSTERESIS,
-    });
-    prevPlacedLabels = placed;
-    const shownLabels = new Set(placed.keys()); // visibility for the canvas labels (which don't move)
-
-    if (featureItems.length) {
-      drawFeatureLabels(labelCanvas, featureItems, proj, viewLevel, shownLabels);
-    } else clear(labelCanvas);
-
-    if (result && showCountries) {
-      drawCountryOverlay(proj);
-      countryLabels.setVisible(true);
-      countryLabels.update(result.countries, proj, placed);
-    } else {
-      clear(countryCanvas);
-      countryLabels.setVisible(false);
-    }
-    // The shared popup follows its anchor + closes itself when that anchor leaves view (behind the limb,
-    // below its reveal level, or when its layer is off). Driven every frame so a layer toggle dismisses it.
-    const popupSrc = infoPopup.source();
-    if (popupSrc) {
-      const layerVisible = popupSrc === "city" ? showCities : showCountries;
-      infoPopup.update(proj, viewLevel, layerVisible);
-    }
-  }
+  // The map canvas fills the whole page; keep the five stacked bitmaps matched to the viewport so
+  // the globe is neither letterboxed nor stretched. The initial call only sizes them — the first
+  // render comes through the normal init flow (redraw → ensureMap → onReady).
+  const resizeToViewport = (): boolean =>
+    scene.resize(Math.round(window.innerWidth), Math.round(window.innerHeight));
+  resizeToViewport();
+  window.addEventListener("resize", () => {
+    if (resizeToViewport()) drawMap();
+  });
 
   // Coalesce renders to one per animation frame: pointer/wheel events can fire
   // several times per frame, but the globe only needs re-projecting once.
@@ -598,7 +299,7 @@ document.addEventListener("DOMContentLoaded", () => {
     renderPending = true;
     requestAnimationFrame(() => {
       renderPending = false;
-      render();
+      scene.render();
     });
   }
 
@@ -630,7 +331,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const t = Math.min(1, (now - t0) / duration);
       const eased = t * t * (3 - 2 * t); // smoothstep ease in/out
       appState.orientation = Quat.slerp(start, target, eased);
-      render();
+      scene.render(); // direct (not coalesced): this rAF loop IS the frame source while animating
       northAnim = t < 1 ? requestAnimationFrame(step) : null;
     };
     northAnim = requestAnimationFrame(step);
@@ -659,10 +360,9 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     lastParamsKey = paramsKey;
-    // Generation dials + features → worker as a params snapshot (no seed change). snapshotParams()
-    // reads the dials applyTuning just wrote, plus the live FEATURES.
-    pool.configure({ params: snapshotParams() });
-    rebuildGpuFieldInputs(); // dials changed → rebuild the GPU patch field inputs (plate set, params)
+    // Generation dials + features → worker AND the renderer's GPU field, from one snapshot
+    // (no seed change). snapshotParams() reads the dials applyTuning just wrote, plus FEATURES.
+    configureGeneration(appState.mapName);
     pipeline.reset();
     ensureMap();
   }

@@ -19,6 +19,14 @@ export const RIDGE_SHARPNESS = 3.5;
 // --- ElevationCalculator.ts ---
 // Land base capped this far above the waterline so only the MOUNTAIN wave lifts land into higher bands.
 export const LAND_HAIR = 0.02;
+// River ROUTING height: the continentalness-driven coast→interior rise restored on top of the flat
+// rendered land (so flow has a seaward gradient), and the micro-relief fbm folded in on land (so trunk
+// flow converges dendritically instead of combing parallel). RIVERS.ROUGHNESS scales the micro-relief.
+export const REPORT_INLAND_RISE = 0.07;
+export const RIVER_ROUGH_WAVELENGTH = 0.06;
+export const RIVER_ROUGH_OCTAVES = 5;
+export const RIVER_ROUGH_GAIN = 0.55;
+export const RIVER_ROUGH_LACUNARITY = 2;
 // Continent domain-warp offsets (decorrelate the warp lookups from the base field).
 export const CONTINENT_WARP_OFFSET_X = 5.2;
 export const CONTINENT_WARP_OFFSET_Y = 1.7;
@@ -28,6 +36,17 @@ export const RANGE_ENVELOPE_WAVELENGTH = 0.5;
 export const RANGE_ENVELOPE_OFFSET = 19.7;
 // Decorrelate the moisture noise from the elevation field.
 export const MOISTURE_NOISE_OFFSET = 25;
+
+// --- climate (Köppen) jitter ---
+// Latitude wobble fed into the classifier's precipitation-REGIME windows (the mediterranean /
+// monsoon latitude bands in koppen.ts:precipMode). Temperature and moisture thresholds already
+// meander via their own jitter terms; without this, the raw-latitude window edges draw perfect
+// circles around the globe (the "distinctive green/tan line"). Degrees of drift at full
+// CLIMATE.JITTER, sampled at the same wavelength (JITTER_SCALE) as the other climate mottling.
+export const CLIMATE_LAT_JITTER_DEG = 10;
+export const CLIMATE_LAT_JITTER_OFFSET_X = 47.3;
+export const CLIMATE_LAT_JITTER_OFFSET_Y = 9.1;
+export const CLIMATE_LAT_JITTER_OFFSET_Z = 33.7;
 
 // --- Tectonics.ts ---
 // Ramp width above CONVERGENCE_THRESHOLD to a full-height range (stronger collisions → taller ranges).

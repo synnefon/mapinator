@@ -1,9 +1,10 @@
 import { Quat, Vec3 } from "../common/3DMath";
 import { hexToRgb } from "../common/colorUtils";
 import type { GlobeMap } from "../common/map";
-import { COUNTRIES, LOD, OCEANS, type MapSettings, type TerrainParams } from "../common/settings";
+import { COUNTRIES, LOD, OCEANS, RIVERS, type MapSettings, type TerrainParams } from "../common/settings";
 import { GpuField } from "../mapgen/gpu/GpuField";
-import type { PlateData } from "../mapgen/gpu/plateData";
+import { buildPermTextureData } from "../mapgen/gpu/permTable";
+import { buildPlateData, type PlateData } from "../mapgen/gpu/plateData";
 import { computeCellColors, koppenPaletteRgb, type ChoroplethTint } from "./BiomeColor";
 import { KOPPEN_ZONE_COUNT } from "../common/koppen";
 import { bakeCountryTexture, COUNTRY_TEX_H, COUNTRY_TEX_W, HUES } from "./countryTexture";
@@ -22,7 +23,30 @@ export type PatchCountryTint = { countryOf: Int32Array; colors: Int32Array; hove
  * the WebGL path resolves overlap with the depth buffer instead — see `draw`). */
 type SkipCap = { center: Vec3; cosKeep: number };
 
-/** A renderer that draws a GlobeMap to a canvas. Canvas2D and WebGL both implement it. */
+/** The river-routing fields sampled at a site set (see GpuField.computeRiverField). */
+export type RiverFieldArrays = {
+  elevation: Float32Array;
+  moisture: Float32Array;
+  ice: Float32Array;
+  reportElevation: Float32Array;
+};
+/** The base globe's full field, read back once per base map (see GpuField.computeBaseField). */
+export type BaseFieldArrays = {
+  elevation: Float32Array;
+  moisture: Float32Array;
+  koppenZone: Float32Array;
+  shade: Float32Array;
+  reportElevation: Float32Array;
+};
+
+/**
+ * A renderer that draws a GlobeMap to a canvas. Canvas2D and WebGL both implement it — including
+ * the DETAIL capability, so callers never downcast: `canDetail()` says whether detail patches are
+ * generated MESH-ONLY (GPU samples their field) or with CPU fields (drawn via `draw`), and the
+ * detail methods answer false/null on a renderer without the GPU path (same graceful degradation).
+ * `reconfigure` must be called with the same seed + params snapshot the worker pool gets, whenever
+ * either changes — the renderer owns the derived GPU inputs (perm table, plate set) from there.
+ */
 export interface IGlobeRenderer {
   draw(
     canvas: HTMLCanvasElement,
@@ -36,6 +60,25 @@ export interface IGlobeRenderer {
   /** Horizontal offset of the globe centre as a fraction of canvas width (the globe is nudged
    *  right to clear the menu). Renderer-specific, so a 2D overlay can match the projection. */
   horizontalOffsetFraction(): number;
+  /** Whether the GPU detail-patch path is usable here (decided once, stable for the session). */
+  canDetail(): boolean;
+  /** (Re)supply the generation inputs the detail path samples with (seed + resolved params —
+   *  the SAME snapshot the worker pool is configured with, so the two can't desync). */
+  reconfigure(seed: string, params: TerrainParams): void;
+  /** Draw a mesh-only detail patch by computing + sampling its field on the GPU. False when the
+   *  detail path is unavailable — the caller SKIPS the patch (mesh-only ⇒ no CPU fields to draw). */
+  drawDetail(
+    canvas: HTMLCanvasElement,
+    map: GlobeMap,
+    settings: MapSettings,
+    orientation: Quat,
+    patchCountry?: PatchCountryTint
+  ): boolean;
+  /** Sample the river-routing field at `sites`; null when unavailable (⇒ no rivers drawn). */
+  riverField(canvas: HTMLCanvasElement, sites: Float32Array): RiverFieldArrays | null;
+  /** The base globe's full field, GPU-computed + read back (once per base map); null when
+   *  unavailable (the worker's CPU fields stand). */
+  baseField(canvas: HTMLCanvasElement, sites: Float32Array): BaseFieldArrays | null;
 }
 
 // Limb-darkening floor; matches GlobeRenderer.AMBIENT (lower = sharper terminator).
@@ -305,6 +348,12 @@ const PATCH_GEOM_CACHE_CAP = 4;
  */
 export class WebGLGlobeRenderer implements IGlobeRenderer {
   private states = new WeakMap<HTMLCanvasElement, GLState>();
+  // The generation inputs the GPU field samples with (per-seed perm table + plate set + the params
+  // snapshot). Owned here — set via reconfigure — so callers never carry renderer-private state.
+  // Replaced WHOLESALE each reconfigure: drawDetail's field-texture cache keys on this object's
+  // identity, so a new inputs object is exactly what invalidates it.
+  private inputs: GpuFieldInputs | null = null;
+  private detailProbe: boolean | null = null; // canRenderGpuPatches(), probed once on first ask
 
   /**
    * Whether WebGL2 is usable here. Probes a *throwaway* canvas and actually compiles
@@ -345,6 +394,45 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
     return LOD.GLOBE_OFFSET_FRACTION;
   }
 
+  /** GPU detail-patch path availability — the float-RT probe, run once and cached. */
+  public canDetail(): boolean {
+    return (this.detailProbe ??= WebGLGlobeRenderer.canRenderGpuPatches());
+  }
+
+  /** Rebuild the per-seed GPU field inputs (perm table + plate set + the params snapshot). Call
+   *  with the SAME seed + params the worker pool is configured with. No-op without the GPU path. */
+  public reconfigure(seed: string, params: TerrainParams): void {
+    if (!this.canDetail()) return;
+    this.inputs = {
+      params,
+      perm: buildPermTextureData(seed),
+      plate: buildPlateData(seed, params),
+    };
+  }
+
+  /** Interface adapter over drawPatchGpu, using the owned inputs. False (patch skipped) until
+   *  reconfigure has run or when the GPU path can't render this patch. */
+  public drawDetail(
+    canvas: HTMLCanvasElement,
+    map: GlobeMap,
+    settings: MapSettings,
+    orientation: Quat,
+    patchCountry?: PatchCountryTint
+  ): boolean {
+    if (!this.inputs) return false;
+    return this.drawPatchGpu(canvas, map, this.inputs, settings, orientation, patchCountry);
+  }
+
+  /** Interface adapter over computeRiverField, using the owned inputs. */
+  public riverField(canvas: HTMLCanvasElement, sites: Float32Array): RiverFieldArrays | null {
+    return this.inputs ? this.computeRiverField(canvas, sites, this.inputs) : null;
+  }
+
+  /** Interface adapter over computeBaseField, using the owned inputs. */
+  public baseField(canvas: HTMLCanvasElement, sites: Float32Array): BaseFieldArrays | null {
+    return this.inputs ? this.computeBaseField(canvas, sites, this.inputs) : null;
+  }
+
   /**
    * Sample the river routing field on the GPU (elevation + moisture + reportElevation) for an arbitrary
    * set of cell `sites`, with one readback. The rivers feature routes flow on a dedicated fine mesh; this
@@ -352,15 +440,18 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
    * unavailable here or the mesh exceeds one render strip. Owns a GpuField separate from the patch one,
    * so the per-frame patch texture is never disturbed.
    */
-  public computeRiverField(
+  private computeRiverField(
     canvas: HTMLCanvasElement,
     sites: Float32Array,
     inputs: GpuFieldInputs
-  ): { elevation: Float32Array; moisture: Float32Array; ice: Float32Array; reportElevation: Float32Array } | null {
+  ): RiverFieldArrays | null {
     const st = this.getState(canvas);
     if (st.riverField === undefined) st.riverField = GpuField.create(st.gl);
     if (!st.riverField || !st.riverField.fits(sites.length / 3)) return null;
-    return st.riverField.computeRiverField(sites, inputs.params, inputs.perm, inputs.plate);
+    // RIVERS.ROUGHNESS is a render-live dial (not in TerrainParams); read it HERE, at the
+    // orchestration layer, so GpuField stays a pure function of its arguments. The routed-network
+    // cache (mapDerivations riverSignature) keys on this dial, so invalidation is already covered.
+    return st.riverField.computeRiverField(sites, inputs.params, inputs.perm, inputs.plate, RIVERS.ROUGHNESS.value);
   }
 
   /**
@@ -369,15 +460,15 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
    * the renderer draws, instead of a separate CPU noise pass. One-time per base map. Reuses the readback
    * field (shared with rivers; the per-frame patch texture is untouched). Null if the GPU path can't run.
    */
-  public computeBaseField(
+  private computeBaseField(
     canvas: HTMLCanvasElement,
     sites: Float32Array,
     inputs: GpuFieldInputs
-  ): { elevation: Float32Array; moisture: Float32Array; koppenZone: Float32Array; shade: Float32Array; reportElevation: Float32Array } | null {
+  ): BaseFieldArrays | null {
     const st = this.getState(canvas);
     if (st.riverField === undefined) st.riverField = GpuField.create(st.gl);
     if (!st.riverField || !st.riverField.fits(sites.length / 3)) return null;
-    return st.riverField.computeBaseField(sites, inputs.params, inputs.perm, inputs.plate);
+    return st.riverField.computeBaseField(sites, inputs.params, inputs.perm, inputs.plate, RIVERS.ROUGHNESS.value);
   }
 
 
@@ -527,7 +618,7 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
    * Returns false if the GPU field path is unavailable here (no WebGL2 float RT), so the caller falls
    * back to the normal CPU `draw`. Drawn as an overlay (no clear, biased toward the camera).
    */
-  public drawPatchGpu(
+  private drawPatchGpu(
     canvas: HTMLCanvasElement,
     map: GlobeMap,
     inputs: GpuFieldInputs,

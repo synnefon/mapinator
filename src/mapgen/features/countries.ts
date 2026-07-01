@@ -3,7 +3,7 @@ import type { Vec3 } from "../../common/3DMath";
 import { Languages, type Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
-import { COUNTRIES } from "../../common/settings";
+import { COUNTRIES, POPULATION } from "../../common/settings";
 import { refineSphereCurve } from "../../common/sphereCurve";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency, coastDistance, vertexKey } from "./adjacency";
@@ -271,7 +271,10 @@ export function assignCountries(
         },
         seaLevel
       );
-      effectiveAreaKm2 += areaPerCellKm2 * suitability * coastBonus(coastDist[cell]);
+      effectiveAreaKm2 +=
+        areaPerCellKm2 *
+        suitability *
+        coastBonus(coastDist[cell], POPULATION.COAST_STRENGTH.value, POPULATION.COAST_FALLOFF.value);
     }
     const population = estimatePopulation({ effectiveAreaKm2, government, jitter: polityRng() });
 
@@ -431,48 +434,8 @@ export function largestBorderingCountry(
 }
 
 /**
- * Country border segments: the shared cell-polygon edges between two LAND cells of different
- * countries (coast edges touch ocean — country-less — so they're excluded). Returned as flat
- * [x0,y0,z0, x1,y1,z1, …] unit-sphere pairs for the overlay to project + stroke.
- */
-export function countryBorderSegments(map: GlobeMap, countryOf: Int32Array): Float32Array {
-  const { cellCount, ringOffsets, ringVerts } = map;
-  const edges = new Map<string, { p: number[]; cells: number[] }>();
-
-  for (let i = 0; i < cellCount; i++) {
-    if (countryOf[i] < 0) continue; // ocean cell — no country borders touch it
-    const start = ringOffsets[i];
-    const k = ringOffsets[i + 1] - start;
-    for (let j = 0; j < k; j++) {
-      const a = start + j;
-      const b = start + ((j + 1) % k); // closed ring, wraps to the first vertex
-      const ax = ringVerts[3 * a];
-      const ay = ringVerts[3 * a + 1];
-      const az = ringVerts[3 * a + 2];
-      const bx = ringVerts[3 * b];
-      const by = ringVerts[3 * b + 1];
-      const bz = ringVerts[3 * b + 2];
-      const ka = vertexKey(ax, ay, az);
-      const kb = vertexKey(bx, by, bz);
-      if (ka === kb) continue; // degenerate (a closed ring repeating its first vertex)
-      const ekey = ka < kb ? `${ka}~${kb}` : `${kb}~${ka}`;
-      const e = edges.get(ekey);
-      if (e) e.cells.push(i);
-      else edges.set(ekey, { p: [ax, ay, az, bx, by, bz], cells: [i] });
-    }
-  }
-
-  const out: number[] = [];
-  for (const e of edges.values()) {
-    if (e.cells.length !== 2) continue; // coastline (1 land cell) or non-manifold — not a border
-    if (countryOf[e.cells[0]] !== countryOf[e.cells[1]]) out.push(...e.p);
-  }
-  return new Float32Array(out);
-}
-
-/**
- * Country borders as REFINED sphere polylines: the coarse inter-country edges (same set as
- * countryBorderSegments) chained into arcs between junctions, then fractally subdivided via the shared
+ * Country borders as REFINED sphere polylines: the coarse inter-country edges (cell-polygon edges
+ * shared by two LAND cells of different countries) chained into arcs between junctions, then fractally subdivided via the shared
  * refineSphereCurve primitive — so a border gains organic, self-similar detail that resolves on ZOOM
  * with NO per-patch recompute (the vector-overlay pattern, like rivers). Computed ONCE per map.
  * Returns flat [x0,y0,z0, x1,y1,z1, …] unit-sphere segment pairs for the overlay to project + stroke.

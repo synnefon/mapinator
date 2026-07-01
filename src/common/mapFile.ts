@@ -1,7 +1,7 @@
 import type { MapState } from "../AppState";
 import { Quat } from "./3DMath";
 import { Languages, type Language } from "./language";
-import { MAP_DEFAULTS, type MapSettings, type TuningOverrides } from "./settings";
+import { FEATURE_DEFAULTS, MAP_DEFAULTS, type Features, type MapSettings, type TuningOverrides } from "./settings";
 
 const isLanguage = (v: unknown): v is Language =>
   typeof v === "string" && (Languages as readonly string[]).includes(v);
@@ -27,13 +27,29 @@ function parseOrientation(v: unknown): Quat {
 /**
  * Serialize a map state to a .mapination JSON string. The THEME is deliberately NOT written when
  * it's the default, so a saved map doesn't force the default theme on the loader (parseSave refills
- * it on load). Layer toggles aren't part of the saved state — they're transient view switches, not
- * map design, so a loaded map keeps whatever features are currently on.
+ * it on load). Layer toggles ARE part of the saved state — the view flags ride in `settings` and the
+ * generation feature switches in `features` — so a loaded map looks like the one that was saved.
  */
 export function serializeSave(state: MapState): string {
   const settings: Partial<MapSettings> = { ...state.settings };
   if (settings.theme === MAP_DEFAULTS.theme) delete settings.theme;
   return JSON.stringify({ ...state, settings }, null, 2);
+}
+
+/** The saved feature switches, if the file carries a valid set: known keys with boolean values
+ *  only (a hand-edited file can't inject junk). Undefined for pre-feature saves — the loader
+ *  then keeps whatever switches are currently on (the old behaviour). */
+function parseFeatures(v: unknown): Features | undefined {
+  if (!isRecord(v)) return undefined;
+  const out = { ...FEATURE_DEFAULTS };
+  let any = false;
+  for (const key of Object.keys(FEATURE_DEFAULTS) as (keyof Features)[]) {
+    if (typeof v[key] === "boolean") {
+      out[key] = v[key];
+      any = true;
+    }
+  }
+  return any ? out : undefined;
 }
 
 /**
@@ -67,7 +83,8 @@ export function parseSave(text: string): MapState | null {
     settings: { ...MAP_DEFAULTS, ...rawSettings } as MapSettings,
     tuning: isRecord(raw.tuning) ? (raw.tuning as TuningOverrides) : {},
     orientation: parseOrientation(raw.orientation),
-    language: isLanguage(raw.language) ? raw.language : undefined, // omitted by pre-feature saves
+    language: isLanguage(raw.language) ? raw.language : undefined, // omitted by pre-language saves
+    features: parseFeatures(raw.features), // omitted by pre-feature-switch saves
   };
 }
 

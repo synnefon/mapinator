@@ -1,6 +1,6 @@
 import { Vec3 } from "../../common/3DMath";
 import { makeRNG, type RNG } from "../../common/random";
-import { cellSuitability } from "./suitability";
+import { cellSuitability, coastBonus } from "./suitability";
 
 // ===================== The one settlement engine =====================
 // EVERY settlement on the map — the capital, the big cities on the globe, and the small towns revealed on
@@ -69,14 +69,6 @@ export function habitabilityWeight(
   const iceFactor = 1 - iceAversion * ice;
   return Math.max(HABITABILITY_FLOOR, desertFactor * iceFactor);
 }
-
-// The coast/river population multiplier from BFS hops to the nearest water (0 = on the shore). Pre-modern
-// trade + fishing clustered people on the water; the bonus fades exponentially inland. A drawn river counts
-// as hops 0 (you're ON the water), so riverbanks get the full bonus too. Mirrors suitability.ts:coastBonus
-// but takes its dials explicitly, so the worker (whose settings copy is stale) uses the SAME live values the
-// main thread does — no head/tail divergence in how strongly water pulls settlements.
-const coastBonus = (hops: number, strength: number, falloff: number): number =>
-  hops < 0 ? 1 : 1 + strength * Math.exp(-hops / falloff);
 
 // ===================== Drawn-river lookup: a spatial hash of the rendered network's vertices =====================
 // Settlements are placed ON + snap to the rivers the renderer actually draws, so a river settlement visibly

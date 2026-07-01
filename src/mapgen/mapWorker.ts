@@ -1,10 +1,14 @@
 import type { Vec3 } from "../common/3DMath";
-import type { CountrySeeds } from "../common/map";
+import type { Language } from "../common/language";
+import type { CountrySeeds, GlobeMap } from "../common/map";
 import type { TerrainParams } from "../common/settings";
+import { computeMapFeatures } from "./features";
 import { patchCountryOf } from "./features/countries";
 import { buildKdTree, type KdNode } from "./features/kdTree";
+import type { RiverData } from "./features/rivers";
 import { buildCpuCalc } from "./gpu/cpuField";
 import { MapGenerator } from "./MapGenerator";
+import { NameGenerator } from "./NameGenerator";
 
 // Requests from the main thread. `config` carries the seed and/or the resolved generation params
 // (TerrainParams) and/or the base country seeds; it must precede the first generate (postMessage
@@ -34,7 +38,24 @@ export type GenerateRequest = {
   withCountry?: boolean; // stamp per-cell country from the grown base partition (detail caps, layer on)
 };
 
-type WorkerRequest = ConfigRequest | GenerateRequest;
+/** Derive the feature set (countries / cities / labels / borders) for a base globe — the ~600ms
+ *  computeMapFeatures pass, off the main thread so a sea-level / language / dial change never
+ *  janks a frame. The map's arrays arrive structured-CLONED (never transferred — the main thread
+ *  is still rendering that map); the result's fresh arrays transfer back zero-copy. Self-contained:
+ *  everything the derivation reads rides in the request, none of the worker's configured state. */
+export type FeaturesRequest = {
+  id: number;
+  kind: "features";
+  map: GlobeMap;
+  seaLevel: number;
+  language: Language;
+  mapSeed: string;
+  languagePool: Language[];
+  params: TerrainParams;
+  rivers: RiverData;
+};
+
+type WorkerRequest = ConfigRequest | GenerateRequest | FeaturesRequest;
 
 // `self` is typed as Window under the DOM lib; cast to Worker for the dedicated-
 // worker postMessage(message, transfer) overload used for the zero-copy hand-off.
@@ -76,6 +97,23 @@ ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
   const req = e.data;
   if (req.kind === "config") {
     handleConfigRequest(req);
+    return;
+  }
+  if (req.kind === "features") {
+    // A fresh namer per job: every feature-path name is drawn from an EXPLICIT seed (generate() is
+    // pure in (seed, lang)) and computeMapFeatures resets the uniqueness namespace itself, so this
+    // reproduces the main thread's old long-lived NameGenerator("features") byte for byte.
+    const namer = new NameGenerator("features");
+    const features = computeMapFeatures(
+      req.map, req.seaLevel, req.language, req.mapSeed, namer, req.languagePool, req.params, req.rivers
+    );
+    // The result's typed arrays are freshly built — transfer them back zero-copy.
+    ctx.postMessage({ id: req.id, features }, [
+      features.borders.buffer,
+      features.countryOf.buffer,
+      features.grownCountryOf.buffer,
+      features.countryColors.buffer,
+    ]);
     return;
   }
   if (!gen) return; // a generate arrived before any config — shouldn't happen

@@ -66,6 +66,23 @@ export class GlobeRenderer {
     return 0;
   }
 
+  // The GPU detail-patch capability (IGlobeRenderer): unavailable on Canvas2D. Detail rungs are
+  // generated WITH CPU fields and drawn via `draw`; rivers + GPU-canonical base fields degrade
+  // gracefully (no rivers; the worker's CPU fields stand) — exactly the pre-seam behaviour.
+  public canDetail(): boolean {
+    return false;
+  }
+  public reconfigure(): void {}
+  public drawDetail(): boolean {
+    return false;
+  }
+  public riverField(): null {
+    return null;
+  }
+  public baseField(): null {
+    return null;
+  }
+
   public draw(
     canvas: HTMLCanvasElement,
     map: GlobeMap,

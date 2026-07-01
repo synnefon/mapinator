@@ -1,15 +1,31 @@
+import type { Language } from "../common/language";
 import type { CountrySeeds, GlobeMap } from "../common/map";
 import type { TerrainParams } from "../common/settings";
+import type { MapFeatures } from "./features";
+import type { RiverData } from "./features/rivers";
 import type { GenRequest } from "../renderer/LodPipeline";
 
 // A config message broadcast to every worker (seed and/or resolved generation params and/or the base
 // country seeds the per-cell country stamp reads).
 type PoolConfig = { seed?: string; params?: TerrainParams; countrySeeds?: CountrySeeds };
 
-// One job posted to a worker — a rung generate (carries a `kind`).
-type PoolJob = GenRequest;
-// Worker reply: a generate yields `map` (with per-cell country stamped on detail caps).
-type WorkerResponse = { id: number; map?: GlobeMap };
+/** A feature-derivation job (mapWorker FeaturesRequest minus the id): self-contained, so it can run
+ *  on ANY worker regardless of that worker's configured seed/params. */
+export type FeaturesJob = {
+  kind: "features";
+  map: GlobeMap;
+  seaLevel: number;
+  language: Language;
+  mapSeed: string;
+  languagePool: Language[];
+  params: TerrainParams;
+  rivers: RiverData;
+};
+
+// One job posted to a worker — a rung generate or a feature derivation (each carries a `kind`).
+type PoolJob = GenRequest | FeaturesJob;
+// Worker reply: a generate yields `map`; a features job yields `features`.
+type WorkerResponse = { id: number; map?: GlobeMap; features?: MapFeatures };
 
 // Per-worker peak memory while a fine-cap generate is in flight (its transient cap mesh + output
 // typed arrays) plus that worker's small mesh cache — rough, used only to size the pool. Each extra
@@ -72,6 +88,19 @@ export class WorkerPool {
       const id = ++this.nextId;
       this.pending.set(id, (res) => resolve(res.map!));
       this.waiting.push({ id, msg: req });
+      this.dispatch();
+    });
+  }
+
+  /** Derive a base globe's feature set (countries / cities / labels) on the next free worker — the
+   *  heavy computeMapFeatures pass, off the main thread. The map's arrays are structured-cloned to
+   *  the worker (NOT transferred — the main thread keeps rendering them); the result comes back
+   *  with its fresh arrays transferred zero-copy. */
+  computeFeatures(req: Omit<FeaturesJob, "kind">): Promise<MapFeatures> {
+    return new Promise((resolve) => {
+      const id = ++this.nextId;
+      this.pending.set(id, (res) => resolve(res.features!));
+      this.waiting.push({ id, msg: { kind: "features", ...req } });
       this.dispatch();
     });
   }

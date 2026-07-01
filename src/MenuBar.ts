@@ -7,8 +7,6 @@ import {
   serializeSave,
 } from "./common/mapFile";
 import {
-  FEATURE_DEFAULTS,
-  FEATURES,
   MAP_DEFAULTS,
   TUNING_PATHS,
   tuningDefault,
@@ -181,7 +179,7 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     fadeOut(resetSlidersBtn);
     sliderDefs.forEach((d) => appState.setSetting(d.key, MAP_DEFAULTS[d.key])); // subscriber syncs labels
     appState.resetTuning(); // clear advanced overrides too
-    Object.assign(FEATURES, FEATURE_DEFAULTS); // turn all layers back on
+    appState.resetFeatures(); // turn all layers back on
     advanced.refresh(); // sync the advanced sliders + layer toggles back to their defaults
     applyAdvancedTuning(); // re-apply (now-default) dials + features everywhere + regenerate
   });
@@ -213,14 +211,15 @@ export function setupMenuBar(deps: MenuBarDeps): MenuBarHandles {
     );
   };
 
-  // Apply a loaded save: loadSavedMap restores the snapshot (settings + tuning + orientation +
-  // seed) and regenerates; we only sync the theme radios here, since they're not driven by the
-  // store's subscriber.
+  // Apply a loaded save: loadSavedMap restores the snapshot (settings + tuning + features +
+  // orientation + seed) and regenerates; we sync the theme radios and the advanced panel here,
+  // since neither is driven by the store's subscriber.
   const applySave = (save: MapState) => {
     loadSavedMap(save);
     ui.themeRadios.forEach(
       (radio) => (radio.checked = radio.value === save.settings.theme)
     );
+    advanced.refresh(); // sliders + layer toggles re-read the restored state
   };
 
   const handleUpload = async () => {

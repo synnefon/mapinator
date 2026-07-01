@@ -1,5 +1,5 @@
 import type { GlobeMap } from "../../common/map";
-import { waterHopDistance } from "./adjacency";
+import { largeWaterMask, waterHopDistance } from "./adjacency";
 import type { RawComponent } from "./detect";
 
 // A real continent-interior rise added to reportElevation: 0 at the sea, climbing and SATURATING with
@@ -11,7 +11,6 @@ import type { RawComponent } from "./detect";
 // is exactly 0 at the true shore. Display / stats / population only; never rendering or land/water.
 const MAX_INLAND_RISE = 0.035; // normalised elevation; ≈ a ~600 m interior plateau above the coast
 const RISE_SCALE_HOPS = 6; // e-folding distance: ~63% of the rise by this many hops inland, ~95% by 3×
-const LARGE_WATER_FRAC = 0.01; // "the sea" = the biggest water body OR any ≥ this fraction (matches cities.ts)
 
 /**
  * The continental inland rise as a STANDALONE display-elevation field: a fresh copy of
@@ -33,17 +32,10 @@ export function inlandRisenElevation(
 ): Float32Array {
   const risen = new Float32Array(map.reportElevation); // copy — never mutate the generator's field
 
-  // "The sea": the largest water body, plus any other big enough to read as a sea rather than a pond.
-  const water = components.filter((c) => c.cls === "water");
-  if (water.length === 0) return risen; // a waterless world — no coast to rise from
-  const largest = water.reduce((a, b) => (b.cells.length > a.cells.length ? b : a));
-  const threshold = LARGE_WATER_FRAC * map.cellCount;
-  const isSea = new Uint8Array(map.cellCount);
-  for (const comp of water) {
-    if (comp === largest || comp.cells.length >= threshold) {
-      for (const cell of comp.cells) isSea[cell] = 1;
-    }
-  }
+  if (!components.some((c) => c.cls === "water")) return risen; // a waterless world — no coast to rise from
+  // "The sea": the largest water body, plus any other big enough to read as a sea rather than a pond —
+  // the one definition, shared with the settlement water fields (adjacency.ts:largeWaterMask).
+  const isSea = largeWaterMask(components, map.cellCount);
 
   // Graph hops from each land cell to the nearest sea cell: 0 on the shore, -1 if the sea is unreachable.
   const seaDist = waterHopDistance(map, seaLevel, adjacency, (i) => isSea[i] === 1);

@@ -9,8 +9,8 @@ import {
   type MapSettings,
   type TuningOverrides,
 } from "./common/settings";
+import { capSpecForZoom as capSpecForCanvasZoom } from "./renderer/capSpec";
 import { GlobeController } from "./renderer/GlobeController";
-import { globeRadiusPx } from "./renderer/GlobeRenderer";
 import { MapGenerator } from "./mapgen/MapGenerator";
 import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
 
@@ -101,17 +101,8 @@ for (const c of [canvasA, canvasB]) {
   c.height = CANVAS_PX;
 }
 
-/** Cap mesh spec for a zoom level: null below CAP_ONSET (no cap), else a half-angle that covers the
- *  visible cap and a point count whose level (7→11) rises with zoom. */
-function capSpecForZoom(zoom: number): { halfAngle: number; points: number } | null {
-  if (zoom < CAP_ONSET) return null;
-  const t = Math.min(1, (zoom - CAP_ONSET) / (1 - CAP_ONSET));
-  const level = Math.round(lerp(7, 11, t));
-  const points = 10 * 4 ** level + 2; // generateLocalMap re-derives the level from this
-  const r = globeRadiusPx(canvasA, zoom);
-  const visible = Math.asin(Math.min(1, (canvasA.width * 0.5 * Math.SQRT2) / r));
-  return { halfAngle: Math.min(Math.PI / 2, (visible / 0.85) * 1.1), points };
-}
+// Cap mesh spec for a zoom (shared with /sweep — renderer/capSpec.ts): null below CAP_ONSET.
+const capSpecForZoom = (zoom: number) => capSpecForCanvasZoom(canvasA, zoom, CAP_ONSET);
 
 // ── shared view (both globes track the same orientation + zoom) ──
 let viewOrientation = GLOBE_VIEW;

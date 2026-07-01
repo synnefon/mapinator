@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Vec3 } from "../../common/3DMath";
 import { OCEANS, RIVERS, snapshotParams } from "../../common/settings";
-import { buildCpuCalc } from "../gpu/cpuField";
+import { buildCpuCalc, cpuRiverField } from "../gpu/cpuField";
 import { clipLinesToCoast, computeRivers, type Line, type RiverData, type RiverFieldSampler } from "./rivers";
 
 // === Rivers end ON the coast — not short of it, not past it ===
@@ -15,26 +15,14 @@ const PARAMS = snapshotParams();
 const seaLevel = OCEANS.SEA_LEVEL.value;
 const SEEDS = ["coast-a", "coast-b", "coast-c"];
 
-/** A CPU river-field sampler (the GPU path's twin) plus the bare elevation lookup, so a test can re-sample
- *  the routed network against the exact field it was built from. */
+/** The CPU river-field sampler (cpuRiverField — the GPU sampler's true twin: inland rise + the
+ *  ROUGHNESS micro-relief) plus the bare elevation lookup, so a test can re-sample the routed
+ *  network against the exact field it was built from — and routes on the same height SHAPE the
+ *  shipped GPU sampler produces, not a smoother stand-in. */
 function sampler(seed: string): { sample: RiverFieldSampler; elevationAt: (p: Vec3) => number } {
-  const { calc } = buildCpuCalc(seed, PARAMS);
-  const elevationAt = (p: Vec3): number => calc.sampleCell(p).elevation;
-  const sample: RiverFieldSampler = (sites) => {
-    const m = sites.length / 3;
-    const elevation = new Float32Array(m);
-    const reportElevation = new Float32Array(m);
-    const moisture = new Float32Array(m);
-    const ice = new Float32Array(m);
-    for (let i = 0; i < m; i++) {
-      const c = calc.sampleCell({ x: sites[3 * i], y: sites[3 * i + 1], z: sites[3 * i + 2] });
-      elevation[i] = c.elevation;
-      reportElevation[i] = c.reportElevation;
-      moisture[i] = c.moisture;
-      ice[i] = c.ice;
-    }
-    return { elevation, reportElevation, moisture, ice };
-  };
+  const cpu = buildCpuCalc(seed, PARAMS);
+  const elevationAt = (p: Vec3): number => cpu.calc.sampleCell(p).elevation;
+  const sample: RiverFieldSampler = (sites) => cpuRiverField(cpu, sites, RIVERS.ROUGHNESS.value);
   return { sample, elevationAt };
 }
 
@@ -123,4 +111,48 @@ describe("rivers stop at the coast (full routing)", () => {
     // A refined mouth can only wiggle by amplitude × its (sub-cell) chord, so any poke stays small.
     expect(maxBelow).toBeLessThan(0.05);
   }, 60_000);
+});
+
+describe("cpuRiverField — the GPU routing sampler's twin", () => {
+  // A small fixed site set spanning both hemispheres (deterministic, no mesh needed).
+  const SITES = (() => {
+    const pts: number[] = [];
+    for (let i = 0; i < 64; i++) {
+      const t = i / 64;
+      const v = Vec3.normalize({ x: Math.cos(9 * t), y: 2 * t - 1, z: Math.sin(7 * t) });
+      pts.push(v.x, v.y, v.z);
+    }
+    return new Float32Array(pts);
+  })();
+
+  it("ROUGHNESS roughens the routing height on LAND only; ocean stays a clean sink", () => {
+    const cpu = buildCpuCalc(SEEDS[0], PARAMS);
+    const flat = cpuRiverField(cpu, SITES, 0);
+    const rough = cpuRiverField(cpu, SITES, 0.5);
+    // The other channels are roughness-independent.
+    expect(Array.from(rough.elevation)).toStrictEqual(Array.from(flat.elevation));
+    expect(Array.from(rough.moisture)).toStrictEqual(Array.from(flat.moisture));
+    expect(Array.from(rough.ice)).toStrictEqual(Array.from(flat.ice));
+    let landChanged = 0;
+    for (let i = 0; i < 64; i++) {
+      if (flat.elevation[i] < seaLevel) {
+        expect(rough.reportElevation[i]).toBe(flat.reportElevation[i]); // ocean: untouched sink
+        expect(rough.reportElevation[i]).toBe(flat.elevation[i]); // ...and it IS the depth
+      } else if (rough.reportElevation[i] !== flat.reportElevation[i]) {
+        landChanged++;
+      }
+    }
+    expect(landChanged).toBeGreaterThan(0); // the dial actually reshapes land routing heights
+  });
+
+  it("land routing height carries the coast→interior rise above the flat rendered land", () => {
+    const cpu = buildCpuCalc(SEEDS[0], PARAMS);
+    const { elevation, reportElevation } = cpuRiverField(cpu, SITES, 0);
+    for (let i = 0; i < 64; i++) {
+      if (elevation[i] >= seaLevel) {
+        // land never routes below the sink (float32 storage rounds the exact waterline a hair down)
+        expect(reportElevation[i]).toBeGreaterThanOrEqual(seaLevel - 1e-6);
+      }
+    }
+  });
 });

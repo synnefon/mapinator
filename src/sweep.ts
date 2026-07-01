@@ -7,7 +7,7 @@ import {
   type TuningOverrides,
 } from "./common/settings";
 import { MapGenerator } from "./mapgen/MapGenerator";
-import { globeRadiusPx } from "./renderer/GlobeRenderer";
+import { capSpecForZoom } from "./renderer/capSpec";
 import { createGlobeRenderer } from "./renderer/WebGLGlobeRenderer";
 
 /* ─── Tectonic mountain sweep (served at /sweep, dev only) ──────────────────────
@@ -68,16 +68,8 @@ const glCanvas = Object.assign(document.createElement("canvas"), {
 const gen = new MapGenerator(randomSeed(), snapshotParams());
 
 // Cap spec for the fixed zoom: the dense patch's half-angle (cover the visible disk) + point
-// count (its level). Mirrors the /tune wizard's capSpecForZoom.
-function capSpec(): { halfAngle: number; points: number } {
-  const t = Math.min(1, (ZOOM - 0.3) / 0.7);
-  const level = Math.round(7 + 4 * t); // 7..11
-  const points = 10 * 4 ** level + 2; // generateLocalMap re-derives the level from this
-  const r = globeRadiusPx(glCanvas, ZOOM);
-  const visible = Math.asin(Math.min(1, (TILE_PX * 0.5 * Math.SQRT2) / r));
-  return { halfAngle: Math.min(Math.PI / 2, (visible / 0.85) * 1.1), points };
-}
-const CAP = capSpec();
+// count (its level). The one definition shared with the /tune wizard (renderer/capSpec.ts).
+const CAP = capSpecForZoom(glCanvas, ZOOM, 0.3)!; // ZOOM is above onset, so a cap always exists
 
 type Tile = { canvas: HTMLCanvasElement; row: number; col: number };
 let tiles: Tile[] = [];

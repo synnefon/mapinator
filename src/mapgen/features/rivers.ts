@@ -1,6 +1,7 @@
 import { Quat, Vec3 } from "../../common/3DMath";
 import type { Language } from "../../common/language";
 import { makeRNG, randomChoice } from "../../common/random";
+import type { RIVERS } from "../../common/settings"; // type-only: ROUTING_DIAL_KEYS names its keys
 import { refineSphereCurve } from "../../common/sphereCurve";
 import { goldbergMesh } from "../Goldberg";
 import type { NameGenerator } from "../NameGenerator";
@@ -62,6 +63,22 @@ export type RiverOptions = {
   mapSeed?: string; // seed for deterministic river names
   language?: Language; // map language for the river-name stems
 };
+
+/** The RIVERS dials that reshape the ROUTED network (draw-time stroking dials — WIDTH_* /
+ *  ZOOM_REVEAL — are deliberately absent). The routed-network cache signature (mapDerivations)
+ *  derives from THIS list, co-located with RiverOptions so a new routing dial is one edit here —
+ *  not a second, remembered one in the cache key. ROUGHNESS isn't a RiverOptions field (it rides
+ *  the field sampler's routing height), but it reshapes the network all the same. */
+export const ROUTING_DIAL_KEYS = [
+  "MIN_DRAINAGE",
+  "MOISTURE_WEIGHT",
+  "SOURCE_MOISTURE",
+  "WATER_SCALING",
+  "ROUGHNESS",
+  "BRANCHING",
+  "MEANDER",
+  "MEANDER_DETAIL",
+] as const satisfies readonly (keyof typeof RIVERS)[];
 
 /** A river polyline mid-build: sphere points + per-vertex flow strength. */
 export type Line = { pts: Vec3[]; str: number[] };

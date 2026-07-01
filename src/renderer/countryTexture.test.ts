@@ -34,5 +34,6 @@ describe("bakeCountryTexture", () => {
     // The globe splits into both land (alpha 255) and sea (alpha 0).
     expect(land).toBeGreaterThan(0);
     expect(sea).toBeGreaterThan(0);
-  });
+    // Full-globe generation runs ~4.5s alone and tips the 5s default under parallel suite load.
+  }, 60_000);
 });

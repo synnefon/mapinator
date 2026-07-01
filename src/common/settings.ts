@@ -684,11 +684,11 @@ export const DIALS = {
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
-      value: 1.46,
+      value: 2.9,
       doc: "larger = bigger climate zones",
     },
     AMPLITUDE: {
-      value: 0.69,
+      value: 0.72,
       doc: "higher = stronger wet/dry swings",
     },
     CONTRAST: {
@@ -703,22 +703,22 @@ export const DIALS = {
       doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline",
     },
     DESERT_STEEPNESS: {
-      value: 0.54,
+      value: 0.5,
       doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland",
     },
     INTERIOR_DRYNESS: {
-      value: 0.8,
+      value: 0.92,
       min: 0,
       max: 1,
       step: 0.02,
       doc: "how much DEEP CONTINENTAL INTERIORS dry out (the inverse of maritime humidity): the far interior of a large landmass loses moisture, placing the Gobi / Sahara-heart / Great-Basin drylands away from any coast. 0 = off; 1 = interiors go fully arid",
     },
     WATER_SIZE_OCTAVES: {
-      value: 0.78,
+      value: 0.96,
       doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'"
     },
     RAINFALL: {
-      value: 2.05,
+      value: 2.95,
       doc: "higher = wetter",
     },
   },
@@ -997,7 +997,9 @@ export const FEATURE_DEFAULTS: Features = Object.fromEntries(
   LAYERS.filter((l) => l.kind === "feature").map((l) => [l.key, l.defaultOn])
 ) as Features;
 
-/** Live feature switches, read at generation time. Mutated in place; reset via FEATURE_DEFAULTS. */
+/** Live feature switches, read at generation time (snapshotParams copies them into TerrainParams).
+ *  MUTATE ONLY THROUGH AppState (setFeature / resetFeatures / restore) — the store is what carries
+ *  these through snapshot/save/load; a direct write here would bypass it. */
 export const FEATURES: Features = { ...FEATURE_DEFAULTS };
 
 /* ======================================================================

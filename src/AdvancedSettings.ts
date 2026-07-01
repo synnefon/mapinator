@@ -1,7 +1,6 @@
 import type { AppState } from "./AppState";
 import {
   DIAL_DOCS,
-  FEATURES,
   LAYERS,
   layerDefault,
   TUNING_SCHEMA,
@@ -328,12 +327,12 @@ export function setupAdvancedPanel(opts: {
     fields.className = "adv-fields";
 
     const layerIsOn = (layer: Layer): boolean =>
-      layer.kind === "feature" ? FEATURES[layer.key] : (appState.settings[layer.key] ?? false);
+      layer.kind === "feature" ? appState.features[layer.key] : (appState.settings[layer.key] ?? false);
 
-    // Flip a layer. Features mutate the generation switch; views write the render setting. No
-    // re-render here — each call site fires the right follow-up (regen for features, redraw for views).
+    // Flip a layer. Both kinds go through the store (features ride snapshot/restore like settings).
+    // No re-render here — each call site fires the right follow-up (regen for features, redraw for views).
     const applyLayer = (layer: Layer, on: boolean): void => {
-      if (layer.kind === "feature") FEATURES[layer.key] = on;
+      if (layer.kind === "feature") appState.setFeature(layer.key, on);
       else appState.setSetting(layer.key, on);
     };
 

@@ -1,8 +1,11 @@
 import { Quat } from "./common/3DMath";
 import { Languages, type Language } from "./common/language";
 import {
+  FEATURE_DEFAULTS,
+  FEATURES,
   MAP_DEFAULTS,
   NUMERIC_SETTING_KEYS,
+  type Features,
   type MapSettings,
   type TuningOverrides,
 } from "./common/settings";
@@ -11,15 +14,16 @@ export type SettingKey = keyof MapSettings;
 type SettingsListener = (key: SettingKey) => void;
 
 /** Everything needed to reproduce a map: the seed, the map settings, the advanced-tuning
- *  overrides, and the camera orientation. Produced by `snapshot()` and consumed by
- *  `restore()` — the one shape the save file serializes, so new state is captured by adding
- *  a field here rather than threading it through every save/load call site. */
+ *  overrides, the feature switches, and the camera orientation. Produced by `snapshot()` and
+ *  consumed by `restore()` — the one shape the save file serializes, so new state is captured by
+ *  adding a field here rather than threading it through every save/load call site. */
 export type MapState = {
   seed: string;
   settings: MapSettings;
   tuning: TuningOverrides;
   orientation: Quat;
   language?: Language; // the map's title + feature-label language; optional — older saves predate it
+  features?: Features; // generation feature switches (mountains, …); optional — older saves predate it
 };
 
 // === APPLICATION STATE ===
@@ -107,6 +111,34 @@ export class AppState {
     for (const key of changed) for (const fn of this.listeners) fn(key);
   }
 
+  /**
+   * Generation feature switches (mountains, …). The LIVE copy stays settings.ts:FEATURES — the
+   * object snapshotParams() reads — but every MUTATION flows through this store, so the switches
+   * ride along in snapshot/restore like every other piece of map state (a save made with
+   * mountains off reloads with mountains off) instead of silently bypassing it.
+   */
+  get features(): Readonly<Features> {
+    return FEATURES;
+  }
+
+  /** Flip one feature switch. Callers fire the regen (feature switches change terrain). */
+  setFeature<K extends keyof Features>(key: K, on: Features[K]): void {
+    FEATURES[key] = on;
+  }
+
+  /** All feature switches back to their defaults (every layer on). */
+  resetFeatures(): void {
+    Object.assign(FEATURES, FEATURE_DEFAULTS);
+  }
+
+  // Apply a saved feature set: only known keys, only booleans — a hand-edited save file can't
+  // inject junk, and a key it omits keeps its current state.
+  private applyFeatures(saved: Features): void {
+    for (const key of Object.keys(FEATURE_DEFAULTS) as (keyof Features)[]) {
+      if (typeof saved[key] === "boolean") FEATURES[key] = saved[key];
+    }
+  }
+
   /** Set one advanced-tuning override (dotted path → value). */
   setTuning(path: string, value: number): void {
     this._tuning[path] = value;
@@ -130,6 +162,7 @@ export class AppState {
       tuning: { ...this._tuning },
       orientation: { ...this._orientation },
       language: this._language,
+      features: { ...FEATURES },
     };
   }
 
@@ -142,6 +175,7 @@ export class AppState {
     this._tuning = { ...state.tuning };
     this._orientation = { ...state.orientation };
     this._language = state.language ?? this._language; // older saves predate the language field
+    if (state.features) this.applyFeatures(state.features); // older saves predate features → keep current
     this.mapName = state.seed; // setter upper-cases
     this.replaceSettings(state.settings); // notifies changed keys last (sliders + theme resync)
   }
