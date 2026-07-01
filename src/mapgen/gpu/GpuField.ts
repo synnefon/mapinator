@@ -358,14 +358,10 @@ export class GpuField {
     f("uMoistGain", p.MOISTURE.GAIN);
     f("uMoistLacunarity", p.MOISTURE.LACUNARITY);
     f("uMoistContrast", p.MOISTURE.CONTRAST);
+    f("uMoistRainfall", p.MOISTURE.RAINFALL);
     f("uWaterProximityEffect", p.MOISTURE.WATER_PROXIMITY_EFFECT);
     f("uDesertSteepness", p.MOISTURE.DESERT_STEEPNESS);
     f("uWaterSizeOctaves", p.MOISTURE.WATER_SIZE_OCTAVES);
-    // ICE
-    f("uIceCoverage", p.ICE.COVERAGE);
-    f("uIceWobble", p.ICE.WOBBLE);
-    f("uIceFill", p.ICE.FILL);
-    f("uIceBlend", p.ICE.BLEND);
     // CLIMATE — the Köppen classifier's knobs (+ interior dryness, which lives in MOISTURE).
     f("uSeasonality", p.CLIMATE.SEASONALITY);
     f("uContinentalSeasonality", p.CLIMATE.CONTINENTAL_SEASONALITY);
@@ -385,7 +381,6 @@ export class GpuField {
     // features
     f("uMountainsOn", p.features.mountains ? 1 : 0);
     f("uClimateOn", p.features.climate ? 1 : 0);
-    f("uIceOn", p.features.ice ? 1 : 0);
     f("uEmitReport", emitReport ? 1 : 0); // rivers: emit reportElevation in .a instead of shade
     f("uRiverRoughAmp", RIVERS.ROUGHNESS.value); // rivers: routing-height micro-relief (unused unless uEmitReport)
     // samplers + layout

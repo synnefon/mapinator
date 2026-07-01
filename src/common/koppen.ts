@@ -57,7 +57,7 @@ export const KZ = {
   BARE: 35, // bare rock / scree — the grey band below the snowline
 } as const;
 
-export const KOPPEN_ZONE_COUNT = 36;
+export const KOPPEN_ZONE_COUNT = Object.keys(KZ).length;
 
 // ===================== Earth-like palette (hex), aligned to KZ =====================
 // Families read as families: tropical = bright/saturated greens, arid = warm tans→ochres→khaki,
@@ -82,9 +82,11 @@ KOPPEN_COLORS[KZ.BSk] = "#bcb57a"; // cold steppe — khaki
 KOPPEN_COLORS[KZ.Csa] = "#b6a95c"; // hot-summer mediterranean — olive-tan
 KOPPEN_COLORS[KZ.Csb] = "#a3a85a"; // warm-summer mediterranean — olive
 KOPPEN_COLORS[KZ.Csc] = "#95a867"; // cool mediterranean — muted olive-green
+
 KOPPEN_COLORS[KZ.Cwa] = "#5ba146"; // dry-winter humid subtropical — green
 KOPPEN_COLORS[KZ.Cwb] = "#69a953"; // dry-winter subtropical highland
 KOPPEN_COLORS[KZ.Cwc] = "#76a862"; // dry-winter cold highland
+
 KOPPEN_COLORS[KZ.Cfa] = "#46a050"; // humid subtropical — vivid green
 KOPPEN_COLORS[KZ.Cfb] = "#57a95c"; // oceanic — clean mid-green
 KOPPEN_COLORS[KZ.Cfc] = "#6fa46a"; // subpolar oceanic — cooler green
@@ -93,10 +95,44 @@ KOPPEN_COLORS[KZ.Dsa] = "#9a9a50"; // dry-summer continental, hot
 KOPPEN_COLORS[KZ.Dsb] = "#8f9a58";
 KOPPEN_COLORS[KZ.Dsc] = "#7e8e5c";
 KOPPEN_COLORS[KZ.Dsd] = "#74865e"; // very cold
+
 KOPPEN_COLORS[KZ.Dwa] = "#5e9a48"; // dry-winter continental, hot
 KOPPEN_COLORS[KZ.Dwb] = "#4f8c46";
 KOPPEN_COLORS[KZ.Dwc] = "#3c7a4a"; // taiga
 KOPPEN_COLORS[KZ.Dwd] = "#356e48"; // cold taiga
+
+// KOPPEN_COLORS[KZ.Af] = "#0000ff"; // rainforest — deep emerald
+// KOPPEN_COLORS[KZ.Am] = "#0000ff"; // monsoon — rich green
+// KOPPEN_COLORS[KZ.Aw] = "#0000ff"; // savanna (dry winter) — warm yellow-green
+// KOPPEN_COLORS[KZ.As] = "#0000ff"; // savanna (dry summer) — slightly drier
+// // B — arid (tans → ochres → khaki)
+// KOPPEN_COLORS[KZ.BWh] = "#f0c0a0"; // hot desert — warm sand
+// KOPPEN_COLORS[KZ.BWk] = "#f0c0a0"; // cold desert — pale grey-tan
+// KOPPEN_COLORS[KZ.BSh] = "#f0c0a0"; // hot steppe — ochre
+// KOPPEN_COLORS[KZ.BSk] = "#f0c0a0"; // cold steppe — khaki
+// // C — temperate
+// KOPPEN_COLORS[KZ.Csa] = "#00ff00"; // hot-summer mediterranean — olive-tan
+// KOPPEN_COLORS[KZ.Csb] = "#00ff00"; // warm-summer mediterranean — olive
+// KOPPEN_COLORS[KZ.Csc] = "#00ff00"; // cool mediterranean — muted olive-green
+
+// KOPPEN_COLORS[KZ.Cwa] = "#f0ff00"; // dry-winter humid subtropical — green
+// KOPPEN_COLORS[KZ.Cwb] = "#f0ff00"; // dry-winter subtropical highland
+// KOPPEN_COLORS[KZ.Cwc] = "#f0ff00"; // dry-winter cold highland
+
+// KOPPEN_COLORS[KZ.Cfa] = "#00fff0"; // humid subtropical — vivid green
+// KOPPEN_COLORS[KZ.Cfb] = "#00fff0"; // oceanic — clean mid-green
+// KOPPEN_COLORS[KZ.Cfc] = "#00fff0"; // subpolar oceanic — cooler green
+
+// KOPPEN_COLORS[KZ.Dsa] = "#ff00ff"; // dry-summer continental, hot
+// KOPPEN_COLORS[KZ.Dsb] = "#ff00ff";
+// KOPPEN_COLORS[KZ.Dsc] = "#ff00ff";
+// KOPPEN_COLORS[KZ.Dsd] = "#ff00ff"; // very cold
+
+// KOPPEN_COLORS[KZ.Dwa] = "#ff0000"; // dry-winter continental, hot
+// KOPPEN_COLORS[KZ.Dwb] = "#ff0000";
+// KOPPEN_COLORS[KZ.Dwc] = "#ff0000"; // taiga
+// KOPPEN_COLORS[KZ.Dwd] = "#ff0000"; // cold taiga
+
 KOPPEN_COLORS[KZ.Dfa] = "#4c9148"; // hot-summer humid continental
 KOPPEN_COLORS[KZ.Dfb] = "#3f8246"; // warm-summer humid continental
 KOPPEN_COLORS[KZ.Dfc] = "#2f6b4a"; // subarctic taiga — dark blue-green
@@ -121,18 +157,17 @@ export const KOPPEN_RGB: Float32Array = (() => {
 })();
 
 // ===================== Mean annual temperature (°C) =====================
-// Moved here from features/suitability.ts so the temperature model lives with the climate it drives —
-// suitability now imports meanAnnualTempC from this module (single source). Sea-level MAT by |latitude|:
-// ~27 °C at the equator falling to deep polar cold; the 1.4 exponent keeps the tropics broad and steepens
-// the mid-latitudes (≈14 °C at 40°, ≈0 °C at 60°). Elevation cools it via the environmental lapse rate.
+// This is climate-generation, not Köppen definition. Keep the real classification thresholds in KOPPEN.
+// Sea-level MAT by |latitude|: ~27 °C at the equator falling to deep polar cold. Elevation cools via the
+// environmental lapse rate. Callers should pass REPORT elevation for ordinary climate, because rendered
+// elevation deliberately includes cartographic mountain relief/caps.
 export const MAT_EQUATOR_C = 27;
 export const MAT_POLE_C = -25;
 export const LATITUDE_FALLOFF = 1.4;
 const LAPSE_C_PER_M = 0.0065;
 const EVEREST_M = 8849;
 
-/** A cell's mean annual temperature in °C, from its latitude and (lapse-rate-cooled) elevation.
- *  `displayElevation` is the [0,1] height; `seaLevel` is the waterline the caller uses. */
+/** A cell's mean annual temperature in °C, from latitude and lapse-rate-cooled elevation. */
 export function meanAnnualTempC(latDeg: number, displayElevation: number, seaLevel: number): number {
   const a = Math.min(1, Math.abs(latDeg) / 90);
   const sealevelMat = MAT_EQUATOR_C - (MAT_EQUATOR_C - MAT_POLE_C) * a ** LATITUDE_FALLOFF;
@@ -140,9 +175,60 @@ export function meanAnnualTempC(latDeg: number, displayElevation: number, seaLev
   return sealevelMat - LAPSE_C_PER_M * frac * EVEREST_M;
 }
 
-// ===================== Synthesized seasonality =====================
-// The summer↔winter half-amplitude (°C): coasts are mild, deep interiors swing hard, and the swing grows
-// toward the poles (the tropics are nearly seasonless in temperature). Twarm = MAT + amp, Tcold = MAT − amp.
+// ===================== Synthetic Earth-like climate generation =====================
+// These are tunable generator knobs. They are NOT Köppen thresholds.
+const EARTH_CLIMATE = {
+  PRECIP_MAX_MM: 3200,
+  // Below 2.0 on purpose: the moisture field has already been maritime-boosted and interior-dried upstream.
+  // A heavier exponent makes too much mid-latitude land fail B before it can become C/D.
+  PRECIP_MOISTURE_EXPONENT: 1.75,
+  HADLEY_DRY_FLOOR: 0.28,
+  HADLEY_STORM_TRACK_WEIGHT: 0.7,
+  COASTAL_PRECIP_BOOST: 1.08,
+  INTERIOR_PRECIP_FACTOR: 0.9,
+  DRY_SEASON_STRENGTH: 0.58,
+  WET_SEASON_STRENGTH: 0.62,
+  WEAK_SEASONAL_PRECIP_STRENGTH: 0.18,
+  MEDITERRANEAN_LAT_MIN: 28,
+  MEDITERRANEAN_LAT_MAX: 45,
+  MEDITERRANEAN_MOISTURE_MIN: 0.25,
+  MEDITERRANEAN_MOISTURE_MAX: 0.68,
+  MEDITERRANEAN_MAX_CONTINENTALITY: 0.5,
+  MONSOON_LAT_MAX: 28,
+  MONSOON_MOISTURE_MAX: 0.62,
+} as const;
+
+// ===================== Locked Köppen constants =====================
+// These are the classification rules. Avoid tuning these for visual distribution; tune EARTH_CLIMATE instead.
+const KOPPEN = {
+  TROPICAL_COLD_MONTH_MIN_C: 18,
+  POLAR_WARM_MONTH_MAX_C: 6,
+  ICE_CAP_WARM_MONTH_MAX_C: 0,
+  TREE_MONTH_MIN_C: 10,
+  TEMPERATE_COLD_MONTH_MIN_C: 0,
+  ARID_HOT_MEAN_ANNUAL_C: 18,
+  HOT_SUMMER_WARM_MONTH_MIN_C: 22,
+  WARM_MONTHS_FOR_B: 4,
+  EXTREME_COLD_WINTER_C: -38,
+  AF_DRIEST_MONTH_MIN_MM: 60,
+  AM_DRIEST_MONTH_BASE_MM: 100,
+  AM_DRIEST_MONTH_ANNUAL_DIVISOR: 25,
+  DRY_SUMMER_MAX_DRIEST_SUMMER_MM: 40,
+  DRY_SUMMER_WINTER_RATIO: 1,
+  DRY_WINTER_SUMMER_RATIO: 1.12,
+  ARID_SUMMER_DRY_OFFSET_MM: 0,
+  ARID_EVEN_OFFSET_MM: 140,
+  ARID_WINTER_DRY_OFFSET_MM: 280,
+} as const;
+
+// ===================== Terrain override constants =====================
+// Highland is deliberately outside real Köppen. It is a terrain/color override for rendered mountains.
+const HIGHLAND = {
+  MOUNTAIN_LAND_E: 0.18,
+  PERENNIAL_SNOW_TWARM_C: -8,
+  BARE_ROCK_TWARM_C: 3,
+} as const;
+
 /** `lat0to1` = |lat|/90; `continentality` ∈ [0,1] = how deep in a landmass interior the cell sits. */
 export function seasonalAmplitudeC(
   lat0to1: number,
@@ -150,67 +236,167 @@ export function seasonalAmplitudeC(
   base: number,
   continentalWeight: number
 ): number {
-  // Latitude shape: ~0 at the equator → 1 by the mid/high latitudes (seasonality is a temperate/polar
-  // phenomenon). Smooth, monotone; squared keeps the tropics flat.
+  // Latitude shape: temperature seasonality is weak in the tropics and strong toward high latitudes.
   const latShape = lat0to1 * lat0to1;
   return base * latShape * (1 + continentalWeight * continentality);
 }
 
-// ===================== Moisture → annual precipitation (mm) =====================
-// Köppen's aridity rules are in mm/yr; our moisture field is [0,1]. Map it once here (a squared ramp so
-// the dry end stays sparse — most of [0,1] reads as moderate, the wettest tail as rainforest-class).
-const MAX_PRECIP_MM = 3000;
+/** Annual precipitation in mm from the procedural moisture field. */
 export function moistureToPrecipMm(moisture: number): number {
   const m = Math.max(0, Math.min(1, moisture));
-  return m * m * MAX_PRECIP_MM;
+  return m ** EARTH_CLIMATE.PRECIP_MOISTURE_EXPONENT * EARTH_CLIMATE.PRECIP_MAX_MM;
 }
 
-// Earth's zonal rain bands (the Hadley circulation): wettest at the equator (the ITCZ), DRIEST at the
-// ±~27° "horse latitudes" where descending dry air makes the great deserts (Sahara, Atacama, Australian),
-// wetter again under the mid-latitude storm tracks (~50°), then dry at the poles. Multiplies precipitation,
-// so even a wet-noise cell at 27° trends arid → deserts + rainforests land in their recognizable latitude
-// bands. `strength` (CLIMATE.HADLEY) fades the whole effect: 0 = off (factor 1 everywhere), 1 = full bands.
 const gauss1 = (x: number, mu: number, sigma: number): number =>
   Math.exp(-((x - mu) ** 2) / (2 * sigma * sigma));
+
+/** Earth-like zonal rain bands: wet equator, dry subtropics, wetter storm tracks. */
 export function hadleyPrecipFactor(absLatDeg: number, strength: number): number {
-  const itcz = gauss1(absLatDeg, 0, 13); // equatorial wet belt
-  const stormTrack = 0.65 * gauss1(absLatDeg, 50, 18); // mid-latitude wet belt
-  const shaped = 0.3 + 0.7 * Math.max(itcz, stormTrack); // 0.3 floor so latitude alone never hard-zeroes rain
+  const itcz = gauss1(absLatDeg, 0, 13);
+  const stormTrack = EARTH_CLIMATE.HADLEY_STORM_TRACK_WEIGHT * gauss1(absLatDeg, 50, 18);
+  const shaped = EARTH_CLIMATE.HADLEY_DRY_FLOOR + (1 - EARTH_CLIMATE.HADLEY_DRY_FLOOR) * Math.max(itcz, stormTrack);
   return 1 + strength * (shaped - 1);
 }
 
-// ===================== Köppen classifier =====================
-// Precipitation-timing regime (the third letter), approximated from latitude band + moisture:
-//   1 = dry-summer (s, mediterranean)  ·  2 = dry-winter (w, monsoon/savanna)  ·  0 = no dry season (f)
-// TODO(monsoon): replace this geometric proxy with a real prevailing-wind / monsoon model (with mountains).
-const MED_LAT: [number, number] = [28, 45]; // subtropical belt where dry-summer (mediterranean) appears
-const MED_MOIST: [number, number] = [0.25, 0.62]; // ...and only when moderately (not super-) wet
-const MED_MAX_CONTINENTALITY = 0.45; // ...and only near a coast (mediterranean climates hug the west margins)
-const MOUNTAIN_LAND_E = 0.18; // land elevation (0 = shore, 1 = highest peak) above which a cell is a MOUNTAIN
-function precipRegime(absLatDeg: number, moisture: number, continentality: number): number {
-  const subtropical = absLatDeg >= MED_LAT[0] && absLatDeg <= MED_LAT[1];
-  // dry-summer (mediterranean): subtropical, COASTAL (low continentality), moderately — not super- — wet.
-  if (subtropical && continentality < MED_MAX_CONTINENTALITY && moisture >= MED_MOIST[0] && moisture <= MED_MOIST[1]) return 1;
-  if (absLatDeg < 28 && moisture < 0.55) return 2; // low-latitude dry-winter (savanna/monsoon margin)
-  return 0; // no marked dry season
+type SyntheticClimate = {
+  tempsC: number[];
+  precipMm: number[];
+  annualPrecipMm: number;
+  warmestMonthC: number;
+  coldestMonthC: number;
+  meanAnnualTempC: number;
+  driestMonthMm: number;
+  driestSummerMonthMm: number;
+  driestWinterMonthMm: number;
+  wettestSummerMonthMm: number;
+  wettestWinterMonthMm: number;
+  monthsAbove10C: number;
+};
+
+function clamp01(n: number): number {
+  return Math.max(0, Math.min(1, n));
 }
 
-// Fourth letter (summer-heat / continentality), as 0=a,1=b,2=c,3=d from the warm/cold extremes.
-function heatLetter(tWarm: number, tCold: number): number {
-  if (tCold < -38) return 3; // d — extremely cold winter (only meaningful for D)
-  if (tWarm >= 22) return 0; // a — hot summer
-  if (tWarm >= 16) return 1; // b — warm summer
-  return 2; // c — cool/short summer
+function lerpNumber(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
 }
+
+function precipMode(absLatDeg: number, moisture: number, continentality: number): number {
+  // 1 = dry summer, 2 = dry winter, 0 = no strong dry season. This only shapes synthetic monthly rainfall;
+  // the final s/w/f label is still decided by locked Köppen precipitation-ratio constants.
+  const mediterranean =
+    absLatDeg >= EARTH_CLIMATE.MEDITERRANEAN_LAT_MIN &&
+    absLatDeg <= EARTH_CLIMATE.MEDITERRANEAN_LAT_MAX &&
+    continentality < EARTH_CLIMATE.MEDITERRANEAN_MAX_CONTINENTALITY &&
+    moisture >= EARTH_CLIMATE.MEDITERRANEAN_MOISTURE_MIN &&
+    moisture <= EARTH_CLIMATE.MEDITERRANEAN_MOISTURE_MAX;
+  if (mediterranean) return 1;
+  if (absLatDeg < EARTH_CLIMATE.MONSOON_LAT_MAX && moisture < EARTH_CLIMATE.MONSOON_MOISTURE_MAX) return 2;
+  return 0;
+}
+
+function synthesizeMonthlyClimate(
+  matC: number,
+  tWarm: number,
+  tCold: number,
+  annualPrecipMm: number,
+  absLatDeg: number,
+  moisture: number,
+  continentality: number
+): SyntheticClimate {
+  const amp = Math.max(0, Math.max(Math.abs(tWarm - matC), Math.abs(matC - tCold)));
+  const mode = precipMode(absLatDeg, moisture, continentality);
+  const c = clamp01(continentality);
+  const precipAnnual = annualPrecipMm * lerpNumber(EARTH_CLIMATE.COASTAL_PRECIP_BOOST, EARTH_CLIMATE.INTERIOR_PRECIP_FACTOR, c);
+
+  const tempsC: number[] = [];
+  const weights: number[] = [];
+  for (let month = 0; month < 12; month++) {
+    // month 0 is the synthetic warm-season peak. Hemisphere does not matter for Köppen because we only need
+    // warm-season vs cold-season extrema, not calendar month names.
+    const seasonal = Math.cos((2 * Math.PI * month) / 12);
+    tempsC.push(matC + amp * seasonal);
+
+    const warmSeason01 = (seasonal + 1) / 2;
+    let w = 1;
+    if (mode === 1) {
+      // Mediterranean: dry summer, wet winter.
+      w = 1 - EARTH_CLIMATE.DRY_SEASON_STRENGTH * warmSeason01 + EARTH_CLIMATE.WET_SEASON_STRENGTH * (1 - warmSeason01);
+    } else if (mode === 2) {
+      // Monsoon/savanna tendency: wet summer, dry winter.
+      w = 1 - EARTH_CLIMATE.DRY_SEASON_STRENGTH * (1 - warmSeason01) + EARTH_CLIMATE.WET_SEASON_STRENGTH * warmSeason01;
+    } else {
+      // Weak seasonality: interiors trend slightly summer-wet; coasts/mid-lats slightly winter-wet.
+      const summerBias = lerpNumber(-0.35, 0.35, c);
+      w = 1 + EARTH_CLIMATE.WEAK_SEASONAL_PRECIP_STRENGTH * summerBias * seasonal;
+    }
+    weights.push(Math.max(0.05, w));
+  }
+
+  const weightSum = weights.reduce((a, b) => a + b, 0);
+  const precipMm = weights.map((w) => (precipAnnual * w) / weightSum);
+  const summer = [0, 1, 2, 3, 4, 5];
+  const winter = [6, 7, 8, 9, 10, 11];
+  const pick = (months: number[], fn: (...values: number[]) => number) => fn(...months.map((m) => precipMm[m]));
+
+  return {
+    tempsC,
+    precipMm,
+    annualPrecipMm: precipAnnual,
+    warmestMonthC: Math.max(...tempsC),
+    coldestMonthC: Math.min(...tempsC),
+    meanAnnualTempC: tempsC.reduce((a, b) => a + b, 0) / 12,
+    driestMonthMm: Math.min(...precipMm),
+    driestSummerMonthMm: pick(summer, Math.min),
+    driestWinterMonthMm: pick(winter, Math.min),
+    wettestSummerMonthMm: pick(summer, Math.max),
+    wettestWinterMonthMm: pick(winter, Math.max),
+    monthsAbove10C: tempsC.filter((t) => t > KOPPEN.TREE_MONTH_MIN_C).length,
+  };
+}
+
+function aridityThresholdMm(c: SyntheticClimate): number {
+  const summerPrecip = c.precipMm.slice(0, 6).reduce((a, b) => a + b, 0);
+  const winterPrecip = c.precipMm.slice(6).reduce((a, b) => a + b, 0);
+  const summerShare = c.annualPrecipMm <= 0 ? 0 : summerPrecip / c.annualPrecipMm;
+  const winterShare = c.annualPrecipMm <= 0 ? 0 : winterPrecip / c.annualPrecipMm;
+  const offset =
+    summerShare >= 0.7
+      ? KOPPEN.ARID_WINTER_DRY_OFFSET_MM
+      : winterShare >= 0.7
+        ? KOPPEN.ARID_SUMMER_DRY_OFFSET_MM
+        : KOPPEN.ARID_EVEN_OFFSET_MM;
+  return Math.max(0, 20 * c.meanAnnualTempC + offset);
+}
+
+function seasonalDrynessLetter(c: SyntheticClimate): number {
+  // 1=s, 2=w, 0=f, using Köppen dry-summer/dry-winter precipitation ratios.
+  const drySummer =
+    c.driestSummerMonthMm < KOPPEN.DRY_SUMMER_MAX_DRIEST_SUMMER_MM &&
+    c.driestSummerMonthMm * KOPPEN.DRY_SUMMER_WINTER_RATIO < c.wettestWinterMonthMm;
+  if (drySummer) return 1;
+
+  const dryWinter = c.driestWinterMonthMm * KOPPEN.DRY_WINTER_SUMMER_RATIO < c.wettestSummerMonthMm;
+  if (dryWinter) return 2;
+
+  return 0;
+}
+
+function heatLetter(c: SyntheticClimate): number {
+  if (c.warmestMonthC >= KOPPEN.HOT_SUMMER_WARM_MONTH_MIN_C) return 0; // a
+  if (c.monthsAbove10C >= KOPPEN.WARM_MONTHS_FOR_B) return 1; // b
+  if (c.coldestMonthC <= KOPPEN.EXTREME_COLD_WINTER_C) return 3; // d
+  return 2; // c
+}
+
+const isWater = (elevation: number, seaLevel: number): boolean => elevation < seaLevel;
 
 /**
- * Classify one cell into a Köppen zone index (KZ.*). Pure + numeric so the GLSL twin can mirror it
- * branch-for-branch. Ocean (elevation below the waterline) is bucketed into three depth bands instead.
- *   matC  — mean annual temperature (°C, already jittered by the caller for mottling)
- *   tWarm/tCold — warmest/coldest "month" = matC ± seasonal amplitude
- *   precipMm — annual precipitation (from moistureToPrecipMm)
- *   absLatDeg, moisture — for the precip-timing proxy
- *   elevation, seaLevel — land/ocean split + ocean depth banding
+ * Classify one cell into a Köppen zone index (KZ.*). The API remains scalar for CPU/GPU callers, but the
+ * classifier immediately reconstructs a synthetic 12-month climate and applies locked Köppen rules to it.
+ *
+ * `elevation` here should be rendered elevation for water/depth + highland terrain override. Temperature
+ * should already have been computed from report elevation upstream when calling meanAnnualTempC.
  */
 export function classifyKoppen(
   matC: number,
@@ -224,58 +410,57 @@ export function classifyKoppen(
   continentality: number
 ): number {
   // --- ocean: three depth bands across [0, seaLevel] ---
-  if (elevation < seaLevel) {
-    const d = elevation / Math.max(seaLevel, 1e-6); // 0 = deepest, ~1 = at the shore
+  if (isWater(elevation, seaLevel)) {
+    const d = elevation / Math.max(seaLevel, 1e-6);
     if (d < 0.34) return KZ.OCEAN_DEEP;
     if (d < 0.7) return KZ.OCEAN_MID;
     return KZ.OCEAN_SHALLOW;
   }
 
-  // --- E / highland: below the warm-season treeline. On a MOUNTAIN (high land elevation) this becomes the
-  // rock/snow ramp (alpine → bare scree → snow); on low ground it's the polar lowland (tundra / ice sheet).
-  // Elevation cools temperature via the lapse rate upstream, so a tall tropical peak lands here too — and
-  // the treeline sits HIGHER in the tropics (more lapse needed to reach it), as on Earth.
-  const landE = (elevation - seaLevel) / Math.max(1 - seaLevel, 1e-6); // 0 at the shore → 1 at the highest peak
-  if (tWarm < 10) {
-    if (landE > MOUNTAIN_LAND_E) {
-      if (tWarm < -8) return KZ.EF; // perennial snow / ice
-      if (tWarm < 3) return KZ.BARE; // bare rock / scree (grey)
-      return KZ.ALPINE; // alpine meadow / shrub just above the treeline
-    }
-    return tWarm < 0 ? KZ.EF : KZ.ET; // polar LOWLAND: ice sheet / tundra
+  const climate = synthesizeMonthlyClimate(matC, tWarm, tCold, precipMm, absLatDeg, moisture, continentality);
+
+  // --- Highland terrain override. Not part of real Köppen; kept as your mountain colour ramp. ---
+  const landE = (elevation - seaLevel) / Math.max(1 - seaLevel, 1e-6);
+  if (landE > HIGHLAND.MOUNTAIN_LAND_E) {
+    if (climate.warmestMonthC < HIGHLAND.PERENNIAL_SNOW_TWARM_C) return KZ.EF;
+    if (climate.warmestMonthC < HIGHLAND.BARE_ROCK_TWARM_C) return KZ.BARE;
+    return KZ.ALPINE;
   }
 
-  const regime = precipRegime(absLatDeg, moisture, continentality);
-
-  // --- B (arid): annual precip below the aridity threshold ---
-  // Pth = 20·MAT + seasonal offset (winter-wet 0, even 140, summer-wet 280). h/k split at MAT 18 °C.
-  const offset = regime === 1 ? 0 : regime === 2 ? 280 : 140;
-  const pth = Math.max(0, 20 * matC + offset);
-  if (precipMm < pth) {
-    const hot = matC >= 18;
-    if (precipMm < 0.5 * pth) return hot ? KZ.BWh : KZ.BWk; // desert
-    return hot ? KZ.BSh : KZ.BSk; // steppe
+  // --- E: polar ---
+  if (climate.warmestMonthC < KOPPEN.POLAR_WARM_MONTH_MAX_C) {
+    return climate.warmestMonthC < KOPPEN.ICE_CAP_WARM_MONTH_MAX_C ? KZ.EF : KZ.ET;
   }
 
-  // --- A (tropical): coldest month ≥ 18 °C ---
-  if (tCold >= 18) {
-    if (moisture > 0.82) return KZ.Af; // perpetually wet → rainforest
-    if (moisture > 0.6) return KZ.Am; // intermediate → monsoon
-    return regime === 1 ? KZ.As : KZ.Aw; // savanna (dry-summer rare → As, else Aw)
+  // --- B: arid ---
+  const pth = aridityThresholdMm(climate);
+  if (climate.annualPrecipMm < pth) {
+    const hot = climate.meanAnnualTempC >= KOPPEN.ARID_HOT_MEAN_ANNUAL_C;
+    if (climate.annualPrecipMm < 0.5 * pth) return hot ? KZ.BWh : KZ.BWk;
+    return hot ? KZ.BSh : KZ.BSk;
   }
 
-  // --- C / D (temperate / continental) ---
-  const heat = heatLetter(tWarm, tCold);
-  if (tCold >= 0) {
-    // C — temperate (no 'd'; clamp to a/b/c)
-    const h = Math.min(heat, 2);
-    if (regime === 1) return KZ.Csa + h;
-    if (regime === 2) return KZ.Cwa + h;
+  // --- A: tropical ---
+  if (climate.coldestMonthC >= KOPPEN.TROPICAL_COLD_MONTH_MIN_C) {
+    if (climate.driestMonthMm >= KOPPEN.AF_DRIEST_MONTH_MIN_MM) return KZ.Af;
+    const monsoonCutoff = KOPPEN.AM_DRIEST_MONTH_BASE_MM - climate.annualPrecipMm / KOPPEN.AM_DRIEST_MONTH_ANNUAL_DIVISOR;
+    if (climate.driestMonthMm >= monsoonCutoff) return KZ.Am;
+    return climate.driestSummerMonthMm < climate.driestWinterMonthMm ? KZ.As : KZ.Aw;
+  }
+
+  // --- C / D: temperate / continental ---
+  const dry = seasonalDrynessLetter(climate);
+  const heat = heatLetter(climate);
+  const h = Math.min(heat, 2); // C climates only use a/b/c.
+
+  if (climate.coldestMonthC > KOPPEN.TEMPERATE_COLD_MONTH_MIN_C) {
+    if (dry === 1) return KZ.Csa + h;
+    if (dry === 2) return KZ.Cwa + h;
     return KZ.Cfa + h;
   }
-  // D — continental (a/b/c/d)
-  if (regime === 1) return KZ.Dsa + heat;
-  if (regime === 2) return KZ.Dwa + heat;
+
+  if (dry === 1) return KZ.Dsa + heat;
+  if (dry === 2) return KZ.Dwa + heat;
   return KZ.Dfa + heat;
 }
 

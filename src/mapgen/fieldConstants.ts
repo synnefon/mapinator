@@ -28,11 +28,6 @@ export const RANGE_ENVELOPE_WAVELENGTH = 0.5;
 export const RANGE_ENVELOPE_OFFSET = 19.7;
 // Decorrelate the moisture noise from the elevation field.
 export const MOISTURE_NOISE_OFFSET = 25;
-// Ice-edge ruffle (so the snow line isn't a clean circle) + hole patchiness (nunataks).
-export const ICE_RUFFLE_OFFSET = 53.1;
-export const ICE_RUFFLE_FREQ = 4.2;
-export const ICE_HOLE_FREQ = 10;
-export const ICE_HOLE_SOFTNESS = 0.15;
 
 // --- Tectonics.ts ---
 // Ramp width above CONVERGENCE_THRESHOLD to a full-height range (stronger collisions → taller ranges).

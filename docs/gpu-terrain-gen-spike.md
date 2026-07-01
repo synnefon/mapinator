@@ -180,7 +180,7 @@ Generation runs entirely on the CPU, off the main thread, in a worker:
   (see ~line 134–200). Holds the seeded `noise3D` (`createNoise3D` from `simplex-noise`).
 - `src/mapgen/ElevationCalculator.ts` — **the hot path**: `sampleCell(site)` → `{ elevation, moisture,
   ice, shade, plate }` for a unit-sphere point, via multi-octave noise + the `CONTINENT/OCEAN/COAST/
-  MOUNTAIN/MOISTURE/ICE` dials. This is what runs per cell, per map + per patch.
+  MOUNTAIN/MOISTURE` dials. This is what runs per cell, per map + per patch.
 - `src/mapgen/fbm.ts` — the fbm octave stack over `noise3D`.
 - `src/mapgen/Tectonics.ts` — plate boundaries + mountain belts (also noise-driven).
 - `src/mapgen/Goldberg.ts` — the base hex/pentagon mesh; patches use a stereographic + delaunator mesher.

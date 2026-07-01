@@ -70,19 +70,19 @@ describe("coastBonus", () => {
 });
 
 describe("cellSuitability", () => {
-  const temperatePlain = { latDeg: 45, reportElevation: SEA + 0.01, moisture: 0.7, ice: 0, slope: 0.005 };
+  const temperatePlain = { latDeg: 45, reportElevation: SEA + 0.01, moisture: 0.7, slope: 0.005 };
 
   it("ranks temperate well-watered plains above ice, desert, and steep peaks", () => {
     const good = cellSuitability(temperatePlain, SEA);
-    const polarIce = cellSuitability({ latDeg: 85, reportElevation: SEA + 0.01, moisture: 0.7, ice: 1, slope: 0.005 }, SEA);
-    const desert = cellSuitability({ latDeg: 20, reportElevation: SEA + 0.01, moisture: 0.05, ice: 0, slope: 0.005 }, SEA);
-    const steepPeak = cellSuitability({ latDeg: 45, reportElevation: SEA + (1 - SEA) * 0.7, moisture: 0.7, ice: 0, slope: 0.2 }, SEA);
+    const polarIce = cellSuitability({ latDeg: 85, reportElevation: SEA + 0.01, moisture: 0.7, slope: 0.005 }, SEA);
+    const desert = cellSuitability({ latDeg: 20, reportElevation: SEA + 0.01, moisture: 0.05, slope: 0.005 }, SEA);
+    const steepPeak = cellSuitability({ latDeg: 45, reportElevation: SEA + (1 - SEA) * 0.7, moisture: 0.7, slope: 0.2 }, SEA);
     expect(good).toBeGreaterThan(polarIce);
     expect(good).toBeGreaterThan(desert);
     expect(good).toBeGreaterThan(steepPeak);
   });
 
   it("never goes negative", () => {
-    expect(cellSuitability({ latDeg: 90, reportElevation: 1, moisture: 0, ice: 1, slope: 1 }, SEA)).toBeGreaterThanOrEqual(0);
+    expect(cellSuitability({ latDeg: 90, reportElevation: 1, moisture: 0, slope: 1 }, SEA)).toBeGreaterThanOrEqual(0);
   });
 });

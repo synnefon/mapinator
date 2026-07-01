@@ -101,6 +101,11 @@ export type LodDeps = {
   /** GPU path: when true, detail rungs (level ≥1) are generated mesh-only (no CPU field sampling) and
    *  the renderer computes their fields on the GPU. The globe (rung 0) is always full. Default false. */
   detailGeometryOnly?: boolean;
+  /** Whether a country layer (choropleth / borders / hover highlight) is currently on, so detail patches
+   *  need per-cell country stamped. When true, a cached patch WITHOUT countryOf (built while the layer was
+   *  off — the default) no longer counts as covering the view, so it's regenerated WITH country instead of
+   *  reused; otherwise its tint/highlight fall back to the coarse equirect and never sharpen. Default false. */
+  wantsCountry?: () => boolean;
 };
 
 export type LodPipeline = {
@@ -122,6 +127,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
   const { postGenerate, getView, onReady } = deps;
   const maxInFlight = Math.max(1, deps.maxInFlight ?? 1); // worker-pool size; 1 = serial (default)
   const detailGeometryOnly = deps.detailGeometryOnly ?? false;
+  const wantsCountry = deps.wantsCountry ?? (() => false);
   const LOD_LEVELS: LodLevel[] = buildLodLevels();
 
   // Bumped on every seed/tuning change; results tagged with a stale epoch are dropped so an
@@ -227,6 +233,12 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     return dist + vr <= capRadius;
   }
 
+  // A cached detail patch can serve the CHOROPLETH/HIGHLIGHT only if it carries per-cell country while a
+  // country layer is on; a country-less patch (built while the layer was off) would fall back to the coarse
+  // equirect, so it's treated as NOT covering → regenerated with country. The globe (rung 0) is exempt: it
+  // uses the equirect by design and is tracked by rung0Key, not this predicate.
+  const patchUsable = (patch: GlobeMap): boolean => !wantsCountry() || patch.countryOf != null;
+
   // Build the fine whole-globe overlay once (GPU path only — it's GPU-rendered). Keyed by its own
   // density, so it rebuilds only if GLOBE_OVERLAY_POINTS changes; its geometry is seed/param-
   // independent, so it survives reset() (no "blink to coarse" on a dial tweak — the renderer just
@@ -269,7 +281,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     let bestLevel = 0;
     for (const [key, patch] of lodCache) {
       const level = levelOf(key);
-      if (level < 1 || level > t.level || level <= bestLevel || !patch.cap) continue;
+      if (level < 1 || level > t.level || level <= bestLevel || !patch.cap || !patchUsable(patch)) continue;
       if (capCovers(patch.cap, t.center, vr)) {
         best = patch;
         bestKey = key;
@@ -278,7 +290,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     }
     // Hysteresis: if the patch we're already showing still covers and nothing STRICTLY finer is
     // available, keep it (else we'd swap between equally-good overlapping patches every frame).
-    const currentCovers = !!overlay?.cap && capCovers(overlay.cap, t.center, vr);
+    const currentCovers = !!overlay?.cap && patchUsable(overlay) && capCovers(overlay.cap, t.center, vr);
     if (currentCovers && bestLevel <= overlayLevel) return;
     if (best) {
       overlay = best;
@@ -301,7 +313,7 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     if (lodCache.has(rung0Key(v))) covered.add(0);
     for (const [key, patch] of lodCache) {
       const level = levelOf(key);
-      if (level >= 1 && patch.cap && capCovers(patch.cap, t.center, queueRadius)) {
+      if (level >= 1 && patch.cap && patchUsable(patch) && capCovers(patch.cap, t.center, queueRadius)) {
         covered.add(level);
       }
     }
@@ -323,7 +335,8 @@ export function createLodPipeline(deps: LodDeps): LodPipeline {
     while (lodActive.size < maxInFlight) {
       const job = lodQueue.shift();
       if (!job) return; // queue drained
-      if (lodCache.has(job.key)) continue; // cached in the meantime → skip to the next
+      const cached = lodCache.get(job.key);
+      if (cached && patchUsable(cached)) continue; // a usable map is cached → skip (a country-less one is regenerated when a layer is on)
       lodActive.add(job.key);
       const epoch = seedEpoch;
       const v = getView();

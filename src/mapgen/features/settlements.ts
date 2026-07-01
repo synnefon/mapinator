@@ -251,7 +251,7 @@ export function makeSettlementWorld(ctx: {
       const nr = nearestRiverVertex(p, riverGrid);
       const hops = nr && nr.chord2 <= onRiver2 ? 0 : coastDist[c];
       const nearWater = Math.max(hops === 0 ? 1 : 0, Math.max(0, 1 - coastDist[c] / DRY_WATER_REACH));
-      const suit = cellSuitability({ latDeg: latDegOf(p), reportElevation: f.reportElevation, moisture: f.moisture, ice: f.ice, slope: 0 }, seaLevel);
+      const suit = cellSuitability({ latDeg: latDegOf(p), reportElevation: f.reportElevation, moisture: f.moisture, slope: 0 }, seaLevel);
       const hab = habitabilityWeight(f.moisture, f.ice, nearWater, ctx.desertAversion, ctx.iceAversion);
       return ctx.densityScale * suit * hab * coastBonus(hops, ctx.coastStrength, ctx.coastFalloff);
     },

@@ -30,10 +30,6 @@ const vec3  WARP_OFF = vec3(5.2, 1.7, 9.3);          // continent domain-warp of
 const float RANGE_ENV_WL = 0.5;                       // mountain along-strike envelope
 const float RANGE_ENV_OFF = 19.7;
 const float MOIST_OFF = 25.0;                         // moisture noise decorrelation offset
-const float ICE_RUFFLE_OFF = 53.1;
-const float ICE_RUFFLE_FREQ = 4.2;
-const float ICE_HOLE_FREQ = 10.0;
-const float ICE_HOLE_SOFT = 0.15;
 const float RIDGE_FEEDBACK = 2.5;
 const float RIDGE_SHARPNESS = 3.5;
 const float CONVERGENCE_SOFTNESS = 0.1;               // Tectonics
@@ -53,11 +49,10 @@ uniform float uRidgeWavelength, uRidgeAmplitude, uMountainOctaves, uMountainGain
 uniform float uRangeWidth, uSinuosity, uConvergenceThreshold, uVariation, uCoastBias;
 uniform float uLandReliefWavelength, uLandReliefAmplitude, uLandReliefOctaves, uLandReliefGain, uLandReliefLacunarity;
 uniform float uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity, uMoistContrast, uWaterProximityEffect, uDesertSteepness, uWaterSizeOctaves;
-uniform float uIceCoverage, uIceWobble, uIceFill, uIceBlend;
 uniform float uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uInteriorDryness, uHadley;  // CLIMATE (Köppen)
 uniform vec3  uLight;                 // hillshade light in (east, north, up)
 uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeLowlandFloor, uShadeMinLandE;
-uniform float uMountainsOn, uClimateOn, uIceOn;   // feature switches (1 = on)
+uniform float uMountainsOn, uClimateOn;   // feature switches (1 = on)
 uniform float uEmitReport;            // rivers: 1 = write reportElevation (routing height) into .a instead of shade
 uniform float uRiverRoughAmp;         // rivers: micro-relief amplitude folded into the routing height (so trunk flow converges)
 uniform int   uPlateCount;
@@ -226,23 +221,7 @@ float moistureAt(vec3 site, float cont, float broadCont) {
   // the Gobi / Sahara-heart / Great-Basin drylands far from any coast. inland = 0 at the shelf → 1 deep inland.
   float inland = smoothstep(uShelf.y, 1.0, cont);
   m = mix(m, 0.0, uInteriorDryness * inland);
-  return applyContrast(m, uMoistContrast);
-}
-
-// ElevationCalculator.iceAt — polar cap on land, wobbled edge + holes.
-float iceAt(vec3 site, float elevation) {
-  if (uIceOn < 0.5) return 0.0;
-  float coverage = clamp(uIceCoverage, 0.0, 1.0);
-  float line = 1.0 - coverage;
-  float f = ICE_RUFFLE_FREQ, o = ICE_RUFFLE_OFF;
-  float wobble = uIceWobble * (snoise(vec3(site.x * f + o, site.y * f + o, site.z * f + o))
-    + 0.5 * snoise(vec3(site.x * f * 3.0 + o, site.y * f * 3.0 + o, site.z * f * 3.0 + o)));
-  float inCap = smoothstep(line - uIceBlend, line, abs(site.y) + wobble);
-  if (inCap <= 0.0) return 0.0;
-  if (elevation < uSeaLevel) return 0.0;
-  float h = 0.5 + 0.5 * snoise(vec3(site.x * ICE_HOLE_FREQ + ICE_RUFFLE_OFF, site.y * ICE_HOLE_FREQ + ICE_RUFFLE_OFF, site.z * ICE_HOLE_FREQ + ICE_RUFFLE_OFF));
-  float solid = smoothstep(1.0 - uIceFill, 1.0 - uIceFill + ICE_HOLE_SOFT, h);
-  return inCap * solid;
+  return applyContrast(m * uMoistRainfall, uMoistContrast);
 }
 
 // ElevationCalculator.hillshadeAt — relief shading over all land, with aerial perspective: shadow depth
@@ -273,6 +252,12 @@ float hillshadeAt(vec3 site, float C, float h0) {
 
 ${KOPPEN_GLSL}
 
+// ElevationCalculator.iceAt — ice is Köppen-only: the polar lowland zones (tundra ET / ice-cap EF). Written
+// to .b on the rivers pass so rivers aren't routed over iced land; mirrors CPU iceAt(koppenZone).
+float iceAt(float koppenZone) {
+  return (koppenZone == float(KZ_ET) || koppenZone == float(KZ_EF)) ? 1.0 : 0.0;
+}
+
 // The full per-cell field — the GPU twin of ElevationCalculator.sampleCell (minus the plate index).
 vec4 field(vec3 site) {
   float full, broad;
@@ -290,13 +275,12 @@ vec4 field(vec3 site) {
   } else {
     a = hillshadeAt(site, full, elev);
   }
-  // .b: rivers (uEmitReport) still read the polar-ice mask (rivers aren't drawn over iced land); the
-  // colour + base passes read the KÖPPEN ZONE instead — ice has left the render path, so Köppen E/EF is the
-  // single source for frozen colour. continentality (interior-ness) feeds the synthesized seasonal swing.
+  // .b: the colour + base passes read the KÖPPEN ZONE (E/EF is the single source for frozen colour); the
+  // rivers pass (uEmitReport) reads the ice mask DERIVED from that same zone (ET/EF) so rivers aren't routed
+  // over iced land — matching CPU map.ice. continentality (interior-ness) feeds the synthesized seasonal swing.
   float continentality = smoothstep(uShelf.y, 1.0, full);
-  float b = uEmitReport > 0.5
-    ? iceAt(site, elev)
-    : koppenZone(site, elev, moist, continentality, uSeaLevel, uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uHadley);
+  float zone = koppenZone(site, elev, moist, continentality, uSeaLevel, uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uHadley);
+  float b = uEmitReport > 0.5 ? iceAt(zone) : zone;
   return vec4(elev, moist, b, a);
 }
 `;

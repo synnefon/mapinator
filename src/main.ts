@@ -282,6 +282,9 @@ document.addEventListener("DOMContentLoaded", () => {
     onReady: scheduleRender,
     maxInFlight: pool.size, // up to one concurrent generate per worker
     detailGeometryOnly: gpuPatches, // GPU path: detail rungs are mesh-only; the renderer computes fields
+    // A country layer on ⇒ detail patches must carry per-cell country, so patches cached while it was off
+    // are regenerated (not reused with the coarse equirect tint). Mirrors requestMap's withCountry gate.
+    wantsCountry: () => (appState.settings.viewCountries ?? false) || (appState.settings.viewCountryColors ?? false),
   });
 
   const reseedWorker = (seed: string) => {

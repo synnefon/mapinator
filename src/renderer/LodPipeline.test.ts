@@ -21,7 +21,10 @@ const BASE_VIEW: Omit<LodView, "zoom"> = {
 // resolve by hand (so we can observe "one job at a time" and test the staleness discard). Detail
 // rungs come back with a cap centred on the request that comfortably covers the view; the globe
 // (halfAngle ≥ π) has no cap. Only `.cap` is read by the pipeline, so the rest is a stub.
-function harness(view: LodView, opts?: { detailGeometryOnly?: boolean }) {
+function harness(
+  view: LodView,
+  opts?: { detailGeometryOnly?: boolean; wantsCountry?: () => boolean; stampCountry?: () => boolean }
+) {
   const requests: GenRequest[] = [];
   const resolvers: Array<() => void> = [];
   let renders = 0;
@@ -32,7 +35,9 @@ function harness(view: LodView, opts?: { detailGeometryOnly?: boolean }) {
         req.halfAngle >= Math.PI
           ? undefined
           : { center: req.center, cosKeep: Math.cos(req.halfAngle) };
-      resolvers.push(() => res({ cap } as unknown as GlobeMap));
+      // A detail patch carries per-cell country only when the layer stamps it (mirrors requestMap's gate).
+      const countryOf = opts?.stampCountry?.() && req.halfAngle < Math.PI ? new Int32Array(1) : undefined;
+      resolvers.push(() => res({ cap, countryOf } as unknown as GlobeMap));
     });
   };
   const pipeline = createLodPipeline({
@@ -42,6 +47,7 @@ function harness(view: LodView, opts?: { detailGeometryOnly?: boolean }) {
       renders++;
     },
     detailGeometryOnly: opts?.detailGeometryOnly,
+    wantsCountry: opts?.wantsCountry,
   });
   const tick = () => new Promise<void>((r) => setTimeout(r, 0)); // flush the .then microtask chain
   const drainOne = async () => {
@@ -163,5 +169,37 @@ describe("LodPipeline.reset", () => {
     h.pipeline.reset(); // bumps the staleness epoch
     await h.drainOne(); // the pre-reset globe finally lands…
     expect(h.pipeline.base()).toBe(null); // …and is dropped, not adopted as the base
+  });
+});
+
+describe("LodPipeline per-cell country (choropleth/highlight follow zoom)", () => {
+  it("regenerates country-less cached patches once a country layer is on, so the tint isn't stuck coarse", async () => {
+    // Layer OFF at first: detail patches are cached WITHOUT per-cell country (stampCountry false).
+    let stamp = false;
+    const h = harness({ ...BASE_VIEW, zoom: 1 }, { wantsCountry: () => true, stampCountry: () => stamp });
+    h.pipeline.sync();
+    await h.drain();
+    // None of the country-less patches counts as covering the view → no crisp overlay is shown.
+    expect(h.pipeline.overlay()).toBe(null);
+    const builtWithoutCountry = h.requests.length;
+
+    // Layer turns ON (patches now stamp country): the stale country-less rungs are regenerated WITH it.
+    stamp = true;
+    h.pipeline.sync();
+    await h.drain();
+    expect(h.requests.length).toBeGreaterThan(builtWithoutCountry); // stale patches rebuilt, not reused
+    expect(h.pipeline.overlay()).not.toBe(null); // a country-carrying patch now covers → crisp
+    expect(h.pipeline.overlay()?.countryOf).toBeDefined();
+  });
+
+  it("without a country layer, patches lacking countryOf are used as-is (no needless regeneration)", async () => {
+    const h = harness({ ...BASE_VIEW, zoom: 1 }); // wantsCountry defaults off
+    h.pipeline.sync();
+    await h.drain();
+    const built = h.requests.length;
+    expect(h.pipeline.overlay()).not.toBe(null); // a country-less overlay is fine when no layer is on
+    h.pipeline.sync();
+    await h.drain();
+    expect(h.requests.length).toBe(built); // nothing regenerated
   });
 });

@@ -120,7 +120,7 @@ export function assignCountries(
   languagePool: Language[],
   namer: NameGenerator
 ): CountryData {
-  const { cellCount, sites, elevation, moisture, ice } = map;
+  const { cellCount, sites, elevation, moisture } = map;
   const countryOf = new Int32Array(cellCount).fill(-1);
 
   const land: number[] = [];
@@ -266,7 +266,6 @@ export function assignCountries(
           latDeg: latitudeDeg,
           reportElevation: reportElevation[cell],
           moisture: moisture[cell],
-          ice: ice[cell],
           slope: slope[cell],
         },
         seaLevel

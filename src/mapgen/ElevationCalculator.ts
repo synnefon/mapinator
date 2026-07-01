@@ -1,22 +1,18 @@
 import type { NoiseFunction3D } from "simplex-noise";
 import type { Vec3 } from "../common/3DMath";
 import { SHADE_MIN_LAND_E } from "../common/elevationBands";
+import { classifyKoppen, hadleyPrecipFactor, KZ, meanAnnualTempC, moistureToPrecipMm, seasonalAmplitudeC } from "../common/koppen";
 import { INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
-import { classifyKoppen, hadleyPrecipFactor, meanAnnualTempC, moistureToPrecipMm, seasonalAmplitudeC } from "../common/koppen";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import {
-  CONTINENT_WARP_OFFSET_X as WARP_OFFSET_X,
-  CONTINENT_WARP_OFFSET_Y as WARP_OFFSET_Y,
-  CONTINENT_WARP_OFFSET_Z as WARP_OFFSET_Z,
-  ICE_HOLE_FREQ,
-  ICE_HOLE_SOFTNESS,
-  ICE_RUFFLE_FREQ,
-  ICE_RUFFLE_OFFSET,
   LAND_HAIR,
   MOISTURE_NOISE_OFFSET,
   RANGE_ENVELOPE_OFFSET,
   RANGE_ENVELOPE_WAVELENGTH,
+  CONTINENT_WARP_OFFSET_X as WARP_OFFSET_X,
+  CONTINENT_WARP_OFFSET_Y as WARP_OFFSET_Y,
+  CONTINENT_WARP_OFFSET_Z as WARP_OFFSET_Z
 } from "./fieldConstants";
 import { Tectonics } from "./Tectonics";
 
@@ -286,11 +282,11 @@ export class ElevationCalculator {
     const v =
       0.5 +
       0.5 *
-        this.noise3D(
-          x / RANGE_ENVELOPE_WAVELENGTH + RANGE_ENVELOPE_OFFSET,
-          y / RANGE_ENVELOPE_WAVELENGTH + RANGE_ENVELOPE_OFFSET,
-          z / RANGE_ENVELOPE_WAVELENGTH + RANGE_ENVELOPE_OFFSET
-        );
+      this.noise3D(
+        x / RANGE_ENVELOPE_WAVELENGTH + RANGE_ENVELOPE_OFFSET,
+        y / RANGE_ENVELOPE_WAVELENGTH + RANGE_ENVELOPE_OFFSET,
+        z / RANGE_ENVELOPE_WAVELENGTH + RANGE_ENVELOPE_OFFSET
+      );
     const envelope = 1 - TECTONICS.VARIATION * (1 - v);
     // The broad SWELL is the collision itself: `uplift` (convergence × band) lifts a body sized to
     // SWELL_FRACTION of RIDGE_AMPLITUDE, with the ridged crests rising on top. uplift + envelope
@@ -349,7 +345,7 @@ export class ElevationCalculator {
     site: Vec3,
     continentalnessOverride?: number
   ): { elevation: number; reportElevation: number; moisture: number; ice: number; shade: number; plate: number; koppenZone: number } {
-    const { ICE, MOISTURE } = this.params;
+    const { MOISTURE } = this.params;
     // continentalness drives both the land/ocean elevation and the moisture maritime layer
     // (`broad` = the low-octave low-pass that sizes the maritime reach to the water body).
     const { full: continentalness, broad: broadContinentalness } =
@@ -365,11 +361,11 @@ export class ElevationCalculator {
     // Relief shading from the SAME field — reuses continentalness, only re-samples the relief twice
     // (for the slope). Baked per cell → a free colour multiply at draw time.
     const shade = this.hillshadeAt(site, continentalness, elevation);
-    const moisture = this.moistureAt(site, continentalness, broadContinentalness);
-    const ice = this.iceAt(site, elevation, clamp(ICE.COVERAGE));
+    const moisture = this.moistureAt(site, continentalness, broadContinentalness, MOISTURE.RAINFALL);
     // Köppen biome zone — the SINGLE source for biome colour + labels. Mirrors koppen.glsl.ts:koppenZone
     // (uses the same post-maritime moisture + the shared continentalness as the field shader).
-    const koppenZone = this.koppenZoneAt(site, elevation, moisture, continentalness);
+    const koppenZone = this.koppenZoneAt(site, elevation, reportElevation, moisture, continentalness);
+    const ice = this.iceAt(koppenZone);
     return { elevation, reportElevation, moisture, ice, shade, plate, koppenZone };
   }
 
@@ -383,7 +379,8 @@ export class ElevationCalculator {
   private moistureAt(
     site: Vec3,
     continentalness: number,
-    broadContinentalness: number
+    broadContinentalness: number,
+    rainfall: number
   ): number {
     const { MOISTURE, OCEANS, features } = this.params;
     if (!features.climate) return INVARIANTS.NEUTRAL_CENTER_POINT; // climate off → flat moisture everywhere
@@ -406,61 +403,35 @@ export class ElevationCalculator {
     // the Gobi / Sahara-heart / Great-Basin drylands far from any coast. inland = 0 at the shelf → 1 deep inland.
     const inland = smoothstep(OCEANS.SHELF[1], 1, continentalness);
     m = lerp(m, 0, MOISTURE.INTERIOR_DRYNESS * inland);
-    return applyContrast(m, MOISTURE.CONTRAST);
+    return applyContrast(m * rainfall, MOISTURE.CONTRAST);
   }
 
   /**
    * The cell's Köppen zone index (KZ.*) — the GPU twin is koppen.glsl.ts:koppenZone, kept in sync. Climate
-   * inputs (latitude → mean temp, a synthesized seasonal swing from latitude + continentality, precipitation
-   * from moisture) are mottled by a multi-octave JITTER, then classified into a Köppen zone.
+   * inputs (latitude → mean temp from report elevation, a synthesized seasonal swing from latitude + continentality, precipitation
+   * from jittered moisture) are mottled by a multi-octave JITTER, then classified into a Köppen zone.
    */
-  private koppenZoneAt(site: Vec3, elevation: number, moisture: number, continentalness: number): number {
+  private koppenZoneAt(site: Vec3, elevation: number, reportElevation: number, moisture: number, continentalness: number): number {
     const { CLIMATE, OCEANS } = this.params;
-    const seaLevel = OCEANS.SEA_LEVEL;
+    const { JITTER, JITTER_SCALE, SEASONALITY, CONTINENTAL_SEASONALITY } = CLIMATE;
+    const { SEA_LEVEL, SHELF } = OCEANS;
     const latDeg = (Math.asin(Math.max(-1, Math.min(1, site.y))) * 180) / Math.PI;
     const absLat = Math.abs(latDeg);
-    const jT = CLIMATE.JITTER * 8 * fbm3(this.noise3D, site.x + 11.3, site.y + 4.7, site.z + 19.1, CLIMATE.JITTER_SCALE, 1, 5, 0.5, 2);
-    const jM = CLIMATE.JITTER * 0.18 * fbm3(this.noise3D, site.x + 31.7, site.y + 23.9, site.z + 7.5, CLIMATE.JITTER_SCALE, 1, 5, 0.5, 2);
-    const matC = meanAnnualTempC(latDeg, elevation, seaLevel) + jT;
+    const jT = JITTER * 8 * fbm3(this.noise3D, site.x + 11.3, site.y + 4.7, site.z + 19.1, JITTER_SCALE, 1, 5, 0.5, 2);
+    const jM = JITTER * 0.18 * fbm3(this.noise3D, site.x + 31.7, site.y + 23.9, site.z + 7.5, JITTER_SCALE, 1, 5, 0.5, 2);
+    const matC = meanAnnualTempC(latDeg, reportElevation, SEA_LEVEL) + jT;
     const moist = clamp(moisture + jM);
-    const continentality = smoothstep(OCEANS.SHELF[1], 1, continentalness);
-    const amp = seasonalAmplitudeC(absLat / 90, continentality, CLIMATE.SEASONALITY, CLIMATE.CONTINENTAL_SEASONALITY);
-    const precip = moistureToPrecipMm(moist) * hadleyPrecipFactor(absLat, CLIMATE.HADLEY);
-    return classifyKoppen(matC, matC + amp, matC - amp, precip, absLat, moist, elevation, seaLevel, continentality);
+    const continentality = smoothstep(SHELF[1], 1, continentalness);
+    const amp = seasonalAmplitudeC(absLat / 90, continentality, SEASONALITY, CONTINENTAL_SEASONALITY);
+    const precipMm = moistureToPrecipMm(moist) * hadleyPrecipFactor(absLat, CLIMATE.HADLEY);
+    return classifyKoppen(matC, matC + amp, matC - amp, precipMm, absLat, moist, elevation, SEA_LEVEL, continentality);
   }
 
   /**
-   * Polar iciness in [0,1] — LAND ONLY (open water never ices). A cap poleward of a COVERAGE snow
-   * line, wobbled (WOBBLE) so it isn't a clean circle, fading into land over BLEND, with low-lying
-   * land poking through as holes below a FILL-controlled threshold (higher FILL → fewer holes).
+   * Iciness as a 0/1 mask, derived from Köppen ONLY: the polar lowland zones — tundra (ET) and ice cap
+   * (EF). Feeds settlement habitability + keeps rivers off iced land; biome colour comes from koppenZone.
    */
-  private iceAt(site: Vec3, elevation: number, coverage: number): number {
-    const { ICE, OCEANS, features } = this.params;
-    if (!features.ice) return 0; // ice layer off → no polar caps anywhere
-    // Snow line in |sin lat|: COVERAGE is the fraction of each hemisphere the cap reaches (line at
-    // 1 − COVERAGE; higher COVERAGE → line nearer the equator → bigger caps).
-    const line = 1 - coverage;
-    const f = ICE_RUFFLE_FREQ;
-    const o = ICE_RUFFLE_OFFSET;
-    const wobble =
-      ICE.WOBBLE *
-      (this.noise3D(site.x * f + o, site.y * f + o, site.z * f + o) +
-        0.5 *
-        this.noise3D(site.x * f * 3 + o, site.y * f * 3 + o, site.z * f * 3 + o));
-    const inCap = smoothstep(line - ICE.BLEND, line, Math.abs(site.y) + wobble);
-    if (inCap <= 0) return 0;
-    // LAND ONLY — ocean sits below the waterline, so it never ices.
-    if (elevation < OCEANS.SEA_LEVEL) return 0;
-    // FILL → holes from a fixed-wavelength noise (independent of mountains, stable across zoom).
-    const h =
-      0.5 +
-      0.5 *
-        this.noise3D(
-          site.x * ICE_HOLE_FREQ + ICE_RUFFLE_OFFSET,
-          site.y * ICE_HOLE_FREQ + ICE_RUFFLE_OFFSET,
-          site.z * ICE_HOLE_FREQ + ICE_RUFFLE_OFFSET
-        );
-    const solid = smoothstep(1 - ICE.FILL, 1 - ICE.FILL + ICE_HOLE_SOFTNESS, h);
-    return inCap * solid;
+  private iceAt(koppenZone: number): number {
+    return koppenZone === KZ.ET || koppenZone === KZ.EF ? 1 : 0;
   }
 }

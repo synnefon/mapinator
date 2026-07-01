@@ -67,13 +67,6 @@ export const LAYERS: Layer[] = [
     defaultOn: true,
   },
   {
-    kind: "feature",
-    key: "ice",
-    label: "ice caps",
-    doc: "polar snow caps on land",
-    defaultOn: true,
-  },
-  {
     kind: "view",
     key: "viewLabels",
     label: "geographic labels",
@@ -543,7 +536,7 @@ export const DIALS = {
       doc: "number of drifting plates → how many / how long the ranges (more = more, shorter)",
     },
     RANGE_WIDTH: {
-      value: 0.22,
+      value: 0.25,
       doc: "full angular width (radians) of the mountain belt straddling a boundary",
     },
     SINUOSITY: {
@@ -557,7 +550,7 @@ export const DIALS = {
       hidden: true,
     },
     VARIATION: {
-      value: 0.6,
+      value: 0.13,
       doc: "along-strike height variation — swells, pinches, gaps along a range (0 = uniform ribbon, 1 = full gaps)",
     },
     COAST_BIAS: {
@@ -589,15 +582,15 @@ export const DIALS = {
       hidden: true,
     },
     RIDGE_WAVELENGTH: {
-      value: 0.007,
+      value: 0.05,
       doc: "spacing of the ridged peaks; SMALLER = MORE peaks packed into a range",
     },
     RIDGE_AMPLITUDE: {
-      value: 1,
+      value: 0.69,
       doc: "overall range height — the collision-driven swell + the crests riding on it",
     },
     SWELL_FRACTION: {
-      value: 0.55,
+      value: 0.16,
       doc: "body vs crest: broad-swell height as a fraction of the crest rise; higher = more plateau/body, lower = spikier crests + deeper valleys",
     },
   },
@@ -617,7 +610,7 @@ export const DIALS = {
       doc: "amplitude falloff per octave; higher = rougher",
     },
     LACUNARITY: {
-      value: 2,
+      value: 2.6,
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
@@ -637,49 +630,49 @@ export const DIALS = {
       doc: "detail layers; more = finer, costlier",
     },
     GAIN: {
-      value: 0.41,
+      value: 0.44,
       doc: "amplitude falloff per octave; higher = rougher",
     },
     LACUNARITY: {
-      value: 2.8,
+      value: 4.15,
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
-      value: 1.55,
+      value: 1.46,
       doc: "larger = bigger climate zones",
     },
     AMPLITUDE: {
-      value: 0.85,
+      value: 0.69,
       doc: "higher = stronger wet/dry swings",
     },
     CONTRAST: {
-      value: 0.02,
+      value: 0,
       min: 0,
       max: 1,
       step: 0.01,
       doc: "higher = sharper wet/dry boundaries",
     },
     WATER_PROXIMITY_EFFECT: {
-      value: 0.29,
+      value: 0.45,
       doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline",
     },
     DESERT_STEEPNESS: {
-      value: 0.78,
+      value: 0.76,
       doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland",
     },
     INTERIOR_DRYNESS: {
-      value: 0.4,
+      value: 0.74,
       min: 0,
       max: 1,
       step: 0.02,
       doc: "how much DEEP CONTINENTAL INTERIORS dry out (the inverse of maritime humidity): the far interior of a large landmass loses moisture, placing the Gobi / Sahara-heart / Great-Basin drylands away from any coast. 0 = off; 1 = interiors go fully arid",
     },
     WATER_SIZE_OCTAVES: {
-      value: 1,
+      value: 0.78,
       doc: "water-body SIZE sensitivity for the maritime reach: octaves of the continent carrier used to gauge 'big water'"
     },
     RAINFALL: {
-      value: 0.68,
+      value: 2.05,
       doc: "higher = wetter",
     },
   },
@@ -690,21 +683,21 @@ export const DIALS = {
   // worker's ElevationCalculator AND the GPU field both run the classifier — so it lives in GENERATION_GROUPS.
   CLIMATE: {
     SEASONALITY: {
-      value: 12,
+      value: 11,
       min: 0,
       max: 30,
       step: 0.5,
       doc: "summer↔winter temperature half-swing (°C) at the poles — the seasonal extreme that splits temperate (C) from continental (D) from polar (E). 0 = a seasonless planet (no continental/polar interiors); higher = harsher winters reaching further toward the equator",
     },
     CONTINENTAL_SEASONALITY: {
-      value: 1.2,
+      value: 1,
       min: 0,
       max: 3,
       step: 0.1,
       doc: "how much deep continental interiors AMPLIFY the seasonal swing (oceans stay mild year-round; interiors bake in summer and freeze in winter — Siberia, the Dakotas). 0 = latitude alone sets the seasons; higher = harsher, more continental interiors",
     },
     JITTER: {
-      value: 0.35,
+      value: 0.58,
       min: 0,
       max: 1,
       step: 0.02,
@@ -718,34 +711,11 @@ export const DIALS = {
       doc: "size of the mottling noise (smaller = finer, tighter stipple; larger = broad blotches). Multi-octave, so it keeps resolving finer texture as you zoom in",
     },
     HADLEY: {
-      value: 0.7,
+      value: 0.6,
       min: 0,
       max: 1,
       step: 0.05,
       doc: "strength of Earth's zonal RAIN BANDS (the Hadley circulation): wet equator (rainforest belt), dry ±30° horse latitudes (the Sahara / Atacama / Australian desert belt), wetter mid-latitudes, dry poles. 0 = rainfall is moisture-only (no latitude banding); 1 = full bands — this is what clusters deserts + rainforests where Earth puts them",
-    },
-  },
-
-  // ICE — polar snow caps on LAND (open water never ices). Four levers: COVERAGE (how far toward
-  // the equator the caps reach), WOBBLE (how raggedly the snow line wanders), FILL (how completely
-  // the cap fills vs leaving low land poking through as holes), and BLEND (how softly the cap edge
-  // fades into the surrounding land).
-  ICE: {
-    COVERAGE: {
-      value: 0.04,
-      doc: "fraction of each hemisphere (in |sin lat|) the cap reaches; higher = bigger caps",
-    },
-    WOBBLE: {
-      value: 0.07,
-      doc: "how far the snow line wanders → ragged, lopsided edge (0 = clean circle)",
-    },
-    FILL: {
-      value: 1.13,
-      doc: "how completely the cap fills; higher = fewer holes (ices lower land too)",
-    },
-    BLEND: {
-      value: 0.085,
-      doc: "width (in |sin lat|) of the soft fade where the cap meets land; bigger = softer",
     },
   },
 
@@ -814,7 +784,6 @@ export const {
   LAND_RELIEF,
   MOISTURE,
   CLIMATE,
-  ICE,
   HILLSHADE,
 } = DIALS;
 
@@ -975,7 +944,7 @@ export function applyTuning(overrides: TuningOverrides): void {
  *  ice → skip the polar ice caps). Mutated in place like DIALS and synced to the worker on the
  *  `tune` message — NOT pinned dials.
  *  ===================================================================== */
-export type Features = { mountains: boolean; climate: boolean; ice: boolean };
+export type Features = { mountains: boolean; climate: boolean };
 
 /** All features on — the normal planet. */
 export const FEATURE_DEFAULTS: Features = Object.fromEntries(
@@ -1008,7 +977,6 @@ export const GENERATION_GROUPS = {
   LAND_RELIEF,
   MOISTURE,
   CLIMATE,
-  ICE,
   HILLSHADE,
 } as const;
 type GenGroups = typeof GENERATION_GROUPS;

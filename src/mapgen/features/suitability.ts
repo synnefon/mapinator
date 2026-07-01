@@ -116,7 +116,6 @@ export type CellEnv = {
   latDeg: number;
   reportElevation: number; // [0,1] display height — feeds the lapse-rate temperature
   moisture: number; // [0,1] already-contrasted
-  ice: number; // VESTIGIAL — habitability's "frozen" now comes from temperature (frozenFraction); the polar-ice field retires with the settlement rework
   slope: number; // local max |Δ raw-elevation| to neighbours — ruggedness
 };
 
