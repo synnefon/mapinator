@@ -8,9 +8,9 @@ import { computeMapFeatures, type Settlement } from "./index";
 import { EMPTY_RIVERS } from "./rivers";
 import { minLevelForPopulation } from "./settlements";
 
-// The big-city HEAD comes out of the ONE settlement engine (settlements.ts) scanned over the whole sphere at/
-// above the global split, assembled into markers by cityStats.assembleHeadSettlements — exercised here end to
-// end through computeMapFeatures (which builds the SettlementWorld + runs the head), exactly as the app does.
+// Every settlement comes out of the ONE continuous rank-size law per country (settlements.ts), assembled into
+// markers by cityStats.assembleCities — exercised here end to end through computeMapFeatures (which builds the
+// SettlementWorld + runs it), exactly as the app does.
 
 const PARAMS = snapshotParams();
 const SETTINGS: MapSettings = { resolution: 1, zoom: 0, theme: "lush" };
@@ -25,7 +25,7 @@ const build = () => {
   return { map, cities: result.cities, countries: result.countries };
 };
 
-describe("assembleHeadSettlements (the big-city head)", () => {
+describe("assembleCities (the per-country rank-size settlement set)", () => {
   it("places cities with a valid tier, population-keyed minLevel, and non-negative population", () => {
     const { countries, cities } = build();
     expect(cities.length).toBeGreaterThan(0);

@@ -1,35 +1,15 @@
-import type { Vec3 } from "../common/3DMath";
-import type { CountrySeeds, GlobeMap, TownFieldData } from "../common/map";
+import type { CountrySeeds, GlobeMap } from "../common/map";
 import type { TerrainParams } from "../common/settings";
 import type { GenRequest } from "../renderer/LodPipeline";
 
 // A config message broadcast to every worker (seed and/or resolved generation params and/or the base
-// country seeds the per-cell country stamp + town field read).
+// country seeds the per-cell country stamp reads).
 type PoolConfig = { seed?: string; params?: TerrainParams; countrySeeds?: CountrySeeds };
 
-// An off-thread grow of one region's patch-local small towns (the town tail). The worker scans the given fixed
-// scales over the cap — size = density × each scale's catchment — then keeps the largest `maxCount` (see
-// mapWorker `towns`).
-type TownRequest = {
-  kind: "towns";
-  center: Vec3;
-  capAngle: number;
-  scaleAngles: number[]; // the fixed scales (rad) to scan — each sets a catchment area, hence a size band
-  urbanFraction: number; // density × catchment × this = a candidate's population
-  maxCount: number; // render floor: keep only the largest this-many settlements in the cap
-  // Live dials so the tail routes + biases with the SAME values the head did (the worker's copy is stale).
-  popDensityScale: number;
-  coastStrength: number;
-  coastFalloff: number;
-  desertAversion: number;
-  iceAversion: number;
-  riverMinStrength: number;
-};
-
-// One job posted to a worker — a rung generate or a region town grow (each carries a `kind`).
-type PoolJob = GenRequest | TownRequest;
-// Worker reply: a generate yields `map` (with per-cell country stamped on detail caps); a town grow `towns`.
-type WorkerResponse = { id: number; map?: GlobeMap; towns?: TownFieldData };
+// One job posted to a worker — a rung generate (carries a `kind`).
+type PoolJob = GenRequest;
+// Worker reply: a generate yields `map` (with per-cell country stamped on detail caps).
+type WorkerResponse = { id: number; map?: GlobeMap };
 
 // Per-worker peak memory while a fine-cap generate is in flight (its transient cap mesh + output
 // typed arrays) plus that worker's small mesh cache — rough, used only to size the pool. Each extra
@@ -56,8 +36,7 @@ export function recommendedWorkerCount(): number {
  * (the globe + each detail cap are independent maps), so N workers build N at once. Concurrency is
  * the pool SIZE, which is the memory cap: every in-flight generate transiently holds a cap mesh +
  * output arrays and each worker keeps its own mesh cache, so peak RAM scales with the worker count
- * (see recommendedWorkerCount). Requests beyond N queue until a worker frees. The region town grow
- * (growTowns) shares the same pool — it queues behind generation like any other job.
+ * (see recommendedWorkerCount). Requests beyond N queue until a worker frees.
  *
  * Every worker holds an identical MapGenerator, so `configure` (seed / params / feature / country-seed
  * changes) BROADCASTS to all of them and jobs go to whichever worker is free. postMessage is ordered
@@ -97,24 +76,13 @@ export class WorkerPool {
     });
   }
 
-  /** Grow one region's patch-local small towns off the main thread. Resolves null if the worker couldn't
-   *  run it yet (no field / base seeds configured) — the caller then shows just the global big cities. */
-  growTowns(spec: Omit<TownRequest, "kind">): Promise<TownFieldData | null> {
-    return new Promise((resolve) => {
-      const id = ++this.nextId;
-      this.pending.set(id, (res) => resolve(res.towns ?? null));
-      this.waiting.push({ id, msg: { kind: "towns", ...spec } });
-      this.dispatch();
-    });
-  }
-
   private spawn(): Worker {
     const w = new Worker(new URL("./mapWorker.ts", import.meta.url), { type: "module" });
     w.onmessage = (e: MessageEvent<WorkerResponse>) => {
       const resolve = this.pending.get(e.data.id);
       this.pending.delete(e.data.id);
       this.idle.push(w);
-      resolve?.(e.data); // generate → .map; countries → .country (its .then runs as a microtask)
+      resolve?.(e.data); // generate → .map (its .then runs as a microtask)
       this.dispatch(); // hand the freed worker the next queued job
     };
     w.onerror = (e) => console.error("map worker error:", e.message);

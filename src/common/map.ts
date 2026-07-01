@@ -49,41 +49,17 @@ export interface GlobeMap {
     countryOf?: Int32Array;
 }
 
-/** What a worker needs to seed an off-thread patch re-grow AND to grow the patch-local settlement tail with
- *  the SAME engine + routes the main thread used for the big-city head: the base cells' sites + per-cell
- *  grown country, the live waterline, and the per-base-cell water arrays + drawn-river network the settlement
- *  engine routes + biases on (computed on main where the mesh adjacency lives). Broadcast to the worker pool
- *  (like params) whenever the assignment changes. */
+/** What a worker needs to stamp each detail patch's per-cell country at generation (re-growing the base
+ *  partition on the patch's own fine mesh): the base cells' sites + per-cell grown country + the live
+ *  waterline. Broadcast to the worker pool (like params) whenever the assignment changes. */
 export type CountrySeeds = {
     sites: Float32Array;
     countryOf: Int32Array; // the grown base partition (every cell → a country) the workers sample from
     seaLevel: number;
-    coastDist: Int32Array; // per cell: hops to nearest water of any kind (-1 = water) — the engine's water bias
-    seaDist: Int32Array; // per cell: hops to nearest LARGE water (-1 = none) — the sea/lake split
-    coastDir: Float32Array; // 3 per cell: unit direction to nearest water — the shore snap marches along it
-    riverPositions: Float32Array; // the drawn large-river network (rivers.ts): 3 per vertex
-    riverWidths: Float32Array; // 1 per vertex, normalized flow strength — river settlements snap to it
     // True only when `sites` differs from the last broadcast (a new base map), false on a feature-only
     // re-derive (sea level / language / dials). Lets each worker skip rebuilding its base KD-tree (an
     // O(n log n) sort) when the sites are unchanged — structured clone gives a fresh array each time, so
     // the worker can't tell by identity. Set by main, which holds the canonical base map.
     baseChanged: boolean;
-};
-
-/** The patch-local settlement tail for one in-view region, grown off-thread (mapWorker `towns` job) by the
- *  one settlement engine. Flat, transferable arrays: anchor xyz + population + owning country per settlement,
- *  plus its water kind + the terrain fields the main thread builds the SAME marker profile from (so a tail
- *  town and a head city are assembled identically — no distinction). */
-export type TownFieldData = {
-    positions: Float32Array; // [x0,y0,z0, x1,y1,z1, …] unit-sphere anchors (snapped to water)
-    populations: Float32Array;
-    countries: Int32Array; // owning country index per town (matches countryOf / CountryInfo.index)
-    waterKind: Uint8Array; // SETTLEMENT_WATER_KINDS index per town — the river/lake/coastal flavour split
-    rawElevation: Float32Array; // terrain fields per town → the marker's biome/industries/fun fact/elevation
-    reportElevation: Float32Array;
-    moisture: Float32Array;
-    ice: Float32Array;
-    coastDist: Int32Array;
-    seaDist: Int32Array;
 };
 

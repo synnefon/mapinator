@@ -252,34 +252,62 @@ export const DIALS = {
       doc: "how strongly the country choropleth tint covers the terrain. Lower = more terrain shows through (but coastal biome variation bleeds as off-colour cells); higher = flatter, more uniform country colour",
     },
   },
-  // CITY — knobs for the ONE settlement engine (features/settlements.ts), shared by the big-city head + the
-  // patch-local town tail. Read LIVE (not terrain gen), so a change re-places settlements without a full regen.
-  // Settlements cluster on water via the population coast/river bonus and snap onto the river/coast/lake they
-  // sit by — no per-feature "buckets" any more; water affinity is emergent from the density + the snap.
+  // CITY — knobs for the ONE continuous settlement law (features/settlements.ts + cityStats.assembleCities).
+  // Read LIVE (not terrain gen), so a change re-places settlements without a full regen. A country's settlements
+  // are a rank-size (Zipf) curve driven by its population; the ranks are placed on its most habitable, well-
+  // spaced land (water affinity emergent from the population coast/river bonus + the river/coast/lake snap).
   CITIES: {
-    // Size + count now fall entirely out of the density map: a settlement's population is its local density ×
-    // its catchment × URBAN_FRACTION, and how many draw is just a render count. No population threshold decides
-    // town-vs-city — the whole distribution, hamlet to metropolis, is a consequence of how density varies.
-    URBAN_FRACTION: {
-      value: 0.18,
+    // The rank-size law: size(rank) = LARGEST_CITY_SHARE · countryPop / rank^RANK_FALLOFF, emitted down to
+    // MIN_CITY_POP. Raising a country's population (or global density) grows every size AND lifts more ranks
+    // above the floor — bigger cities AND more small ones — continuously, with no thresholds or render cut.
+    LARGEST_CITY_SHARE: {
+      value: 0.08,
       min: 0.02,
-      max: 1,
-      step: 0.02,
-      doc: "share of a place's local carrying capacity (density × its catchment area) that becomes its settlement population — the one dial that scales EVERY settlement's size at once. Higher = bigger cities and towns everywhere; lower = a more rural, small-settlement world.",
+      max: 0.3,
+      step: 0.01,
+      doc: "the biggest city (the capital) as a share of its country's population — sets the top of every country's rank-size curve, so this scales the LARGEST cities. Higher = a few dominant megacities; lower = a flatter spread of mid-size cities.",
     },
-    CITY_RENDER_COUNT: {
-      value: 300,
+    RANK_FALLOFF: {
+      value: 1.1,
+      min: 0.7,
+      max: 2,
+      step: 0.05,
+      doc: "the rank-size (Zipf) exponent α in size(rank)=biggest/rank^α. 1 ≈ real Earth (2nd city ~½ the 1st). Higher = more top-heavy (capital dwarfs the rest) AND fewer, more EVEN counts across countries; lower = many similar-size cities.",
+    },
+    MIN_CITY_POP: {
+      value: 12000,
+      min: 1000,
+      max: 100000,
+      step: 1000,
+      doc: "smallest settlement placed — the rank-size curve stops once a rank falls below this. Lower = a longer tail of small towns/villages revealed on zoom (and more total markers); higher = only larger places.",
+    },
+    SPREAD: {
+      value: 0.6,
+      min: 0,
+      max: 1.5,
+      step: 0.1,
+      doc: "how much a country's settlements SPREAD across its land vs clump in its single best region. 0 = clump tightly in the most habitable spot; ~0.6 = tile the country (concentrated in good land but present throughout); 1 = even coverage. Fixes the 'all the towns in one corner' clumping.",
+    },
+    SPACING: {
+      value: 3,
+      min: 1,
+      max: 12,
+      step: 0.5,
+      doc: "EXTRA spacing big cities reserve on top of the base spread, as base-cell-spacings for a 1-million-person city (shrinks with √population). Higher = big cities pushed further apart; lower = they sit closer.",
+    },
+    SIZE_JITTER: {
+      value: 0.15,
+      min: 0,
+      max: 0.5,
+      step: 0.05,
+      doc: "± fractional random wobble on each settlement's rank-size population (deterministic per place), so sizes aren't a perfectly smooth curve. 0 = exact Zipf; higher = noisier sizes.",
+    },
+    MAX_CITIES: {
+      value: 400,
       min: 20,
-      max: 1200,
+      max: 1000,
       step: 10,
-      doc: "how many big cities render on the globe — the largest this-many places worldwide (each country's biggest is its capital). A pure render floor: raise it to show more, smaller cities alongside the capitals; lower it for just the major ones.",
-    },
-    TOWN_RENDER_COUNT: {
-      value: 50,
-      min: 50,
-      max: 2000,
-      step: 25,
-      doc: "how many towns render in view as you zoom in — the largest this-many settlements inside the current view. Raise for a denser sprinkle of smaller towns/villages; lower for only the larger towns. Zooming in reveals finer settlements automatically as the view shrinks.",
+      doc: "hard cap on how many settlements one country may have — a safety valve on the rank-size count (and total marker budget); rarely binds unless MIN_CITY_POP is very low.",
     },
     RIVER_MIN_STRENGTH: {
       value: 0.12,
@@ -313,17 +341,17 @@ export const DIALS = {
       min: 0.05,
       max: 100,
       step: 0.05,
-      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land. Earth ~1400 land average ≈ 2.5/km² (the default); modern Earth's global land average ≈ 54/km². The range spans near-empty worlds up to denser-than-modern-Earth (denser worlds simply grow bigger settlements everywhere; how many render is the separate CITY_/TOWN_RENDER_COUNT floor)",
+      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land. Earth ~1400 land average ≈ 2.5/km² (the default); modern Earth's global land average ≈ 54/km². The range spans near-empty worlds up to denser-than-modern-Earth (denser worlds grow bigger cities AND more of them, via each country's rank-size curve)",
     },
     COAST_STRENGTH: {
-      value: 1.6,
+      value: 0.1,
       min: 0,
       max: 5,
       step: 0.1,
       doc: "extra population right on the coast or lakeshore (trade + fishing); 0 = water access doesn't change density",
     },
     COAST_FALLOFF: {
-      value: 3,
+      value: 1.5,
       min: 1,
       max: 12,
       step: 0.5,
@@ -337,14 +365,14 @@ export const DIALS = {
       doc: "weight of the hot-and-wet rice-paddy density mode that makes monsoon lands the most crowded; 0 = temperate climates only",
     },
     ARIDITY: {
-      value: 1,
+      value: 0.6,
       min: 0.3,
       max: 3,
       step: 0.1,
       doc: "how sharply dry land sheds population toward desert emptiness; higher = a faster collapse just past the well-watered band",
     },
     RUGGEDNESS: {
-      value: 1,
+      value: 0.4,
       min: 0,
       max: 3,
       step: 0.1,

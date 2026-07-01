@@ -5,7 +5,7 @@ import { CITIES } from "../../common/settings";
 import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { ElevationFamily, MoistureBand } from "../../common/biomes";
 import type { NameGenerator } from "../NameGenerator";
-import { PLANET_RADIUS_KM, type Country } from "./countries";
+import { type Country } from "./countries";
 import { generateFunFact } from "./funFact";
 import { type Tags } from "./government";
 import { deriveIndustries, industryTagsOf, type IndustryTag } from "./industries";
@@ -14,14 +14,13 @@ import {
   type SettlementTier,
   type SettlementWaterKind,
   finishSettlements,
-  headScaleAngles,
   minLevelForPopulation,
+  placeSettlements,
   type PlacedCandidate,
   type PlacedSite,
-  scanScale,
+  type RankSizeDials,
+  rankSizePopulations,
   type SettlementWorld,
-  SETTLEMENT_SCALE_ANGLES,
-  topByPopulation,
 } from "./settlements";
 
 
@@ -138,11 +137,10 @@ export function settlementProfile(args: {
   return { elevationMeters: meters, industries, funFact: generateFunFact(ctx, args.usedFunFacts) };
 }
 
-// ===================== Marker assembly (shared by the head + the tail) =====================
-// A placed PlacedSite (from the one engine) becomes a Settlement marker the SAME way whether it's a big city
-// (the head, assembled here) or a small town (the tail, assembled in RegionTownLayer): same tier rule, same
-// profile, same zoom-reveal. Only the NAME differs — unique-by-index for the head, stable-by-location for
-// the tail — so the caller generates it and passes it in.
+// ===================== Marker assembly =====================
+// A placed PlacedSite (from the one engine) becomes a Settlement marker the SAME way whether it's a capital, a
+// big city, or a small town: same tier rule, same profile, same zoom-reveal (minLevel by population). The
+// caller generates the (globally unique) name and passes it in.
 
 // SettlementTier grounded in ~1400 sizes: a handful of "great cities" (≳75k), a band of sizeable towns, and
 // many small market towns. The capital is always big (politically primary). Tier drives the marker class +
@@ -150,14 +148,10 @@ export function settlementProfile(args: {
 const BIG_POP = 75_000;
 const MEDIUM_POP = 20_000;
 
-// The big-city HEAD is the settlement field's COARSE scales (settlements.headScaleAngles) scanned over the
-// WHOLE sphere, ranked by population, and cut to CITIES.CITY_RENDER_COUNT — the biggest places on the planet.
-// Size = density × the scale's catchment, so which cities exist and how big they are is a pure consequence of
-// the density map. The finer scales over the in-view cap are the patch-local town tail (RegionTownLayer) — the
-// SAME field, one scale ladder — so head and tail differ only by scale, with no population split between them.
-
-// A country the head scan missed (no city landed in the global top-N) still gets a capital: it's placed at the
-// country's most habitable OWN cell (assembleHeadSettlements), so every populated country keeps one.
+// Every settlement — capital, big city, small town — comes from the ONE continuous rank-size law per country
+// (settlements.rankSizePopulations + placeSettlements), assembled here into markers. No scale ladder, no global
+// top-N cut, no separate town algorithm: a country's count + sizes fall out of its population, and the ranks
+// are placed on its most habitable, well-spaced land. Zoom reveal is the marker's minLevel (by population).
 
 const siteVec = (sites: Float32Array, cell: number): Vec3 => ({ x: sites[3 * cell], y: sites[3 * cell + 1], z: sites[3 * cell + 2] });
 
@@ -165,9 +159,8 @@ const siteVec = (sites: Float32Array, cell: number): Vec3 => ({ x: sites[3 * cel
 export const tierOf = (population: number, isCapital: boolean): SettlementTier =>
   isCapital || population >= BIG_POP ? "big" : population >= MEDIUM_POP ? "medium" : "small";
 
-/** Build ONE Settlement marker from a placed site + its country. Shared by the head (assembleHeadSettlements)
- *  and the tail (RegionTownLayer): a big city and a small town are assembled identically. `name` + `statsRng`
- *  come from the caller (head names are unique by index; tail names stable by location). */
+/** Build ONE Settlement marker from a placed site + its country — capital, big city, and small town are all
+ *  assembled identically. `name` + `statsRng` come from the caller (name is unique per settlement). */
 export function buildSettlement(
   s: PlacedSite,
   country: { index: number; name: string; govTags: Tags },
@@ -210,74 +203,63 @@ export function buildSettlement(
 }
 
 /**
- * Place + assemble the world's big cities: the settlement field's COARSE scales (settlements.headScaleAngles)
- * scanned over the WHOLE sphere, ranked by population, and cut to CITIES.CITY_RENDER_COUNT — the biggest
- * places on the planet. Size = density × the scale's catchment, so which cities exist and how big they are is
- * a pure consequence of the density map; the finer scales over the view are the patch-local town tail, the
- * SAME field one rung finer. Each country's LARGEST result is its CAPITAL (forced onto the globe at zoom 1); a
- * country the scan's top-N missed gets one synthesised at its most habitable cell, so every populated country
- * keeps a capital. Deterministic (cached with the map).
+ * Place + assemble EVERY country's settlements from the ONE continuous rank-size law. For each country: derive
+ * its settlement populations from its total population (settlements.rankSizePopulations — the capital down to
+ * the smallest town, growing + lengthening continuously with population), place them on its most habitable,
+ * well-spaced land (settlements.placeSettlements — keeping all the coast / river / anti-desert / anti-ice
+ * bias), and assemble each into a marker (buildSettlement). The capital is the country's largest (rank 0),
+ * forced onto the globe at zoom 1; the rest reveal on zoom by population (minLevel). Global density flows in
+ * through each country's population. Deterministic; cached with the map (mapDerivations).
  */
-export function assembleHeadSettlements(args: {
+export function assembleCities(args: {
   map: GlobeMap;
   seaLevel: number;
   world: SettlementWorld;
   countries: Country[];
-  countryOf: Int32Array; // land partition (cell → country index, -1 = water): a missed country's capital cell
+  countryOf: Int32Array; // land partition (cell → country index, -1 = water): the cells each country places on
   mapSeed: string;
   namer: NameGenerator;
 }): Settlement[] {
   const { map, seaLevel, world, countries, countryOf, mapSeed, namer } = args;
-  const urbanFraction = CITIES.URBAN_FRACTION.value;
-  // The big-city HEAD: the coarse scales scanned over the whole sphere (centre arbitrary at capAngle ≥ π; the
-  // field is scale + global-cell-id keyed, so it's the same set every time), ranked and cut to the render
-  // count. Route only the survivors. Size = density × catchment, so the top-N are the genuinely largest places.
-  const candidates: PlacedCandidate[] = [];
-  for (const gridAngle of headScaleAngles()) {
-    candidates.push(...scanScale({ center: { x: 1, y: 0, z: 0 }, capAngle: Math.PI, gridAngle, urbanFraction, planetRadiusKm: PLANET_RADIUS_KM, world, seed: `${mapSeed}|cities` }));
-  }
-  const head = finishSettlements(topByPopulation(candidates, CITIES.CITY_RENDER_COUNT.value), world);
-  // Group by country, largest first — the largest is the capital.
-  const byCountry: PlacedSite[][] = countries.map(() => []);
-  for (const s of head) if (s.countryIndex >= 0 && s.countryIndex < countries.length) byCountry[s.countryIndex].push(s);
-  for (const list of byCountry) list.sort((a, b) => b.population - a.population);
-  // Land cells per country — so a country the top-N missed gets a capital at its most habitable OWN cell
-  // (O(its cells), once), rather than a fine sub-cell re-scan of the whole country (the former freeze).
+  const dials: RankSizeDials = {
+    largestCityShare: CITIES.LARGEST_CITY_SHARE.value,
+    rankFalloff: CITIES.RANK_FALLOFF.value,
+    minCityPop: CITIES.MIN_CITY_POP.value,
+    maxCities: CITIES.MAX_CITIES.value,
+  };
+  const spacingCells = CITIES.SPACING.value;
+  const spread = CITIES.SPREAD.value;
+  const sizeJitter = CITIES.SIZE_JITTER.value;
+  const cellSpacingRad = Math.sqrt((4 * Math.PI) / map.cellCount);
+  // Bucket the land partition by country — the cells each country's settlements are placed on.
   const cellsByCountry: number[][] = countries.map(() => []);
   for (let c = 0; c < countryOf.length; c++) {
     const ci = countryOf[c];
     if (ci >= 0 && ci < countries.length) cellsByCountry[ci].push(c);
   }
-  const coarsestCatchment = (p: Vec3): number => {
-    // The coarsest scale's cell area at this latitude (cos-corrected; p.y = sin lat) — the synthesised
-    // capital is sized by the SAME density × catchment rule the scanned cities use, just at the top scale.
-    const g = SETTLEMENT_SCALE_ANGLES[0];
-    return g * g * Math.max(1e-3, Math.sqrt(Math.max(0, 1 - p.y * p.y))) * PLANET_RADIUS_KM * PLANET_RADIUS_KM;
-  };
 
   const settlements: Settlement[] = [];
   for (const country of countries) {
-    const list = byCountry[country.index];
-    if (list.length === 0) {
-      // The global top-N held no city here. Place the capital at the country's most habitable OWN cell —
-      // O(its cells), reusing the same density model — instead of a fine sub-cell re-scan of the whole
-      // country region (which sampled multi-octave noise at thousands of grid points per missed country).
-      const cells = cellsByCountry[country.index];
-      let bestCell = country.anchorCell;
-      let bestDensity = -Infinity;
-      for (const cell of cells) {
-        const d = world.popDensityAt(siteVec(map.sites, cell));
-        if (d > bestDensity) { bestDensity = d; bestCell = cell; }
-      }
-      const center = siteVec(map.sites, bestCell);
-      const f = world.fieldAt(center);
-      const { anchor, waterKind } = world.routeAt(center);
-      const population = Math.max(1, Math.round(Math.max(0, bestDensity) * coarsestCatchment(center) * urbanFraction));
-      list.push({ anchor, population, countryIndex: country.index, waterKind, ...f });
-    }
+    const cells = cellsByCountry[country.index];
+    if (cells.length === 0) continue; // no land cell (shouldn't happen) → nothing to place
+    // The whole rank-size curve for this country, then placed on its best, well-spaced land (largest first).
+    const populations = rankSizePopulations(country.population, dials);
+    const placed: PlacedCandidate[] = placeSettlements({
+      cells,
+      siteOf: (cell) => siteVec(map.sites, cell),
+      world,
+      countryIndex: country.index,
+      populations,
+      spacingCells,
+      spread,
+      sizeJitter,
+      cellSpacingRad,
+      seed: `${mapSeed}|city|${country.index}`,
+    });
+    const sites: PlacedSite[] = finishSettlements(placed, world);
     const usedFunFacts = new Set<string>(); // dedupe fun facts within this country
-    list.forEach((s, idx) => {
-      const isCapital = idx === 0; // the country's largest settlement
+    sites.forEach((s, idx) => {
+      const isCapital = idx === 0; // placeSettlements returns largest first → rank 0 is the capital
       const name = namer.generate({ seed: `${mapSeed}|city|${country.index}|${idx}`, lang: country.language, unique: true });
       settlements.push(
         buildSettlement(s, { index: country.index, name: country.name, govTags: country.govType.tags }, {

@@ -6,7 +6,7 @@ import { buildCpuCalc } from "../gpu/cpuField";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency, buildCoastDir, coastDistance, largeWaterMask, waterHopDistance } from "./adjacency";
 import { CLASSIFY, classifyMinor, type FeatureKind } from "./classify";
-import { assembleHeadSettlements } from "./cityStats";
+import { assembleCities } from "./cityStats";
 import {
   assignCountries,
   colorCountries,
@@ -61,9 +61,6 @@ export type MapFeatures = {
   grownCountryOf: Int32Array; // countryOf grown over water by contiguity — every cell has a country (the base
   // partition the workers sample to stamp each patch cell at generation; see growCountriesOverWater)
   countryColors: Int32Array; // per country index: a colour class for the choropleth fill (see colorCountries)
-  // The per-base-cell water arrays the one settlement engine routes + biases on, shipped to the worker so the
-  // patch-local town tail routes identically to the head (see main.ts broadcast + mapWorker).
-  settlementSeeds: { coastDist: Int32Array; seaDist: Int32Array; coastDir: Float32Array };
 };
 
 const siteVec = (map: GlobeMap, cell: number): Vec3 => ({
@@ -148,7 +145,7 @@ export function computeMapFeatures(
     desertAversion: CITIES.DESERT_AVERSION.value,
     iceAversion: CITIES.ICE_AVERSION.value,
   });
-  const cities = assembleHeadSettlements({ map, seaLevel, world, countries, countryOf, mapSeed, namer });
+  const cities = assembleCities({ map, seaLevel, world, countries, countryOf, mapSeed, namer });
   const countryColors = colorCountries(countryOf, adjacency, countries.length);
 
   // A land feature speaks the language of the country at its anchor; a water body the language of
@@ -239,6 +236,5 @@ export function computeMapFeatures(
     countryOf,
     grownCountryOf,
     countryColors,
-    settlementSeeds: { coastDist, seaDist, coastDir },
   };
 }
