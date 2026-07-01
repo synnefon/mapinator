@@ -389,7 +389,7 @@ function heatLetter(c: SyntheticClimate): number {
   return 2; // c
 }
 
-const isWater = (elevation: number, seaLevel: number): boolean => elevation < seaLevel;
+export const isWater = (elevation: number, seaLevel: number): boolean => elevation < seaLevel;
 
 /**
  * Classify one cell into a Köppen zone index (KZ.*). The API remains scalar for CPU/GPU callers, but the

@@ -26,7 +26,10 @@ const RECENTER_FRACTION = 0.25; // re-grow once the view centre moves this fract
 // uses a COARSE grid and a HIGH floor (only the larger market towns); a deep cap uses a FINE grid and a low
 // floor (down to the dialled MIN_TOWN_POP). `floor` is the deepest-zoom population floor (the dial);
 // shallower levels scale it up so each level stays legible. Spacing tracks the tier (~10 km / ~5–6 km).
-const minPopForLevel = (level: number, floor: number): number => floor * (level <= 4 ? 4 : level === 5 ? 2 : 1);
+// The scaled floor is CLAMPED below `headSplit` (the tail's [floor, headSplit) ceiling): a floor at/above it
+// would make the window empty, silently hiding the whole town tail at that zoom level.
+const minPopForLevel = (level: number, floor: number, headSplit: number): number =>
+  Math.min(floor * (level <= 4 ? 4 : level === 5 ? 2 : 1), 0.9 * headSplit);
 const gridAngleForLevel = (level: number): number => (level <= 4 ? 0.0016 : level === 5 ? 0.001 : 0.0006);
 
 export class RegionTownLayer {
@@ -56,6 +59,7 @@ export class RegionTownLayer {
     }
     const minTownPop = CITIES.MIN_TOWN_POP.value;
     const popDensityScale = POPULATION.GLOBAL_POPULATION_DENSITY.value;
+    const headSplit = globalCityMinPop(popDensityScale); // the tail's ceiling — big cities at/above it are the head
     const key = this.regionKey(epoch, level, center, capAngle, minTownPop);
     if (key === this.currentKey || key === this.requestedKey) return this.current; // already showing / in flight
     this.requestedKey = key;
@@ -64,8 +68,8 @@ export class RegionTownLayer {
         center,
         capAngle: capAngle * CAP_MARGIN,
         gridAngle: gridAngleForLevel(level),
-        minPop: minPopForLevel(level, minTownPop),
-        ceilingPop: globalCityMinPop(popDensityScale), // hand off to the global head at the live density-scaled split
+        minPop: minPopForLevel(level, minTownPop, headSplit),
+        ceilingPop: headSplit, // hand off to the global head at the live density-scaled split
         perCapita: PER_CAPITA,
         // Live dials so the tail routes + biases identically to the head (the worker's settings copy is stale).
         popDensityScale,

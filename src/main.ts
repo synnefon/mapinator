@@ -189,7 +189,8 @@ document.addEventListener("DOMContentLoaded", () => {
       needle?.recolor();
     } else if (
       key !== "viewPlates" &&
-      key !== "viewLabels" &&
+      key !== "viewLabels" && 
+      key !== "viewClimate" &&
       key !== "viewCountries" &&
       key !== "viewCities" &&
       key !== "viewCountryColors" &&

@@ -380,7 +380,6 @@ export class GpuField {
     f("uShadeMinLandE", SHADE_MIN_LAND_E);
     // features
     f("uMountainsOn", p.features.mountains ? 1 : 0);
-    f("uClimateOn", p.features.climate ? 1 : 0);
     f("uEmitReport", emitReport ? 1 : 0); // rivers: emit reportElevation in .a instead of shade
     f("uRiverRoughAmp", RIVERS.ROUGHNESS.value); // rivers: routing-height micro-relief (unused unless uEmitReport)
     // samplers + layout

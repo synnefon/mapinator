@@ -33,7 +33,7 @@ const float MONSOON_MOISTURE_MAX = 0.62;
 
 // --- locked Köppen constants; mirror koppen.ts KOPPEN ---
 const float K_TROPICAL_COLD_MONTH_MIN_C = 18.0;
-const float K_POLAR_WARM_MONTH_MAX_C = 10.0;
+const float K_POLAR_WARM_MONTH_MAX_C = 6.0;
 const float K_ICE_CAP_WARM_MONTH_MAX_C = 0.0;
 const float K_TREE_MONTH_MIN_C = 10.0;
 const float K_TEMPERATE_COLD_MONTH_MIN_C = 0.0;
@@ -45,8 +45,8 @@ const float K_AF_DRIEST_MONTH_MIN_MM = 60.0;
 const float K_AM_DRIEST_MONTH_BASE_MM = 100.0;
 const float K_AM_DRIEST_MONTH_ANNUAL_DIVISOR = 25.0;
 const float K_DRY_SUMMER_MAX_DRIEST_SUMMER_MM = 40.0;
-const float K_DRY_SUMMER_WINTER_RATIO = 3.0;
-const float K_DRY_WINTER_SUMMER_RATIO = 10.0;
+const float K_DRY_SUMMER_WINTER_RATIO = 1.0;
+const float K_DRY_WINTER_SUMMER_RATIO = 1.12;
 const float K_ARID_SUMMER_DRY_OFFSET_MM = 0.0;
 const float K_ARID_EVEN_OFFSET_MM = 140.0;
 const float K_ARID_WINTER_DRY_OFFSET_MM = 280.0;

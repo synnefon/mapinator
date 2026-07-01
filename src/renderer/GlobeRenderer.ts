@@ -190,7 +190,12 @@ export class GlobeRenderer {
     const cached = this.colorCache.get(map);
     if (cached && cached.key === key) return cached;
 
-    const { palette, colorIdx } = computeCellColors(map, settings.theme, settings.viewPlates ?? false);
+    const { palette, colorIdx } = computeCellColors(
+      map,
+      settings.theme,
+      settings.viewPlates ?? false,
+      settings.viewClimate ?? false
+    );
     const entry: ColorCache = { key, palette, colorIdx };
     this.colorCache.set(map, entry);
     return entry;

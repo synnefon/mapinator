@@ -1,7 +1,7 @@
 import { Vec3 } from "../common/3DMath";
 import type { CountrySeeds } from "../common/map";
 import type { TerrainParams } from "../common/settings";
-import { PLANET_RADIUS_KM } from "./features/countries";
+import { PLANET_RADIUS_KM, patchCountryOf } from "./features/countries";
 import { buildKdTree, type KdNode, nearestCell } from "./features/kdTree";
 import { buildRiverGrid, growSettlements, makeSettlementWorld, RIVER_GRID_CELLS, SETTLEMENT_WATER_KINDS } from "./features/settlements";
 import { buildCpuCalc } from "./gpu/cpuField";
@@ -187,19 +187,21 @@ ctx.onmessage = (e: MessageEvent<WorkerRequest>) => {
   if (!gen) return; // a generate arrived before any config — shouldn't happen
   const map = gen.generate(req.center, req.halfAngle, req.points, undefined, req.geometryOnly);
 
-  // Stamp each patch cell's country AT GENERATION: nearest base cell in the broadcast grown partition. No
-  // field, no GPU readback, no async re-grow — the choropleth/highlight colour correctly the instant the
-  // mesh lands. Cost is O(cells) proportional to the gen the pipeline already committed to (never the
-  // bottleneck), so there's no cell cap — the deepest patches, where the equirect looks blockiest, get it too.
-  if (req.withCountry && countrySeeds && baseTree) {
-    const co = new Int32Array(map.cellCount);
-    const bs = countrySeeds.sites;
-    const grown = countrySeeds.countryOf;
+  // Stamp each patch cell's country AT GENERATION by RE-GROWING the partition on the patch's OWN fine mesh
+  // (land-constrained Dijkstra, water a hard barrier), so the choropleth / hover highlight / dotted borders
+  // follow the FINE coastline and SHARPEN with zoom — instead of the coarse base-cell Voronoi a plain
+  // nearest-base-cell stamp gives (blocky, fixed on zoom). `calc` (the CPU field twin) supplies the patch's
+  // fine land/water — the exact coastline the base globe + GPU field draw. One-time per patch, off-thread;
+  // the LOD pipeline caches the result with the mesh. (calc is always built alongside `gen` in config.)
+  if (req.withCountry && countrySeeds && baseTree && calc) {
+    const seaLevel = countrySeeds.seaLevel;
+    const sample = calc;
+    const s = map.sites;
+    const land = new Uint8Array(map.cellCount);
     for (let i = 0; i < map.cellCount; i++) {
-      const bc = nearestCell(baseTree, bs, map.sites[3 * i], map.sites[3 * i + 1], map.sites[3 * i + 2]);
-      co[i] = bc >= 0 ? grown[bc] : -1;
+      land[i] = sample.sampleCell({ x: s[3 * i], y: s[3 * i + 1], z: s[3 * i + 2] }).elevation >= seaLevel ? 1 : 0;
     }
-    map.countryOf = co;
+    map.countryOf = patchCountryOf(map, (i) => land[i] === 1, baseTree, countrySeeds.sites, countrySeeds.countryOf);
   }
 
   // The typed arrays are freshly built per call, so transfer their buffers

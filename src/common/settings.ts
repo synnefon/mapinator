@@ -17,6 +17,7 @@ export interface MapSettings {
   resolution: number;
   zoom: number; // 0 = whole planet, 1 = max zoom toward a patch
   theme: Theme;
+  viewClimate?: boolean; // render overlay: colour cells by climate instead of biome (no regen). Optional so the dev harnesses (sweep/explorer) can omit it → no overlay.
   viewPlates?: boolean; // render overlay: colour cells by tectonic plate instead of biome (no regen). Optional so the dev harnesses (sweep/explorer) can omit it → no overlay.
   viewLabels?: boolean; // render overlay: draw generated names for the map's features (seas, continents, …). Optional like viewPlates.
   viewCountries?: boolean; // render overlay: dotted red country borders + country names. Optional like viewPlates.
@@ -35,7 +36,7 @@ export type NumericSettingKey = {
  *  single source of truth for a layer's default state, read by the panel (sort + reset) AND by the
  *  derived runtime defaults below. A FEATURE flips a generation switch (FEATURES; regen on change);
  *  a VIEW flips a render-overlay MapSettings flag (re-render only). */
-export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries" | "viewCities" | "viewCountryColors" | "viewRivers";
+export type ViewLayerKey = "viewPlates" | "viewLabels" | "viewCountries" | "viewCities" | "viewCountryColors" | "viewRivers" | "viewClimate";
 export type Layer =
   | { kind: "feature"; key: keyof Features; label: string; doc: string; defaultOn: boolean }
   | { kind: "view"; key: ViewLayerKey; label: string; doc: string; defaultOn: boolean };
@@ -53,8 +54,8 @@ export const LAYERS: Layer[] = [
     defaultOn: true,
   },
   {
-    kind: "feature",
-    key: "climate",
+    kind: "view",
+    key: "viewClimate",
     label: "climate",
     doc: "wet/dry moisture variation and maritime humidity",
     defaultOn: true,

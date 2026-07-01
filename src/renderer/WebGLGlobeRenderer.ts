@@ -740,7 +740,12 @@ export class WebGLGlobeRenderer implements IGlobeRenderer {
 
     const colorKey = `${settings.theme}|${settings.viewPlates}`;
     if (entry.colorKey !== colorKey) {
-      const { palette, colorIdx } = computeCellColors(map, settings.theme, settings.viewPlates ?? false);
+      const { palette, colorIdx } = computeCellColors(
+        map,
+        settings.theme,
+        settings.viewPlates ?? false,
+        settings.viewClimate ?? false
+      );
       const colorIndices = buildColorIndices(map, colorIdx);
       if (entry.colorBuf) gl.deleteBuffer(entry.colorBuf);
       if (entry.palTex) gl.deleteTexture(entry.palTex);

@@ -48,11 +48,11 @@ uniform vec2  uShelf;
 uniform float uRidgeWavelength, uRidgeAmplitude, uMountainOctaves, uMountainGain, uMountainLacunarity, uSwellFraction;
 uniform float uRangeWidth, uSinuosity, uConvergenceThreshold, uVariation, uCoastBias;
 uniform float uLandReliefWavelength, uLandReliefAmplitude, uLandReliefOctaves, uLandReliefGain, uLandReliefLacunarity;
-uniform float uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity, uMoistContrast, uWaterProximityEffect, uDesertSteepness, uWaterSizeOctaves;
+uniform float uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity, uMoistContrast, uMoistRainfall, uWaterProximityEffect, uDesertSteepness, uWaterSizeOctaves;
 uniform float uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uInteriorDryness, uHadley;  // CLIMATE (Köppen)
 uniform vec3  uLight;                 // hillshade light in (east, north, up)
 uniform float uExaggeration, uEpsilon, uShadeFloor, uShadeLowlandFloor, uShadeMinLandE;
-uniform float uMountainsOn, uClimateOn;   // feature switches (1 = on)
+uniform float uMountainsOn;   // feature switch (1 = on)
 uniform float uEmitReport;            // rivers: 1 = write reportElevation (routing height) into .a instead of shade
 uniform float uRiverRoughAmp;         // rivers: micro-relief amplitude folded into the routing height (so trunk flow converges)
 uniform int   uPlateCount;
@@ -209,9 +209,9 @@ float reportElevationAt(float C, float renderedElevation) {
   return clamp(uSeaLevel + inland * REPORT_INLAND_RISE + mtn, 0.0, 1.0);
 }
 
-// ElevationCalculator.moistureAt
+// ElevationCalculator.moistureAt — climate is always generated now (the viewClimate toggle switches the
+// COLOUR at draw, not the field), so there is no generation gate here; mirrors the CPU moistureAt.
 float moistureAt(vec3 site, float cont, float broadCont) {
-  if (uClimateOn < 0.5) return NEUTRAL;
   float raw = fbm3(vec3(site.x + MOIST_OFF, site.y + MOIST_OFF, site.z + MOIST_OFF), uMoistWavelength, uMoistAmplitude, uMoistOctaves, uMoistGain, uMoistLacunarity);
   float m = clamp(NEUTRAL + raw, 0.0, 1.0);
   float oceanic = min(cont, broadCont);
@@ -266,9 +266,12 @@ vec4 field(vec3 site) {
   float moist = moistureAt(site, full, broad);
   // .a carries shade for the renderer, OR the river routing height (reportElevation) when sampling
   // for rivers — an if (not ?:) so the unused branch's work is skipped and the render path is unchanged.
+  // reportElevation = the UNCAPPED real height (mountains restored). The climate classifier reads it for the
+  // lapse-rate temperature, and the rivers pass routes on it — computed once, matching CPU sampleCell.
+  float reportElev = reportElevationAt(full, elev);
   float a;
   if (uEmitReport > 0.5) {
-    a = reportElevationAt(full, elev);
+    a = reportElev;
     // Micro-relief on LAND so trunk flow CONVERGES into a dendritic network instead of running parallel
     // down the smooth continental ramp (the "lined-up" look). Ocean stays a clean sink.
     if (elev >= uSeaLevel) a += uRiverRoughAmp * fbm3(site, RIVER_ROUGH_WL, 1.0, 5.0, 0.55, 2.0);
@@ -279,7 +282,7 @@ vec4 field(vec3 site) {
   // rivers pass (uEmitReport) reads the ice mask DERIVED from that same zone (ET/EF) so rivers aren't routed
   // over iced land — matching CPU map.ice. continentality (interior-ness) feeds the synthesized seasonal swing.
   float continentality = smoothstep(uShelf.y, 1.0, full);
-  float zone = koppenZone(site, elev, moist, continentality, uSeaLevel, uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uHadley);
+  float zone = koppenZone(site, elev, reportElev, moist, continentality, uSeaLevel, uSeasonality, uContinentalSeasonality, uJitter, uJitterScale, uHadley);
   float b = uEmitReport > 0.5 ? iceAt(zone) : zone;
   return vec4(elev, moist, b, a);
 }

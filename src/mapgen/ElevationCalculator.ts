@@ -382,8 +382,7 @@ export class ElevationCalculator {
     broadContinentalness: number,
     rainfall: number
   ): number {
-    const { MOISTURE, OCEANS, features } = this.params;
-    if (!features.climate) return INVARIANTS.NEUTRAL_CENTER_POINT; // climate off → flat moisture everywhere
+    const { MOISTURE, OCEANS } = this.params;
     const raw = fbm3(
       this.noise3D,
       site.x + MOISTURE_NOISE_OFFSET,

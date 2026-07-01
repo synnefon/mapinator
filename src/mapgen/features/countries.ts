@@ -6,7 +6,8 @@ import { makeRNG, randomChoice } from "../../common/random";
 import { COUNTRIES } from "../../common/settings";
 import { refineSphereCurve } from "../../common/sphereCurve";
 import type { NameGenerator } from "../NameGenerator";
-import { coastDistance, vertexKey } from "./adjacency";
+import { buildAdjacency, coastDistance, vertexKey } from "./adjacency";
+import { nearestCell, type KdNode } from "./kdTree";
 import { angularExtent, poleOfInaccessibilityWithRadius } from "./detect";
 import { generateGovernment, type GovType } from "./government";
 import { estimatePopulation } from "./population";
@@ -329,6 +330,60 @@ export function growCountriesOverWater(adjacency: number[][], countryOf: Int32Ar
     frontier = next;
   }
   return grown;
+}
+
+/**
+ * Re-grow the country partition on a detail PATCH's OWN fine mesh, so the choropleth / hover highlight /
+ * dotted borders follow the fine COASTLINE and sharpen as you zoom — instead of the coarse base-cell
+ * Voronoi a plain nearest-base-cell stamp gives (blocky, fixed on zoom). Each fine LAND cell is seeded
+ * from its nearest base LAND cell's country, then a land-constrained Dijkstra grows the seeds over fine
+ * LAND ONLY (water is a hard barrier), so a country stays on its own landmass and the border between two
+ * countries lands on the fine coast where they meet the sea. Off-thread (worker), once per patch (the LOD
+ * pipeline caches it with the mesh). `isLand` reads the patch's own fine elevation; the base partition
+ * (baseCountryOf, where >= 0 IS land) supplies the seeds via the base KD-tree. Mirrors the base grow
+ * (assignCountries / growCountriesOverWater), re-evaluated at the patch's resolution.
+ */
+export function patchCountryOf(
+  patch: Pick<GlobeMap, "sites" | "cellCount" | "ringOffsets" | "ringVerts">,
+  isLand: (cell: number) => boolean,
+  baseTree: KdNode | null,
+  baseSites: Float32Array,
+  baseCountryOf: Int32Array
+): Int32Array {
+  const n = patch.cellCount;
+  const { sites } = patch;
+  const countryOf = new Int32Array(n).fill(-1);
+  const dist = new Float64Array(n).fill(Infinity);
+  const heap = new MinHeap(n);
+  // Seed each fine LAND cell from its nearest base LAND cell (baseCountryOf >= 0 IS "base land").
+  for (let i = 0; i < n; i++) {
+    if (!isLand(i)) continue;
+    const bc = nearestCell(baseTree, baseSites, sites[3 * i], sites[3 * i + 1], sites[3 * i + 2]);
+    if (bc >= 0 && baseCountryOf[bc] >= 0) {
+      countryOf[i] = baseCountryOf[bc];
+      dist[i] = 0;
+      heap.push(i, 0);
+    }
+  }
+  // Grow over fine LAND only — water is never crossed, so a country never leaks across a strait onto a
+  // neighbouring landmass, and every fine coast cell is claimed by the country it's actually connected to.
+  const adjacency = buildAdjacency(patch);
+  while (heap.size > 0) {
+    const c = heap.pop();
+    if (heap.poppedKey > dist[c]) continue; // stale entry (c was re-pushed cheaper since)
+    const cx = sites[3 * c], cy = sites[3 * c + 1], cz = sites[3 * c + 2];
+    for (const nb of adjacency[c]) {
+      if (!isLand(nb)) continue;
+      const dx = cx - sites[3 * nb], dy = cy - sites[3 * nb + 1], dz = cz - sites[3 * nb + 2];
+      const nd = dist[c] + Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (nd < dist[nb]) {
+        dist[nb] = nd;
+        countryOf[nb] = countryOf[c];
+        heap.push(nb, nd);
+      }
+    }
+  }
+  return countryOf;
 }
 
 /**

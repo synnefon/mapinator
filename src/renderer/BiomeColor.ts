@@ -1,11 +1,11 @@
 import {
+  bandLightnessAt,
   BASE_LIGHTNESS,
+  colorFor as baseColorFor,
   BiomeColors,
   LAND_FAMILY_STOPS,
   MOISTURE_STOPS,
   THEME_OVERRIDES,
-  bandLightnessAt,
-  colorFor as baseColorFor,
   type ElevationBand,
   type ElevationFamily,
   type MoistureBand,
@@ -20,7 +20,7 @@ import {
   mixHex,
   quantizeColor,
 } from "../common/colorUtils";
-import { KOPPEN_COLORS, KOPPEN_RGB, KOPPEN_ZONE_COUNT } from "../common/koppen";
+import { isWater, KOPPEN_COLORS, KOPPEN_RGB, KOPPEN_ZONE_COUNT } from "../common/koppen";
 import type { GlobeMap } from "../common/map";
 import { CONTINENTS, FEATURES, OCEANS } from "../common/settings";
 import { applyContrast, clamp } from "../common/util";
@@ -146,8 +146,11 @@ export type ChoroplethTint = {
   key: string; // identity for the renderer's texture cache (changes with the data + toggle)
 };
 
-export function computeCellColors(map: GlobeMap, theme: Theme, viewPlates: boolean): CellColors {
+export function computeCellColors(map: GlobeMap, theme: Theme, viewPlates: boolean, viewClimate: boolean): CellColors {
   const { koppenZone, cellCount } = map;
+  if (!viewClimate && !isWater(map.elevation[0], OCEANS.SEA_LEVEL.value)) {
+    return { palette: [BiomeColors[theme].DRY_HIGH], colorIdx: new Int32Array([0]) };
+  }
   const colors = computeColorsFromFields(koppenZone, cellCount, theme);
   if (!viewPlates) return colors;
 
