@@ -101,38 +101,6 @@ KOPPEN_COLORS[KZ.Dwb] = "#4f8c46";
 KOPPEN_COLORS[KZ.Dwc] = "#3c7a4a"; // taiga
 KOPPEN_COLORS[KZ.Dwd] = "#356e48"; // cold taiga
 
-// KOPPEN_COLORS[KZ.Af] = "#0000ff"; // rainforest — deep emerald
-// KOPPEN_COLORS[KZ.Am] = "#0000ff"; // monsoon — rich green
-// KOPPEN_COLORS[KZ.Aw] = "#0000ff"; // savanna (dry winter) — warm yellow-green
-// KOPPEN_COLORS[KZ.As] = "#0000ff"; // savanna (dry summer) — slightly drier
-// // B — arid (tans → ochres → khaki)
-// KOPPEN_COLORS[KZ.BWh] = "#f0c0a0"; // hot desert — warm sand
-// KOPPEN_COLORS[KZ.BWk] = "#f0c0a0"; // cold desert — pale grey-tan
-// KOPPEN_COLORS[KZ.BSh] = "#f0c0a0"; // hot steppe — ochre
-// KOPPEN_COLORS[KZ.BSk] = "#f0c0a0"; // cold steppe — khaki
-// // C — temperate
-// KOPPEN_COLORS[KZ.Csa] = "#00ff00"; // hot-summer mediterranean — olive-tan
-// KOPPEN_COLORS[KZ.Csb] = "#00ff00"; // warm-summer mediterranean — olive
-// KOPPEN_COLORS[KZ.Csc] = "#00ff00"; // cool mediterranean — muted olive-green
-
-// KOPPEN_COLORS[KZ.Cwa] = "#f0ff00"; // dry-winter humid subtropical — green
-// KOPPEN_COLORS[KZ.Cwb] = "#f0ff00"; // dry-winter subtropical highland
-// KOPPEN_COLORS[KZ.Cwc] = "#f0ff00"; // dry-winter cold highland
-
-// KOPPEN_COLORS[KZ.Cfa] = "#00fff0"; // humid subtropical — vivid green
-// KOPPEN_COLORS[KZ.Cfb] = "#00fff0"; // oceanic — clean mid-green
-// KOPPEN_COLORS[KZ.Cfc] = "#00fff0"; // subpolar oceanic — cooler green
-
-// KOPPEN_COLORS[KZ.Dsa] = "#ff00ff"; // dry-summer continental, hot
-// KOPPEN_COLORS[KZ.Dsb] = "#ff00ff";
-// KOPPEN_COLORS[KZ.Dsc] = "#ff00ff";
-// KOPPEN_COLORS[KZ.Dsd] = "#ff00ff"; // very cold
-
-// KOPPEN_COLORS[KZ.Dwa] = "#ff0000"; // dry-winter continental, hot
-// KOPPEN_COLORS[KZ.Dwb] = "#ff0000";
-// KOPPEN_COLORS[KZ.Dwc] = "#ff0000"; // taiga
-// KOPPEN_COLORS[KZ.Dwd] = "#ff0000"; // cold taiga
-
 KOPPEN_COLORS[KZ.Dfa] = "#4c9148"; // hot-summer humid continental
 KOPPEN_COLORS[KZ.Dfb] = "#3f8246"; // warm-summer humid continental
 KOPPEN_COLORS[KZ.Dfc] = "#2f6b4a"; // subarctic taiga — dark blue-green
@@ -205,7 +173,7 @@ const KOPPEN = {
   POLAR_WARM_MONTH_MAX_C: 6,
   ICE_CAP_WARM_MONTH_MAX_C: 0,
   TREE_MONTH_MIN_C: 10,
-  TEMPERATE_COLD_MONTH_MIN_C: 0,
+  TEMPERATE_COLD_MONTH_MIN_C: -3,
   ARID_HOT_MEAN_ANNUAL_C: 18,
   HOT_SUMMER_WARM_MONTH_MIN_C: 22,
   WARM_MONTHS_FOR_B: 4,
@@ -214,11 +182,11 @@ const KOPPEN = {
   AM_DRIEST_MONTH_BASE_MM: 100,
   AM_DRIEST_MONTH_ANNUAL_DIVISOR: 25,
   DRY_SUMMER_MAX_DRIEST_SUMMER_MM: 40,
-  DRY_SUMMER_WINTER_RATIO: 1,
-  DRY_WINTER_SUMMER_RATIO: 1.12,
-  ARID_SUMMER_DRY_OFFSET_MM: 0,
-  ARID_EVEN_OFFSET_MM: 140,
-  ARID_WINTER_DRY_OFFSET_MM: 280,
+  DRY_SUMMER_WINTER_RATIO: 3,
+  DRY_WINTER_SUMMER_RATIO: 10,
+  ARID_SUMMER_DRY_OFFSET_MM: 28,
+  ARID_EVEN_OFFSET_MM: 14,
+  ARID_WINTER_DRY_OFFSET_MM: 0,
 } as const;
 
 // ===================== Terrain override constants =====================
@@ -351,7 +319,7 @@ function synthesizeMonthlyClimate(
     driestWinterMonthMm: pick(winter, Math.min),
     wettestSummerMonthMm: pick(summer, Math.max),
     wettestWinterMonthMm: pick(winter, Math.max),
-    monthsAbove10C: tempsC.filter((t) => t > KOPPEN.TREE_MONTH_MIN_C).length,
+    monthsAbove10C: tempsC.filter((t) => t >= KOPPEN.TREE_MONTH_MIN_C).length,
   };
 }
 
@@ -366,7 +334,7 @@ function aridityThresholdMm(c: SyntheticClimate): number {
       : winterShare >= 0.7
         ? KOPPEN.ARID_SUMMER_DRY_OFFSET_MM
         : KOPPEN.ARID_EVEN_OFFSET_MM;
-  return Math.max(0, 20 * c.meanAnnualTempC + offset);
+  return Math.max(0, 2 * c.meanAnnualTempC + offset);
 }
 
 function seasonalDrynessLetter(c: SyntheticClimate): number {
@@ -428,9 +396,8 @@ export function classifyKoppen(
   }
 
   // --- E: polar ---
-  if (climate.warmestMonthC < KOPPEN.POLAR_WARM_MONTH_MAX_C) {
-    return climate.warmestMonthC < KOPPEN.ICE_CAP_WARM_MONTH_MAX_C ? KZ.EF : KZ.ET;
-  }
+  if (climate.warmestMonthC <= KOPPEN.ICE_CAP_WARM_MONTH_MAX_C) return KZ.EF;
+  if (climate.warmestMonthC < KOPPEN.POLAR_WARM_MONTH_MAX_C) return KZ.ET;
 
   // --- B: arid ---
   const pth = aridityThresholdMm(climate);

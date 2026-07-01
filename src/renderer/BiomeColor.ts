@@ -1,7 +1,5 @@
 import {
-  bandLightnessAt,
   BASE_LIGHTNESS,
-  colorFor as baseColorFor,
   BiomeColors,
   LAND_FAMILY_STOPS,
   MOISTURE_STOPS,
@@ -16,13 +14,12 @@ import {
   hexToRgb,
   hslToHex,
   internPalette,
-  invertHex,
   mixHex,
   quantizeColor,
 } from "../common/colorUtils";
 import { isWater, KOPPEN_COLORS, KOPPEN_RGB, KOPPEN_ZONE_COUNT } from "../common/koppen";
 import type { GlobeMap } from "../common/map";
-import { CONTINENTS, FEATURES, OCEANS } from "../common/settings";
+import { CONTINENTS, OCEANS } from "../common/settings";
 import { applyContrast, clamp } from "../common/util";
 
 /** ================================================
@@ -88,44 +85,6 @@ export function terrainClassOf(
     family: nearestStop(LAND_FAMILY_STOPS, e).family,
     band: nearestStop(MOISTURE_STOPS, m).band,
   };
-}
-
-/** ================================================
- *  One-stop mapper
- *  ================================================ */
-export function colorAt(
-  theme: Theme,
-  elevation: number,
-  moisture: number,
-  rainfall: number
-): string {
-  if (rainfall < 0 || rainfall > 1) {
-    throw Error("rainfall must be 0-1");
-  }
-
-  const shaped = expCurve(1 - rainfall, EXP_CURVE_K);
-  rainfall = Math.max(RAINFALL_MIN, shaped * RAINFALL_SCALE);
-
-  const { elevation: e, moisture: m } = shapeForRules(elevation, moisture, rainfall);
-
-  // Grab the climate (biome) colour for this cell — BUT when climate is off (no moisture swing),
-  // land/ice instead take the INVERSE of the sea colour. Then continue as normal: the elevation-band
-  // lightness + saturation + quantize below (and hillshade at draw time) modulate it, so inverse-of-
-  // sea land still reads its relief. Ocean always keeps its own (depth-shaded) colour.
-  const climateOff = !FEATURES.climate;
-  const baseHex =
-    climateOff && e >= 0
-      ? invertHex(BiomeColors[theme].OCEAN)
-      : baseColorFor(theme, e, m);
-  const { h, s, l } = hexToHsl(baseHex);
-
-  const adj = resolveTheme(theme);
-  const s2 = clamp(s * (adj.saturationScale ?? 1));
-  // Continuous (interpolated) band-lightness nudge — no hard step at band breaks (see biomes.ts).
-  const delta = bandLightnessAt(e, adj.lightness);
-  const l2 = clamp(l + delta);
-  // Quantize so the blend stays smooth-ish but the total palette stays small.
-  return quantizeColor(hslToHex(h, s2, l2));
 }
 
 /** ================================================

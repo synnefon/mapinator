@@ -7,16 +7,16 @@ import type { GenRequest } from "../renderer/LodPipeline";
 // country seeds the per-cell country stamp + town field read).
 type PoolConfig = { seed?: string; params?: TerrainParams; countrySeeds?: CountrySeeds };
 
-// An off-thread grow of one region's patch-local small towns (the 1400-density tail). The worker samples a
-// deterministic town field over the cap, accepted ∝ local population density (see mapWorker `towns`).
+// An off-thread grow of one region's patch-local small towns (the town tail). The worker scans the given fixed
+// scales over the cap — size = density × each scale's catchment — then keeps the largest `maxCount` (see
+// mapWorker `towns`).
 type TownRequest = {
   kind: "towns";
   center: Vec3;
   capAngle: number;
-  gridAngle: number;
-  minPop: number;
-  ceilingPop: number;
-  perCapita: number;
+  scaleAngles: number[]; // the fixed scales (rad) to scan — each sets a catchment area, hence a size band
+  urbanFraction: number; // density × catchment × this = a candidate's population
+  maxCount: number; // render floor: keep only the largest this-many settlements in the cap
   // Live dials so the tail routes + biases with the SAME values the head did (the worker's copy is stale).
   popDensityScale: number;
   coastStrength: number;

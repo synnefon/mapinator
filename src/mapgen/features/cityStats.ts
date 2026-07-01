@@ -1,7 +1,7 @@
 import { Vec3 } from "../../common/3DMath";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, type RNG } from "../../common/random";
-import { POPULATION } from "../../common/settings";
+import { CITIES } from "../../common/settings";
 import { terrainClassOf } from "../../renderer/BiomeColor";
 import type { ElevationFamily, MoistureBand } from "../../common/biomes";
 import type { NameGenerator } from "../NameGenerator";
@@ -13,11 +13,15 @@ import {
   type Settlement,
   type SettlementTier,
   type SettlementWaterKind,
-  globalCityMinPop,
-  growSettlements,
+  finishSettlements,
+  headScaleAngles,
   minLevelForPopulation,
+  type PlacedCandidate,
   type PlacedSite,
+  scanScale,
   type SettlementWorld,
+  SETTLEMENT_SCALE_ANGLES,
+  topByPopulation,
 } from "./settlements";
 
 
@@ -146,16 +150,14 @@ export function settlementProfile(args: {
 const BIG_POP = 75_000;
 const MEDIUM_POP = 20_000;
 
-// The big-city HEAD is the settlement field scanned over the WHOLE sphere at/above the global split. These
-// two set its global count + spread: a COARSER grid or a LARGER per-capita ⇒ fewer big cities. The accept ∝
-// density keeps them where people are (coasts/rivers/fertile land); the size law decides which clear the
-// split. The dense sub-split tail is the patch-local town layer (RegionTownLayer) — the SAME field at a finer
-// grid over the view — so head and tail meet at globalCityMinPop with no gap or overlap.
-const HEAD_GRID_ANGLE = 0.012; // ~0.7° candidate spacing for the global big-city scan
-const HEAD_PER_CAPITA = 100_000; // people per big-city candidate — the head's density target (tune for count)
+// The big-city HEAD is the settlement field's COARSE scales (settlements.headScaleAngles) scanned over the
+// WHOLE sphere, ranked by population, and cut to CITIES.CITY_RENDER_COUNT — the biggest places on the planet.
+// Size = density × the scale's catchment, so which cities exist and how big they are is a pure consequence of
+// the density map. The finer scales over the in-view cap are the patch-local town tail (RegionTownLayer) — the
+// SAME field, one scale ladder — so head and tail differ only by scale, with no population split between them.
 
-// A country the coarse head scan missed (no settlement cleared the split) still gets a capital: it's placed
-// at the country's most habitable OWN cell (assembleHeadSettlements), so every populated country keeps one.
+// A country the head scan missed (no city landed in the global top-N) still gets a capital: it's placed at the
+// country's most habitable OWN cell (assembleHeadSettlements), so every populated country keeps one.
 
 const siteVec = (sites: Float32Array, cell: number): Vec3 => ({ x: sites[3 * cell], y: sites[3 * cell + 1], z: sites[3 * cell + 2] });
 
@@ -208,11 +210,13 @@ export function buildSettlement(
 }
 
 /**
- * Place + assemble the world's big cities: the settlement field (settlements.ts) scanned over the WHOLE
- * sphere, emitting every settlement at/above the global split (globalCityMinPop). Identical engine, routes,
- * and water-snapping as the patch-local town tail — there is no separate "city placement" any more. Each
- * country's LARGEST result is its CAPITAL (forced onto the globe at zoom 1); a country the coarse scan missed
- * gets one synthesised at its interior anchor, so every populated country keeps a capital. Deterministic.
+ * Place + assemble the world's big cities: the settlement field's COARSE scales (settlements.headScaleAngles)
+ * scanned over the WHOLE sphere, ranked by population, and cut to CITIES.CITY_RENDER_COUNT — the biggest
+ * places on the planet. Size = density × the scale's catchment, so which cities exist and how big they are is
+ * a pure consequence of the density map; the finer scales over the view are the patch-local town tail, the
+ * SAME field one rung finer. Each country's LARGEST result is its CAPITAL (forced onto the globe at zoom 1); a
+ * country the scan's top-N missed gets one synthesised at its most habitable cell, so every populated country
+ * keeps a capital. Deterministic (cached with the map).
  */
 export function assembleHeadSettlements(args: {
   map: GlobeMap;
@@ -224,38 +228,39 @@ export function assembleHeadSettlements(args: {
   namer: NameGenerator;
 }): Settlement[] {
   const { map, seaLevel, world, countries, countryOf, mapSeed, namer } = args;
-  const cityMinPop = globalCityMinPop(POPULATION.GLOBAL_POPULATION_DENSITY.value);
-  // The big-city HEAD: the field over the whole sphere, only settlements ≥ the split. Centre is arbitrary
-  // (capAngle ≥ π is the whole sphere); the field is global-cell-id keyed, so it's the same set every time.
-  const head = growSettlements({
-    center: { x: 1, y: 0, z: 0 },
-    capAngle: Math.PI,
-    gridAngle: HEAD_GRID_ANGLE,
-    minPop: cityMinPop,
-    ceilingPop: Infinity,
-    perCapita: HEAD_PER_CAPITA,
-    planetRadiusKm: PLANET_RADIUS_KM,
-    world,
-    seed: `${mapSeed}|cities`,
-  });
+  const urbanFraction = CITIES.URBAN_FRACTION.value;
+  // The big-city HEAD: the coarse scales scanned over the whole sphere (centre arbitrary at capAngle ≥ π; the
+  // field is scale + global-cell-id keyed, so it's the same set every time), ranked and cut to the render
+  // count. Route only the survivors. Size = density × catchment, so the top-N are the genuinely largest places.
+  const candidates: PlacedCandidate[] = [];
+  for (const gridAngle of headScaleAngles()) {
+    candidates.push(...scanScale({ center: { x: 1, y: 0, z: 0 }, capAngle: Math.PI, gridAngle, urbanFraction, planetRadiusKm: PLANET_RADIUS_KM, world, seed: `${mapSeed}|cities` }));
+  }
+  const head = finishSettlements(topByPopulation(candidates, CITIES.CITY_RENDER_COUNT.value), world);
   // Group by country, largest first — the largest is the capital.
   const byCountry: PlacedSite[][] = countries.map(() => []);
   for (const s of head) if (s.countryIndex >= 0 && s.countryIndex < countries.length) byCountry[s.countryIndex].push(s);
   for (const list of byCountry) list.sort((a, b) => b.population - a.population);
-  // Land cells per country — so a country the coarse scan missed gets a capital at its most habitable OWN
-  // cell (O(its cells), once), rather than a fine sub-cell re-scan of the whole country (the former freeze).
+  // Land cells per country — so a country the top-N missed gets a capital at its most habitable OWN cell
+  // (O(its cells), once), rather than a fine sub-cell re-scan of the whole country (the former freeze).
   const cellsByCountry: number[][] = countries.map(() => []);
   for (let c = 0; c < countryOf.length; c++) {
     const ci = countryOf[c];
     if (ci >= 0 && ci < countries.length) cellsByCountry[ci].push(c);
   }
+  const coarsestCatchment = (p: Vec3): number => {
+    // The coarsest scale's cell area at this latitude (cos-corrected; p.y = sin lat) — the synthesised
+    // capital is sized by the SAME density × catchment rule the scanned cities use, just at the top scale.
+    const g = SETTLEMENT_SCALE_ANGLES[0];
+    return g * g * Math.max(1e-3, Math.sqrt(Math.max(0, 1 - p.y * p.y))) * PLANET_RADIUS_KM * PLANET_RADIUS_KM;
+  };
 
   const settlements: Settlement[] = [];
   for (const country of countries) {
     const list = byCountry[country.index];
     if (list.length === 0) {
-      // The coarse global scan found no big city here. Place the capital at the country's most habitable OWN
-      // cell — O(its cells), reusing the same density model — instead of a fine sub-cell re-scan of the whole
+      // The global top-N held no city here. Place the capital at the country's most habitable OWN cell —
+      // O(its cells), reusing the same density model — instead of a fine sub-cell re-scan of the whole
       // country region (which sampled multi-octave noise at thousands of grid points per missed country).
       const cells = cellsByCountry[country.index];
       let bestCell = country.anchorCell;
@@ -267,7 +272,8 @@ export function assembleHeadSettlements(args: {
       const center = siteVec(map.sites, bestCell);
       const f = world.fieldAt(center);
       const { anchor, waterKind } = world.routeAt(center);
-      list.push({ anchor, population: Math.round(cityMinPop), countryIndex: country.index, waterKind, ...f });
+      const population = Math.max(1, Math.round(Math.max(0, bestDensity) * coarsestCatchment(center) * urbanFraction));
+      list.push({ anchor, population, countryIndex: country.index, waterKind, ...f });
     }
     const usedFunFacts = new Set<string>(); // dedupe fun facts within this country
     list.forEach((s, idx) => {

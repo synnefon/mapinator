@@ -4,20 +4,22 @@ import { cellSuitability } from "./suitability";
 
 // ===================== The one settlement engine =====================
 // EVERY settlement on the map — the big cities shown from the globe AND the small-town tail revealed on
-// zoom — comes out of this one engine, placed by the SAME routes. There is no longer a "city" algorithm
-// and a separate "town" algorithm: there is a single deterministic field, sampled over whatever spherical
-// cap the caller wants, in whatever population window the caller wants. The head (big cities) is the field
-// over the WHOLE sphere at/above the global split; the tail (towns) is the field over the in-view cap below
-// it. Both run `growSettlements` against the SAME `SettlementWorld`, so both cluster on water and snap to
-// the coast/river/lakeshore identically.
+// zoom — comes out of this one engine, placed by the SAME routes. There is no "city" algorithm and a
+// separate "town" algorithm, and no hand-tuned population thresholds deciding which is which: there is a
+// single deterministic field whose sizes and counts fall entirely out of the population-density map.
 //
-// The field is a global jittered lat/lon grid. Each cell, by its own seeded RNG, gets a jittered position, a
-// settlement size (lognormal village/town body + Pareto city tail, see `sizeOf`), and an accept roll ∝ local
-// population density — which now INCLUDES the coast + river bonus, so settlements cluster on the water the
-// way real ones did. An accepted settlement is then ROUTED: snapped onto the drawn river, the sea shore, or
-// the lakeshore it sits by (or left inland), exactly as the big cities always were. Pure + deterministic
-// (no field/DOM/country logic of its own): the caller injects a `SettlementWorld` of field + water lookups,
-// so the whole thing is unit-testable with fakes and runs identically on the main thread and the worker.
+// SIZE = local carrying capacity. A candidate's population is density × the area it draws from × an urban
+// fraction — dense coasts grow cities, sparse interiors grow hamlets, purely because the density field says
+// so. The "area it draws from" is the fixed SCALE it sits at (SETTLEMENT_SCALE_ANGLES): coarse scales draw a
+// big catchment → big cities, fine scales a small one → villages. A scale's catchment is fixed, so a place
+// keeps its size at every zoom. `scanScale` scans one scale over a cap; the caller ranks the result and keeps
+// only as many as should render (the render count floor). The head (big cities) is the coarse scales over the
+// WHOLE sphere, cached; the tail (towns) is the finer scales over the in-view cap, joining in as you zoom.
+//
+// Each kept candidate is then ROUTED (`finishSettlements`): snapped onto the drawn river, the sea shore, or
+// the lakeshore it sits by (or left inland). Pure + deterministic (no field/DOM/country logic of its own):
+// the caller injects a `SettlementWorld` of field + water lookups, so the whole thing is unit-testable with
+// fakes and runs identically on the main thread and the worker.
 
 // The water a settlement sits on, by priority sea > large river > other water (lake/pond) > none. Drives the
 // riverside/coastal flavour split + (for big cities) a debug tint on the marker.
@@ -51,35 +53,24 @@ export type Settlement = {
   waterKind: SettlementWaterKind; // the water the marker sits ON, by priority — the river/lake/coastal flavour split
 };
 
-// ===================== PlacedSite-size law (Eeckhout 2004 / Gabaix) =====================
-// The BODY is lognormal (villages, the rural ~90%); the upper TAIL is Pareto (the few towns/cities). A pure
-// power law over-counts small towns, so most draws are the lognormal body and a small fraction come from the
-// Pareto tail, giving towns/cities up to the ceiling at the right (heavier-than-lognormal) frequency.
-const ABS_MIN_POP = 30; // smallest hamlet the field places (lognormal lower clamp)
-const LOGNORMAL_MU = 5.5; // ln-mean → median settlement ≈ e^5.5 ≈ 245 (a village), grounded to ~1400
-const LOGNORMAL_SIGMA = 1.0; // ln-spread (tighter than modern's ~1.75 — medieval was flatter + smaller)
-const TAIL_FRACTION = 0.015; // share drawn from the Pareto city tail (≈ the ~1–2% of places that were towns)
-const TAIL_CROSSOVER = 3_000; // where the body hands off to the tail (town → city)
-const TAIL_ALPHA = 1.2; // Pareto CCDF exponent for the city tail (~1400 flatter than the modern ~1.4)
-// Density calibration: emitted settlement density = popDensity × cellArea / perCapita × this. 1 ≈ exactly
-// the per-capita target; nudge to taste against the live count.
-const DENSITY_TUNING = 1;
+// ===================== The fixed scale ladder =====================
+// Candidate spacings (rad), coarse→fine. Every settlement belongs to exactly ONE scale; the area it draws its
+// population from is that scale's cell area, FIXED regardless of the viewing zoom — so a place keeps its size
+// as you zoom (choosing which scales to scan never resizes what's already shown). The coarsest scales are
+// cheap to scan over the whole sphere (the cached big-city head); the finer ones are scanned only over the
+// in-view cap (the town tail), each joining as you zoom in far enough that its cells are worth resolving.
+export const SETTLEMENT_SCALE_ANGLES = [0.04, 0.02, 0.01, 0.005, 0.0025, 0.00125];
+export const HEAD_SCALE_COUNT = 2; // the coarsest N scales are the global (cached) city head; the rest, the tail
+const SCALE_CELL_BUDGET = 12_000; // max cells a scale may scan in a cap — a finer scale joins the tail once the cap shrinks under it
 
-// A standard normal via Box–Muller (consumes two uniforms). Deterministic in `rng`.
-const gaussian = (rng: () => number): number =>
-  Math.sqrt(-2 * Math.log(Math.max(1e-9, rng()))) * Math.cos(2 * Math.PI * rng());
+/** The coarse scales scanned over the whole sphere for the cached big-city head. */
+export const headScaleAngles = (): number[] => SETTLEMENT_SCALE_ANGLES.slice(0, HEAD_SCALE_COUNT);
 
-/** PlacedSite size in [ABS_MIN_POP, ceiling): a lognormal village/town body with a Pareto city tail, so most
- *  are villages and a few are towns/cities up to the ceiling. Deterministic in `rng`, so a cell's size is
- *  fixed regardless of which window (head/tail) or zoom level queried it. */
-export const sizeOf = (rng: () => number, ceiling: number): number => {
-  if (rng() < TAIL_FRACTION) {
-    const city = TAIL_CROSSOVER * Math.pow(1 - rng(), -1 / TAIL_ALPHA); // Pareto upper tail
-    return Math.min(ceiling - 1, Math.round(city));
-  }
-  const body = Math.exp(LOGNORMAL_MU + LOGNORMAL_SIGMA * gaussian(rng)); // lognormal body
-  return Math.max(ABS_MIN_POP, Math.min(ceiling - 1, Math.round(body)));
-};
+/** The finer scales worth scanning over a cap of angular radius `capAngle` for the town tail: a scale joins
+ *  once its cell count in the cap drops under the budget (zooming in reveals finer settlements), never a head
+ *  scale (those always show from the cache). Empty when zoomed too far out — the tail is simply off there. */
+export const tailScaleAnglesForCap = (capAngle: number): number[] =>
+  SETTLEMENT_SCALE_ANGLES.slice(HEAD_SCALE_COUNT).filter((g) => Math.PI * (capAngle / g) ** 2 <= SCALE_CELL_BUDGET);
 
 // ===================== Habitability — settlements avoid deserts + ice =====================
 // A per-cell weight folded into the density, so settlements prefer wetter, ice-free land. Both penalties are
@@ -205,7 +196,7 @@ const RIVER_ON_CELLS = 0.6; // a vertex within this makes a cell river-eligible 
 const RIVER_SNAP_CELLS = 1.0; // a placed river settlement snaps to a vertex within this
 export const RIVER_GRID_CELLS = 1.5; // hash bucket edge (≥ SNAP, so the 3×3×3 scan never misses a near vertex)
 
-/** The full set of field + water lookups `growSettlements` needs, injected by the caller so the same engine
+/** The full set of field + water lookups `scanScale` + `finishSettlements` need, injected by the caller so the same engine
  *  runs on the main thread (head) and the worker (tail). Both build it via `makeSettlementWorld`. */
 export type SettlementWorld = {
   popDensityAt: (p: Vec3) => number; // people/km² at p, INCLUDING the coast/river + habitability weighting; 0 ⇒ water/uninhabitable
@@ -297,28 +288,30 @@ export type PlacedSite = {
   seaDist: number;
 };
 
+/** A settlement candidate before routing: its jittered position, its density-derived population, and its
+ *  owning country. Cheap to produce in bulk (no water snap / terrain read yet) so a whole scale can be
+ *  scanned and ranked before the few survivors within the render budget are finished into PlacedSites. */
+export type PlacedCandidate = { pos: Vec3; population: number; countryIndex: number };
+
 /**
- * Materialise the settlements of one spherical cap in one population window from the global deterministic
- * field. Iterates the jittered lat/lon grid over the cap; each cell deterministically decides its position +
- * size, is dropped outside [minPop, ceilingPop) (the head takes ≥ the split, the tail below it) BEFORE any
- * field lookup, then kept ON LAND with probability ∝ local population density (coast/river-boosted, so the
- * spread tracks the 1400 pattern). Each survivor is ROUTED — snapped onto its river / sea shore / lakeshore.
- * Deterministic per GLOBAL cell id, so panning/zooming reveals the SAME settlements in place. Pure: all field
- * + water access is through `world`.
+ * Scan ONE scale of the settlement field over a spherical cap. Iterates the jittered lat/lon grid at this
+ * scale's spacing; every land cell becomes a candidate whose population is its LOCAL CARRYING CAPACITY —
+ * density × the cell's area × `urbanFraction` — so size flows entirely from the density field, with no RNG
+ * size law and no accept roll. Deterministic per (scale, GLOBAL cell id), so panning/zooming re-scans the
+ * SAME candidates in place. Pure: all field + country access is through `world`. Water / unclaimed / zero-
+ * density cells are dropped; the caller ranks what's left and keeps only as many as should render.
  */
-export function growSettlements(args: {
+export function scanScale(args: {
   center: Vec3; // unit-sphere cap centre (any point when capAngle ≥ π — the whole-sphere head)
   capAngle: number; // angular radius of the region (rad); ≥ π ⇒ the whole sphere
-  gridAngle: number; // candidate spacing (rad) — coarse for the head, fine for the deepest tail level
-  minPop: number; // only emit settlements at least this big (the head split / per-level LOD floor)
-  ceilingPop: number; // only emit settlements below this (the head's handoff to nothing ⇒ Infinity)
-  perCapita: number; // people per settlement — the density target (1400 village body ≈ 600)
+  gridAngle: number; // this scale's candidate spacing (rad) — sets the catchment area, hence the size band
+  urbanFraction: number; // share of the cell's carried population that forms the settlement (density → size)
   planetRadiusKm: number;
   world: SettlementWorld;
   seed: string;
-}): PlacedSite[] {
-  const { center, capAngle, gridAngle, minPop, ceilingPop, perCapita, planetRadiusKm, world, seed } = args;
-  const out: PlacedSite[] = [];
+}): PlacedCandidate[] {
+  const { center, capAngle, gridAngle, urbanFraction, planetRadiusKm, world, seed } = args;
+  const out: PlacedCandidate[] = [];
   const cosCap = Math.cos(capAngle);
   const cLat = Math.asin(Math.max(-1, Math.min(1, center.y)));
   const cLon = Math.atan2(center.z, center.x);
@@ -336,7 +329,7 @@ export function growSettlements(args: {
     if (lat <= -Math.PI / 2 || lat >= Math.PI / 2) continue;
     const cosLat = Math.max(1e-3, Math.cos(lat));
     // cos(lat)-corrected cell area: the lat/lon grid is finer near the poles, but the area shrinks to match,
-    // so the accept probability — and thus the realised density — stays correct at every latitude.
+    // so the carrying capacity — and thus the realised size — stays correct at every latitude.
     const cellAreaKm2 = gridAngle * lonStep * cosLat * r2;
     const lonHalf = capAngle / cosLat + gridAngle; // generous lon span; the true-angle test below culls it
     const lonStart = Math.floor((cLon - lonHalf) / lonStep);
@@ -344,25 +337,35 @@ export function growSettlements(args: {
     if (lonEnd - lonStart + 1 > nLon) lonEnd = lonStart + nLon - 1; // a polar cap can wrap the circle — one ring max
     for (let oi = lonStart; oi <= lonEnd; oi++) {
       const oiw = ((oi % nLon) + nLon) % nLon; // wrap to [0,nLon): same spot ⇒ same cell id either side of ±π
-      const rng = makeRNG(`${seed}|${li}|${oiw}`); // GLOBAL cell id ⇒ the same settlement wherever the cap falls
+      const rng = makeRNG(`${seed}|${gridAngle}|${li}|${oiw}`); // scale + global cell id ⇒ same candidate wherever the cap falls
       const jLat = lat + (rng() - 0.5) * gridAngle;
       const jLon = oiw * lonStep + (rng() - 0.5) * lonStep;
       const pos = latLonToVec3(jLat, jLon);
       if (Vec3.dot(pos, center) < cosCap) continue; // outside the cap
-      const population = sizeOf(rng, ceilingPop);
-      if (population < minPop || population >= ceilingPop) continue; // outside this window's pop band — skip before lookups
       const ci = world.countryAt(pos);
       if (ci < 0) continue; // ocean / unclaimed
       const density = world.popDensityAt(pos);
       if (density <= 0) continue; // water / uninhabitable
-      const accept = (density * cellAreaKm2 * DENSITY_TUNING) / perCapita;
-      if (rng() >= accept) continue; // keep ∝ local population ⇒ ~1400 per-capita density
-      const { anchor, waterKind } = world.routeAt(pos);
-      const f = world.fieldAt(pos);
-      out.push({ anchor, population, countryIndex: ci, waterKind, ...f });
+      out.push({ pos, population: Math.round(density * cellAreaKm2 * urbanFraction), countryIndex: ci });
     }
   }
   return out;
+}
+
+/** Keep the `n` largest candidates by population — the render floor that decides how many settlements draw.
+ *  Pure (leaves the input untouched). Population is a continuous density product, so the ranking is stable
+ *  across re-scans: shrinking the cap only ever drops the smallest, never reshuffles what's shown. */
+export function topByPopulation<T extends { population: number }>(cands: T[], n: number): T[] {
+  return cands.length <= n ? cands.slice() : cands.slice().sort((a, b) => b.population - a.population).slice(0, n);
+}
+
+/** Route + read terrain for the kept candidates → full PlacedSites. Called only on the survivors within the
+ *  render budget (top-N city head / in-view town tail), so the per-site water snap + field read stays cheap. */
+export function finishSettlements(cands: PlacedCandidate[], world: SettlementWorld): PlacedSite[] {
+  return cands.map((c) => {
+    const { anchor, waterKind } = world.routeAt(c.pos);
+    return { anchor, population: c.population, countryIndex: c.countryIndex, waterKind, ...world.fieldAt(c.pos) };
+  });
 }
 
 // ===================== PlacedSite vocabulary + zoom-reveal ladder =====================
@@ -373,22 +376,6 @@ export function growSettlements(args: {
 // The size word a settlement goes by, purely by head count — the NOUN the popup subtitle + fun facts use,
 // distinct from SettlementTier (marker size) and the reveal level below.
 export type SettlementClass = "hamlet" | "village" | "town" | "city" | "metropolis";
-
-// The FLOOR of the split between the GLOBAL big-city head (the field over the sphere) and the PATCH-LOCAL
-// tail (the field over the view). 5,000 is the historian's "city" threshold (Bairoch). The live split is
-// globalCityMinPop().
-export const GLOBAL_CITY_MIN_POP = 5_000;
-
-// The population density (people/km²) at which the 5,000 floor yields a renderable global count — the ~1400
-// land average the model is calibrated to. Keeps the head's marker count bounded as density climbs.
-export const CITY_DENSITY_REFERENCE = 2.6;
-
-/** The live global/patch split, scaled with density: holding S = floor·(density/reference) keeps the GLOBAL
- *  head count ~constant no matter how dense the world — denser planets push more mid-cities into the bounded
- *  patch-local tail while the largest stay global. At/below the reference density it's just the 5k floor. */
-export function globalCityMinPop(density: number): number {
-  return GLOBAL_CITY_MIN_POP * Math.max(1, density / CITY_DENSITY_REFERENCE);
-}
 
 export function settlementClass(population: number): SettlementClass {
   if (population >= 1_000_000) return "metropolis";

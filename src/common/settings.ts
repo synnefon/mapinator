@@ -257,12 +257,29 @@ export const DIALS = {
   // Settlements cluster on water via the population coast/river bonus and snap onto the river/coast/lake they
   // sit by — no per-feature "buckets" any more; water affinity is emergent from the density + the snap.
   CITIES: {
-    MIN_TOWN_POP: {
-      value: 4100,
-      min: 100,
-      max: 5000,
-      step: 50,
-      doc: "smallest settlement shown as you zoom in — the population floor for the patch-local town tail at the deepest zoom. Higher = fewer, larger towns; lower = a denser sprinkle down to villages/hamlets. Shallower zoom levels scale this up so each level stays legible. (Big cities at/above the global split always show regardless.)",
+    // Size + count now fall entirely out of the density map: a settlement's population is its local density ×
+    // its catchment × URBAN_FRACTION, and how many draw is just a render count. No population threshold decides
+    // town-vs-city — the whole distribution, hamlet to metropolis, is a consequence of how density varies.
+    URBAN_FRACTION: {
+      value: 0.18,
+      min: 0.02,
+      max: 1,
+      step: 0.02,
+      doc: "share of a place's local carrying capacity (density × its catchment area) that becomes its settlement population — the one dial that scales EVERY settlement's size at once. Higher = bigger cities and towns everywhere; lower = a more rural, small-settlement world.",
+    },
+    CITY_RENDER_COUNT: {
+      value: 300,
+      min: 20,
+      max: 1200,
+      step: 10,
+      doc: "how many big cities render on the globe — the largest this-many places worldwide (each country's biggest is its capital). A pure render floor: raise it to show more, smaller cities alongside the capitals; lower it for just the major ones.",
+    },
+    TOWN_RENDER_COUNT: {
+      value: 50,
+      min: 50,
+      max: 2000,
+      step: 25,
+      doc: "how many towns render in view as you zoom in — the largest this-many settlements inside the current view. Raise for a denser sprinkle of smaller towns/villages; lower for only the larger towns. Zooming in reveals finer settlements automatically as the view shrinks.",
     },
     RIVER_MIN_STRENGTH: {
       value: 0.12,
@@ -296,7 +313,7 @@ export const DIALS = {
       min: 0.05,
       max: 100,
       step: 0.05,
-      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land. Earth ~1400 land average ≈ 2.5/km² (the default); modern Earth's global land average ≈ 54/km². The range spans near-empty worlds up to denser-than-modern-Earth (the big-city count stays renderable at any density — the global/patch split scales with it)",
+      doc: "the whole planet's master population density (people/km² before terrain factors) — the single knob that scales every world's total population up or down; terrain suitability then redistributes it across the land. Earth ~1400 land average ≈ 2.5/km² (the default); modern Earth's global land average ≈ 54/km². The range spans near-empty worlds up to denser-than-modern-Earth (denser worlds simply grow bigger settlements everywhere; how many render is the separate CITY_/TOWN_RENDER_COUNT floor)",
     },
     COAST_STRENGTH: {
       value: 1.6,
@@ -603,19 +620,19 @@ export const DIALS = {
   // it only lifts uplands out of the plain. AMPLITUDE is the only knob you'll usually touch.
   LAND_RELIEF: {
     OCTAVES: {
-      value: 4,
+      value: 4.9,
       doc: "detail layers on the continental swell; more = finer, costlier",
     },
     GAIN: {
-      value: 0.5,
+      value: 0.58,
       doc: "amplitude falloff per octave; higher = rougher",
     },
     LACUNARITY: {
-      value: 2.6,
+      value: 2.55,
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
-      value: 0.4,
+      value: 0.11,
       doc: "size of the broad uplands/plateaus; larger = fewer, bigger swells (~0.4 ≈ 2500 km)",
     },
     AMPLITUDE: {
@@ -635,7 +652,7 @@ export const DIALS = {
       doc: "amplitude falloff per octave; higher = rougher",
     },
     LACUNARITY: {
-      value: 4.15,
+      value: 5.5,
       doc: "wavelength shrink per octave",
     },
     WAVELENGTH: {
@@ -654,15 +671,15 @@ export const DIALS = {
       doc: "higher = sharper wet/dry boundaries",
     },
     WATER_PROXIMITY_EFFECT: {
-      value: 0.45,
+      value: 0.36,
       doc: "maritime humidity: max pull of moisture toward wet at the coast, fading to 0 deep inland. 0 = off; 0.25 = up to 25% of the way to fully wet at the shoreline",
     },
     DESERT_STEEPNESS: {
-      value: 0.76,
+      value: 0.54,
       doc: "desertification rate: how steeply maritime humidity drops from the coast toward the interior. >1 = deserts ramp in fast just past the coast; 1 = linear; <1 = lingers inland",
     },
     INTERIOR_DRYNESS: {
-      value: 0.74,
+      value: 0.8,
       min: 0,
       max: 1,
       step: 0.02,
@@ -705,7 +722,7 @@ export const DIALS = {
       doc: "biome MOTTLING: perturbs each cell's temperature + moisture before classifying, so neighbouring Köppen zones dither into one another instead of forming flat slabs (dither, not blur — every cell keeps a pure palette colour). 0 = crisp hard-edged zones; higher = noisier, more organic boundaries",
     },
     JITTER_SCALE: {
-      value: 0.22,
+      value: 0.26,
       min: 0.02,
       max: 1,
       step: 0.02,
@@ -945,7 +962,7 @@ export function applyTuning(overrides: TuningOverrides): void {
  *  ice → skip the polar ice caps). Mutated in place like DIALS and synced to the worker on the
  *  `tune` message — NOT pinned dials.
  *  ===================================================================== */
-export type Features = { mountains: boolean; climate: boolean };
+export type Features = { mountains: boolean };
 
 /** All features on — the normal planet. */
 export const FEATURE_DEFAULTS: Features = Object.fromEntries(

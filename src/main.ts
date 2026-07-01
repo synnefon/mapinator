@@ -673,7 +673,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // maps built with the old tuning, and ensureMap regenerates at the current view.
   function applyAdvancedTuning(): void {
     applyTuning({ ...appState.tuningOverrides }); // render-side dials (sea level, contrast, colours) on this thread
-    // Some dials (e.g. CITY.MIN_TOWN_POP) aren't in snapshotParams — they don't touch terrain gen,
+    // Some dials (e.g. CITIES.URBAN_FRACTION) aren't in snapshotParams — they don't touch terrain gen,
     // only the cheap feature/city layer. If the worker params didn't actually change, skip the costly
     // pipeline.reset() (which would regenerate the globe AND every zoomed-in detail patch) and just
     // drop the cached feature result so cities re-derive at the new dial on the next frame.

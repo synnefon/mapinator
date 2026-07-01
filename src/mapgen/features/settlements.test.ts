@@ -2,19 +2,22 @@ import { describe, expect, it } from "vitest";
 import { Vec3 } from "../../common/3DMath";
 import {
   applySettlementNoun,
-  growSettlements,
+  finishSettlements,
   habitabilityWeight,
   HABITABILITY_FLOOR,
   minLevelForPopulation,
-  type PlacedSite,
+  type PlacedCandidate,
+  scanScale,
   settlementClass,
   type SettlementWorld,
+  topByPopulation,
 } from "./settlements";
 
 // ===================== The one settlement engine =====================
-// growSettlements is pure: all field + water access is through an injected SettlementWorld. A fake world
-// (uniform habitable land, one country, no water) exercises the grid / window / accept / route machinery
-// without a real map — the same engine the head (whole sphere) and the tail (a view cap) both run.
+// scanScale is pure: all field + water access is through an injected SettlementWorld. A fake world (uniform
+// habitable land, one country, no water) exercises the grid / size / scale machinery without a real map — the
+// same engine the head (coarse scales over the whole sphere) and the tail (fine scales over a cap) both run.
+// Size = density × the scale's cell area × urbanFraction; how many render is the caller's topByPopulation cut.
 
 const R = 6371;
 const fakeWorld = (over: Partial<SettlementWorld> = {}): SettlementWorld => ({
@@ -29,40 +32,39 @@ const base = {
   center: { x: 1, y: 0, z: 0 } as Vec3, // on the equator
   capAngle: 0.1,
   gridAngle: 0.003,
-  minPop: 100,
-  ceilingPop: 8000,
-  perCapita: 17_000,
+  urbanFraction: 0.4,
   planetRadiusKm: R,
   seed: "probe",
 };
-const run = (worldOver: Partial<SettlementWorld> = {}, argsOver: Partial<typeof base> = {}): PlacedSite[] =>
-  growSettlements({ ...base, ...argsOver, world: fakeWorld(worldOver) });
+const scan = (worldOver: Partial<SettlementWorld> = {}, argsOver: Partial<typeof base> = {}): PlacedCandidate[] =>
+  scanScale({ ...base, ...argsOver, world: fakeWorld(worldOver) });
+const maxPop = (cands: PlacedCandidate[]): number => Math.max(...cands.map((c) => c.population));
+const posKey = (c: PlacedCandidate): string => `${c.pos.x.toFixed(6)},${c.pos.y.toFixed(6)},${c.pos.z.toFixed(6)}`;
 
-describe("growSettlements", () => {
+describe("scanScale (the density-driven settlement field)", () => {
   it("is location-deterministic — same args yield the identical field (no flicker on re-query)", () => {
-    expect(run()).toStrictEqual(run());
+    expect(scan()).toStrictEqual(scan());
   });
 
-  it("keeps the same settlements in place when the cap shrinks (a settlement is a property of its spot)", () => {
-    const wide = run({}, { capAngle: 0.1 });
-    const narrow = run({}, { capAngle: 0.05 }); // a sub-region of the same field
-    const key = (t: PlacedSite) => `${t.anchor.x.toFixed(6)},${t.anchor.y.toFixed(6)},${t.anchor.z.toFixed(6)}`;
-    const wideKeys = new Set(wide.map(key));
+  it("keeps the same candidates in place when the cap shrinks (a settlement is a property of its spot)", () => {
+    const wide = scan({}, { capAngle: 0.1 });
+    const narrow = scan({}, { capAngle: 0.05 }); // a sub-region of the same field
+    const wideKeys = new Set(wide.map(posKey));
     expect(narrow.length).toBeGreaterThan(0);
     expect(narrow.length).toBeLessThan(wide.length);
-    for (const t of narrow) expect(wideKeys.has(key(t))).toBe(true); // narrow ⊂ wide, in place
+    for (const t of narrow) expect(wideKeys.has(posKey(t))).toBe(true); // narrow ⊂ wide, in place
   });
 
-  it("keeps the same settlements in place when the view PANS — including across the ±π seam (no reshuffle)", () => {
+  it("keeps the same candidates in place when the view PANS — including across the ±π seam (no reshuffle)", () => {
     const onEquator = (lon: number): Vec3 => ({ x: Math.cos(lon), y: 0, z: Math.sin(lon) });
-    const k = (t: PlacedSite) => `${t.anchor.x.toFixed(7)},${t.anchor.y.toFixed(7)},${t.anchor.z.toFixed(7)}`;
+    const k = (t: PlacedCandidate) => `${t.pos.x.toFixed(7)},${t.pos.y.toFixed(7)},${t.pos.z.toFixed(7)}`;
     const stableAcross = (lonA: number, lonB: number): void => {
       const a = onEquator(lonA);
       const b = onEquator(lonB);
       const cos = Math.cos(base.capAngle);
-      const inBoth = (towns: PlacedSite[], other: Vec3) => towns.filter((t) => Vec3.dot(t.anchor, other) >= cos);
-      const fromA = new Set(inBoth(run({}, { center: a }), b).map(k));
-      const fromB = new Set(inBoth(run({}, { center: b }), a).map(k));
+      const inBoth = (towns: PlacedCandidate[], other: Vec3) => towns.filter((t) => Vec3.dot(t.pos, other) >= cos);
+      const fromA = new Set(inBoth(scan({}, { center: a }), b).map(k));
+      const fromB = new Set(inBoth(scan({}, { center: b }), a).map(k));
       expect(fromA.size).toBeGreaterThan(0);
       expect([...fromA]).toStrictEqual([...fromB].filter((key) => fromA.has(key))); // overlap identical both ways
       for (const key of fromB) expect(fromA.has(key)).toBe(true);
@@ -71,53 +73,78 @@ describe("growSettlements", () => {
     stableAcross(Math.PI - 0.03, Math.PI + 0.05); // pan across ±π (the seam)
   });
 
-  it("places every settlement inside the cap", () => {
+  it("places every candidate inside the cap", () => {
     const cos = Math.cos(base.capAngle);
-    for (const t of run()) expect(Vec3.dot(t.anchor, base.center)).toBeGreaterThanOrEqual(cos - 1e-9);
+    for (const t of scan()) expect(Vec3.dot(t.pos, base.center)).toBeGreaterThanOrEqual(cos - 1e-9);
   });
 
-  it("respects the size window [minPop, ceilingPop)", () => {
-    for (const t of run()) {
-      expect(t.population).toBeGreaterThanOrEqual(base.minPop);
-      expect(t.population).toBeLessThan(base.ceilingPop);
-    }
+  it("sizes each settlement by local carrying capacity — density × catchment × urbanFraction", () => {
+    // Doubling urbanFraction doubles every settlement's population at the same spot (nothing else changed).
+    const a = scan({}, { urbanFraction: 0.4 });
+    const b = scan({}, { urbanFraction: 0.8 });
+    expect(a.length).toBeGreaterThan(0);
+    const bByPos = new Map(b.map((c) => [posKey(c), c.population]));
+    for (const c of a) expect(bByPos.get(posKey(c))! / c.population).toBeCloseTo(2, 1);
   });
 
-  it("treats minPop as the zoom LOD — a higher floor reveals strictly fewer (bigger) settlements", () => {
-    const all = run({}, { minPop: 100 });
-    const big = run({}, { minPop: 2_000 });
-    expect(big.length).toBeLessThan(all.length);
-    for (const t of big) expect(t.population).toBeGreaterThanOrEqual(2_000);
+  it("makes a coarser scale grow proportionally bigger settlements (fixed catchment ladder)", () => {
+    // Catchment ∝ gridAngle², so doubling the spacing ~quadruples the size — the source of the size range.
+    const ratio = maxPop(scan({}, { gridAngle: 0.006 })) / maxPop(scan({}, { gridAngle: 0.003 }));
+    expect(ratio).toBeGreaterThan(3);
+    expect(ratio).toBeLessThan(5);
   });
 
-  it("clusters where population density is higher (the 1400 'settlements where people are')", () => {
-    // Dense north, sparse south; count each side of the equator over a cap that straddles it.
-    const towns = run({ popDensityAt: (p) => (p.y > 0 ? 40 : 4) }, { capAngle: 0.3 });
-    const north = towns.filter((t) => t.anchor.y > 0).length;
-    const south = towns.filter((t) => t.anchor.y < 0).length;
-    expect(north).toBeGreaterThan(south * 3); // ~10× the density ⇒ many more settlements
+  it("never places a settlement on water / unclaimed (countryAt < 0) or uninhabitable (density 0) land", () => {
+    const claimed = scan({ countryAt: (p) => (p.y > 0 ? 0 : -1) }, { capAngle: 0.3 });
+    expect(claimed.length).toBeGreaterThan(0);
+    for (const t of claimed) expect(t.pos.y).toBeGreaterThan(0);
+    const habitable = scan({ popDensityAt: (p) => (p.y > 0 ? 30 : 0) }, { capAngle: 0.3 });
+    expect(habitable.length).toBeGreaterThan(0);
+    for (const t of habitable) expect(t.pos.y).toBeGreaterThan(0);
+  });
+});
+
+describe("topByPopulation (the render-count floor)", () => {
+  it("keeps exactly the n largest by population", () => {
+    const cands = scan({ popDensityAt: (p) => (p.y > 0 ? 40 : 4) }, { capAngle: 0.3 });
+    const n = Math.floor(cands.length / 4);
+    const top = topByPopulation(cands, n);
+    expect(top.length).toBe(n);
+    const kept = new Set(top);
+    const keptMin = Math.min(...top.map((t) => t.population));
+    for (const c of cands) if (!kept.has(c)) expect(c.population).toBeLessThanOrEqual(keptMin);
   });
 
-  it("draws a village-dominated body with a thin town/city tail (lognormal + Pareto)", () => {
-    const towns = run({}, { capAngle: 0.3, minPop: 30 }); // include the whole body down to hamlets
-    expect(towns.length).toBeGreaterThan(50);
-    const pops = towns.map((t) => t.population).sort((a, b) => a - b);
-    const median = pops[Math.floor(pops.length / 2)];
-    expect(median).toBeLessThan(1500); // the bulk are villages (the lognormal body), not towns
-    expect(towns.some((t) => t.population >= 2000)).toBe(true); // but a Pareto tail of towns/cities exists
+  it("concentrates the rendered settlements where density is higher (clustering via size, not count)", () => {
+    // Every land cell is a candidate; density drives SIZE, so the top-N renders densely-peopled ground.
+    const cands = scan({ popDensityAt: (p) => (p.y > 0 ? 40 : 4) }, { capAngle: 0.3 });
+    const top = topByPopulation(cands, Math.floor(cands.length / 3));
+    const north = top.filter((t) => t.pos.y > 0).length;
+    const south = top.filter((t) => t.pos.y < 0).length;
+    expect(north).toBeGreaterThan(south * 3);
   });
 
-  it("never places a settlement on water / unclaimed land (countryAt < 0)", () => {
-    const towns = run({ countryAt: (p) => (p.y > 0 ? 0 : -1) }, { capAngle: 0.3 });
-    expect(towns.length).toBeGreaterThan(0);
-    for (const t of towns) expect(t.anchor.y).toBeGreaterThan(0);
+  it("returns a copy of everything when n exceeds the count", () => {
+    const cands = scan();
+    const all = topByPopulation(cands, cands.length + 10);
+    expect(all.length).toBe(cands.length);
+    expect(all).not.toBe(cands); // a copy — never the caller's array
   });
+});
 
-  it("routes every accepted settlement through world.routeAt (carries its water kind + snapped anchor)", () => {
+describe("finishSettlements (route + terrain read for the survivors)", () => {
+  it("routes every kept candidate through world.routeAt (carries water kind, snapped anchor, fields, population)", () => {
     const shift = (p: Vec3): Vec3 => Vec3.normalize({ x: p.x, y: p.y + 0.01, z: p.z });
-    const towns = run({ routeAt: (p) => ({ anchor: shift(p), waterKind: "river" }) });
-    expect(towns.length).toBeGreaterThan(0);
-    for (const t of towns) expect(t.waterKind).toBe("river"); // the route's classification rides through
+    const world = fakeWorld({ routeAt: (p) => ({ anchor: shift(p), waterKind: "river" }) });
+    const cands = scanScale({ ...base, world });
+    const sites = finishSettlements(cands, world);
+    expect(sites.length).toBe(cands.length);
+    for (let i = 0; i < sites.length; i++) {
+      expect(sites[i].waterKind).toBe("river"); // the route's classification rides through
+      expect(sites[i].population).toBe(cands[i].population);
+      expect(sites[i].countryIndex).toBe(cands[i].countryIndex);
+      expect(sites[i].coastDist).toBe(5); // terrain read from world.fieldAt
+    }
   });
 });
 

@@ -3,7 +3,7 @@ import type { CountrySeeds } from "../common/map";
 import type { TerrainParams } from "../common/settings";
 import { PLANET_RADIUS_KM, patchCountryOf } from "./features/countries";
 import { buildKdTree, type KdNode, nearestCell } from "./features/kdTree";
-import { buildRiverGrid, growSettlements, makeSettlementWorld, RIVER_GRID_CELLS, SETTLEMENT_WATER_KINDS } from "./features/settlements";
+import { buildRiverGrid, finishSettlements, makeSettlementWorld, type PlacedCandidate, RIVER_GRID_CELLS, scanScale, SETTLEMENT_WATER_KINDS, topByPopulation } from "./features/settlements";
 import { buildCpuCalc } from "./gpu/cpuField";
 import { MapGenerator } from "./MapGenerator";
 
@@ -36,17 +36,16 @@ export type GenerateRequest = {
   withCountry?: boolean; // stamp per-cell country from the grown base partition (detail caps, layer on)
 };
 
-/** Grow the in-view region's patch-local small-town field. Carries LIVE dial values (the worker's own
- *  settings copy is stale) so the tail routes + biases with the SAME values the big-city head did. */
+/** Grow the in-view region's patch-local town field. Carries LIVE dial values (the worker's own settings copy
+ *  is stale) so the tail routes + biases + sizes with the SAME values the big-city head did. */
 export type TownsRequest = {
   id: number;
   kind: "towns";
   center: Vec3;
   capAngle: number; // angular radius of the in-view region
-  gridAngle: number; // finest town spacing (rad)
-  minPop: number; // per-level LOD floor
-  ceilingPop: number; // handoff to the global big-city set
-  perCapita: number; // people per settlement (1400 density target)
+  scaleAngles: number[]; // the fixed scales (rad) to scan — each sets a catchment area, hence a size band
+  urbanFraction: number; // density × catchment × this = a candidate's population
+  maxCount: number; // render floor: keep only the largest this-many settlements in the cap
   popDensityScale: number; // live GLOBAL_POPULATION_DENSITY
   coastStrength: number; // live POPULATION.COAST_STRENGTH
   coastFalloff: number; // live POPULATION.COAST_FALLOFF
@@ -100,9 +99,9 @@ function handleConfigRequest(req: ConfigRequest) {
 
 function handleTownsRequest(req: TownsRequest) {
   // Grow the in-view region's patch-local settlement TAIL off-thread, through the SAME engine + routes the
-  // main thread ran for the big-city head (makeSettlementWorld + growSettlements): accepted ∝ local
-  // population density (coast/river-biased), routed + snapped to its water. ALWAYS respond so the pool
-  // frees the worker, even if we can't compute yet.
+  // main thread ran for the big-city head (makeSettlementWorld + scanScale): population = density × the scale's
+  // catchment (coast/river-biased), routed + snapped to its water. ALWAYS respond so the pool frees the worker,
+  // even if we can't compute yet.
   if (!calc || !baseTree || !countrySeeds) {
     ctx.postMessage({ id: req.id }); // not ready → null result; pool frees the worker
     return;
@@ -136,11 +135,16 @@ function handleTownsRequest(req: TownsRequest) {
     desertAversion: req.desertAversion,
     iceAversion: req.iceAversion,
   });
-  const towns = growSettlements({
-    center: req.center, capAngle: req.capAngle, gridAngle: req.gridAngle, minPop: req.minPop,
-    ceilingPop: req.ceilingPop, perCapita: req.perCapita, planetRadiusKm: PLANET_RADIUS_KM,
-    world, seed: seed ?? "towns",
-  });
+  // Scan each fixed scale over the cap (size = density × the scale's catchment), rank the union, and keep the
+  // largest `maxCount` — the render floor. Route only those survivors into full markers.
+  const candidates: PlacedCandidate[] = [];
+  for (const gridAngle of req.scaleAngles) {
+    candidates.push(...scanScale({
+      center: req.center, capAngle: req.capAngle, gridAngle, urbanFraction: req.urbanFraction,
+      planetRadiusKm: PLANET_RADIUS_KM, world, seed: seed ?? "towns",
+    }));
+  }
+  const towns = finishSettlements(topByPopulation(candidates, req.maxCount), world);
   const n = towns.length;
   const positions = new Float32Array(3 * n);
   const populations = new Float32Array(n);

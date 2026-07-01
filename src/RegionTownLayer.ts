@@ -4,7 +4,7 @@ import { makeRNG } from "./common/random";
 import { CITIES, OCEANS, POPULATION } from "./common/settings";
 import type { CountryInfo, Settlement } from "./mapgen/features";
 import { buildSettlement } from "./mapgen/features/cityStats";
-import { globalCityMinPop, type PlacedSite, SETTLEMENT_WATER_KINDS } from "./mapgen/features/settlements";
+import { type PlacedSite, SETTLEMENT_WATER_KINDS, tailScaleAnglesForCap } from "./mapgen/features/settlements";
 import type { NameGenerator } from "./mapgen/NameGenerator";
 import type { WorkerPool } from "./mapgen/WorkerPool";
 
@@ -16,21 +16,8 @@ import type { WorkerPool } from "./mapgen/WorkerPool";
 // exists at once; panning/zooming swaps the live set. Sticky: the previous region stays on screen until the
 // next grow lands (no blank flash), mirroring the terrain LOD overlay.
 
-const TOWN_MIN_LEVEL = 4; // below this the cap is too wide to hold 1400 density — globe shows big cities only
-const PER_CAPITA = 600; // people per settlement — the RURAL village body (~90% of people lived in villages,
-// ~1 per 500–700 people in 1400); this is the knob that sets how dense the on-zoom sprinkle feels.
 const CAP_MARGIN = 1.3; // grow a little past the view so a small pan doesn't immediately need a re-grow
 const RECENTER_FRACTION = 0.25; // re-grow once the view centre moves this fraction of the cap
-
-// Per-level zoom LOD, paired so the candidate-grid scan stays bounded at every level: a wide (shallow) cap
-// uses a COARSE grid and a HIGH floor (only the larger market towns); a deep cap uses a FINE grid and a low
-// floor (down to the dialled MIN_TOWN_POP). `floor` is the deepest-zoom population floor (the dial);
-// shallower levels scale it up so each level stays legible. Spacing tracks the tier (~10 km / ~5–6 km).
-// The scaled floor is CLAMPED below `headSplit` (the tail's [floor, headSplit) ceiling): a floor at/above it
-// would make the window empty, silently hiding the whole town tail at that zoom level.
-const minPopForLevel = (level: number, floor: number, headSplit: number): number =>
-  Math.min(floor * (level <= 4 ? 4 : level === 5 ? 2 : 1), 0.9 * headSplit);
-const gridAngleForLevel = (level: number): number => (level <= 4 ? 0.0016 : level === 5 ? 0.001 : 0.0006);
 
 export class RegionTownLayer {
   private current: Settlement[] = [];
@@ -47,9 +34,13 @@ export class RegionTownLayer {
    *  the feature epoch changes. Call each frame; cheap on steady-state frames (a key compare). `rainfall` is
    *  the base map's per-seed scalar, threaded through so the tail's marker profiles match the head's. */
   sync(args: { level: number; center: Vec3; capAngle: number; countries: CountryInfo[]; epoch: number; rainfall: number }): Settlement[] {
-    const { level, center, capAngle, countries, epoch, rainfall } = args;
-    if (level < TOWN_MIN_LEVEL) {
-      // Zoomed out past the town tier — drop the tail so only the global big cities remain.
+    const { center, capAngle, countries, epoch, rainfall } = args;
+    // Which fixed scales resolve in this view (finer ones join as you zoom in). Empty ⇒ zoomed too far out for
+    // any town scale — drop the tail so only the global big cities remain. The scales are chosen for the grown
+    // cap so the worker never scans more cells than its budget.
+    const grownCap = capAngle * CAP_MARGIN;
+    const scaleAngles = tailScaleAnglesForCap(grownCap);
+    if (scaleAngles.length === 0) {
       if (this.current.length) {
         this.current = [];
         this.currentKey = "";
@@ -57,22 +48,20 @@ export class RegionTownLayer {
       }
       return this.current;
     }
-    const minTownPop = CITIES.MIN_TOWN_POP.value;
-    const popDensityScale = POPULATION.GLOBAL_POPULATION_DENSITY.value;
-    const headSplit = globalCityMinPop(popDensityScale); // the tail's ceiling — big cities at/above it are the head
-    const key = this.regionKey(epoch, level, center, capAngle, minTownPop);
+    const maxCount = CITIES.TOWN_RENDER_COUNT.value;
+    const urbanFraction = CITIES.URBAN_FRACTION.value;
+    const key = this.regionKey(epoch, grownCap, center, scaleAngles.length, maxCount, urbanFraction);
     if (key === this.currentKey || key === this.requestedKey) return this.current; // already showing / in flight
     this.requestedKey = key;
     this.pool
       .growTowns({
         center,
-        capAngle: capAngle * CAP_MARGIN,
-        gridAngle: gridAngleForLevel(level),
-        minPop: minPopForLevel(level, minTownPop, headSplit),
-        ceilingPop: headSplit, // hand off to the global head at the live density-scaled split
-        perCapita: PER_CAPITA,
+        capAngle: grownCap,
+        scaleAngles, // the tail's fixed scales that resolve here; size = density × each scale's catchment
+        urbanFraction,
+        maxCount, // render floor: keep only the largest this-many settlements in view
         // Live dials so the tail routes + biases identically to the head (the worker's settings copy is stale).
-        popDensityScale,
+        popDensityScale: POPULATION.GLOBAL_POPULATION_DENSITY.value,
         coastStrength: POPULATION.COAST_STRENGTH.value,
         coastFalloff: POPULATION.COAST_FALLOFF.value,
         desertAversion: CITIES.DESERT_AVERSION.value,
@@ -89,11 +78,14 @@ export class RegionTownLayer {
     return this.current; // sticky: keep the previous region until the new settlements land
   }
 
-  // Quantise the view centre to a bucket sized to a fraction of the cap, so small pans reuse the same grow.
-  private regionKey(epoch: number, level: number, center: Vec3, capAngle: number, minTownPop: number): string {
-    const step = Math.max(1e-4, capAngle * RECENTER_FRACTION);
+  // Quantise the view centre to a bucket sized to a fraction of the cap, so small pans reuse the same grow; a
+  // coarse cap bucket + the resolving-scale count re-grow on a real zoom step (settlement sizes are zoom-fixed,
+  // so a small zoom that changes neither needs no re-grow).
+  private regionKey(epoch: number, cap: number, center: Vec3, scaleCount: number, maxCount: number, urbanFraction: number): string {
+    const step = Math.max(1e-4, cap * RECENTER_FRACTION);
     const q = (v: number): number => Math.round(v / step);
-    return `${epoch}|${level}|${minTownPop}|${q(center.x)}|${q(center.y)}|${q(center.z)}`;
+    const capBucket = Math.round(Math.log2(cap) * 4);
+    return `${epoch}|${capBucket}|${scaleCount}|${maxCount}|${urbanFraction}|${q(center.x)}|${q(center.y)}|${q(center.z)}`;
   }
 
   // Turn the worker's flat settlement field into Settlement markers, assembled the SAME way as the big-city
