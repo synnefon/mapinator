@@ -165,6 +165,9 @@ export const LOD = {
   MIN_EXPORT_POINTS: 4_000_000, // zoomed-in PNG export density floor
 } as const;
 
+export const EARTH_SURFACE_AREA_KM2 = 510_072_000; // Earth's total surface area
+export const PLANET_RADIUS_KM = Math.sqrt(EARTH_SURFACE_AREA_KM2 / (4 * Math.PI)); // ≈ 6371.05 km
+
 // HILLSHADE relief-shading dials now live in DIALS.HILLSHADE (tunable + snapshotted into
 // TerrainParams). SHADE_MIN_LAND_E — the elevation where aerial-perspective shadows reach full
 // depth — stays a structural constant in common/elevationBands.

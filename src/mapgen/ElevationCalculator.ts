@@ -1,15 +1,12 @@
 import type { NoiseFunction3D } from "simplex-noise";
 import type { Vec3 } from "../common/3DMath";
 import { SHADE_MIN_LAND_E } from "../common/elevationBands";
-import { classifyKoppen, hadleyPrecipFactor, KZ, meanAnnualTempC, moistureToPrecipMm, seasonalAmplitudeC } from "../common/koppen";
+import { classifyKoppen, EVEREST_M, KZ } from "../common/koppen";
 import { INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
+import type { ClimateWorldSampler } from "./climate/oceanExposure";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import {
-  CLIMATE_LAT_JITTER_DEG,
-  CLIMATE_LAT_JITTER_OFFSET_X,
-  CLIMATE_LAT_JITTER_OFFSET_Y,
-  CLIMATE_LAT_JITTER_OFFSET_Z,
   LAND_HAIR,
   MOISTURE_NOISE_OFFSET,
   RANGE_ENVELOPE_OFFSET,
@@ -54,6 +51,8 @@ export class ElevationCalculator {
   // Hillshade light in the local (east, north, up) tangent frame, from the fixed azimuth +
   // altitude. Precomputed here (not per cell) from the params at construction.
   private light: { e: number; n: number; u: number };
+  // Climate's terrain access at arbitrary sphere points (upwind ocean fetch, rain shadow).
+  private readonly climateWorld: ClimateWorldSampler;
 
   constructor(noise3D: NoiseFunction3D, seed: string, params: TerrainParams) {
     this.noise3D = noise3D;
@@ -69,6 +68,21 @@ export class ElevationCalculator {
       e: Math.sin(az) * Math.cos(alt),
       n: Math.cos(az) * Math.cos(alt),
       u: Math.sin(alt),
+    };
+    // The exposure march asks for BOTH elevations of each upwind sample; the one-slot cache keys
+    // on the sample object so one field evaluation serves both.
+    let cachedSite: Vec3 | undefined;
+    let cachedElevations = { elevation: 0, reportElevation: 0 };
+    const elevationsAt = (s: Vec3) => {
+      if (s !== cachedSite) {
+        cachedSite = s;
+        cachedElevations = this.elevationsAtSite(s);
+      }
+      return cachedElevations;
+    };
+    this.climateWorld = {
+      elevationAt: (s) => elevationsAt(s).elevation,
+      elevationMAt: (s) => this.reportElevationToMeters(elevationsAt(s).reportElevation),
     };
   }
 
@@ -380,9 +394,8 @@ export class ElevationCalculator {
     // (for the slope). Baked per cell → a free colour multiply at draw time.
     const shade = this.hillshadeAt(site, continentalness, elevation);
     const moisture = this.moistureAt(site, continentalness, broadContinentalness, MOISTURE.RAINFALL);
-    // Köppen biome zone — the SINGLE source for biome colour + labels. Mirrors koppen.glsl.ts:koppenZone
-    // (uses the same post-maritime moisture + the shared continentalness as the field shader).
-    const koppenZone = this.koppenZoneAt(site, elevation, reportElevation, moisture, continentalness);
+    // Köppen biome zone — the SINGLE source for biome colour + labels.
+    const koppenZone = this.koppenZoneAt(site, elevation, reportElevation);
     const ice = this.iceAt(koppenZone);
     return { elevation, reportElevation, moisture, ice, shade, plate, koppenZone };
   }
@@ -423,36 +436,57 @@ export class ElevationCalculator {
     return applyContrast(m * rainfall, MOISTURE.CONTRAST);
   }
 
+  private clampSigned(n: number): number {
+    return Math.max(-1, Math.min(1, n));
+  }
+
+  /** Elevation pair at an arbitrary sphere point when the caller has no continentalness in hand
+   *  (climate's upwind sampling) — derives it here. broadOctaves=1: the broad low-pass is only for
+   *  moisture's maritime reach, unused by elevation. */
+  private elevationsAtSite(site: Vec3): { elevation: number; reportElevation: number } {
+    const { full } = this.continentalness(site.x, site.y, site.z, 1);
+    return this.elevationAt(site, full);
+  }
+
+  /** Report elevation (normalized, waterline-pinned) → meters above sea level on the EVEREST scale,
+   *  the lapse-rate/barrier units climate synthesis expects. Flat land (incl. the whole coast) = 0 m;
+   *  only genuine mountain relief rises above it. */
+  private reportElevationToMeters(reportElevation: number): number {
+    const seaLevel = this.params.OCEANS.SEA_LEVEL;
+    const frac = Math.max(0, (reportElevation - seaLevel) / Math.max(1 - seaLevel, 1e-6));
+    return frac * EVEREST_M;
+  }
+
   /**
-   * The cell's Köppen zone index (KZ.*) — the GPU twin is koppen.glsl.ts:koppenZone, kept in sync. Climate
-   * inputs (latitude → mean temp from report elevation, a synthesized seasonal swing from latitude + continentality, precipitation
-   * from jittered moisture) are mottled by a multi-octave JITTER, then classified into a Köppen zone.
+   * The cell's Köppen zone index (KZ.*). Climate is synthesized sphere-natively (wind belts + upwind
+   * ocean exposure, sampled through `climateWorld`), then classified by the locked Köppen rules.
+   * NB: the GPU twin (koppen.glsl.ts:koppenZone) still runs the OLD pre-synthesis model — resync pending.
    */
-  private koppenZoneAt(site: Vec3, elevation: number, reportElevation: number, moisture: number, continentalness: number): number {
-    const { CLIMATE, OCEANS } = this.params;
-    const { JITTER, JITTER_SCALE, SEASONALITY, CONTINENTAL_SEASONALITY } = CLIMATE;
-    const { SEA_LEVEL, SHELF } = OCEANS;
-    const latDeg = (Math.asin(Math.max(-1, Math.min(1, site.y))) * 180) / Math.PI;
-    const absLat = Math.abs(latDeg);
-    const jT = JITTER * 8 * fbm3(this.noise3D, site.x + 11.3, site.y + 4.7, site.z + 19.1, JITTER_SCALE, 1, 5, 0.5, 2);
-    const jM = JITTER * 0.18 * fbm3(this.noise3D, site.x + 31.7, site.y + 23.9, site.z + 7.5, JITTER_SCALE, 1, 5, 0.5, 2);
-    // Latitude jitter for the classifier's precipitation-REGIME windows only (temperature/hadley
-    // stay on the true latitude): the mediterranean/monsoon bands are raw-latitude windows, and
-    // without this their edges draw perfect circles (see fieldConstants CLIMATE_LAT_JITTER_*).
-    const jLat =
-      JITTER * CLIMATE_LAT_JITTER_DEG *
-      fbm3(
-        this.noise3D,
-        site.x + CLIMATE_LAT_JITTER_OFFSET_X, site.y + CLIMATE_LAT_JITTER_OFFSET_Y, site.z + CLIMATE_LAT_JITTER_OFFSET_Z,
-        JITTER_SCALE, 1, 5, 0.5, 2
-      );
-    const regimeLat = Math.min(90, Math.abs(absLat + jLat)); // reflects at the equator, clamps at the pole
-    const matC = meanAnnualTempC(latDeg, reportElevation, SEA_LEVEL) + jT;
-    const moist = clamp(moisture + jM);
-    const continentality = smoothstep(SHELF[1], 1, continentalness);
-    const amp = seasonalAmplitudeC(absLat / 90, continentality, SEASONALITY, CONTINENTAL_SEASONALITY);
-    const precipMm = moistureToPrecipMm(moist) * hadleyPrecipFactor(absLat, CLIMATE.HADLEY);
-    return classifyKoppen(matC, matC + amp, matC - amp, precipMm, regimeLat, moist, elevation, SEA_LEVEL, continentality);
+  private koppenZoneAt(
+    site: Vec3,
+    elevation: number,
+    reportElevation: number,
+  ): number {
+    const { SEA_LEVEL } = this.params.OCEANS;
+
+    const latDeg = (Math.asin(this.clampSigned(site.y)) * 180) / Math.PI;
+    const lonDeg = (Math.atan2(site.z, site.x) * 180) / Math.PI;
+
+    return classifyKoppen({
+      site,
+
+      latDeg,
+      lonDeg,
+
+      // Normalized/rendered elevation: used for water depth bands and highland override.
+      elevation,
+
+      // Climate (report) elevation in meters above sea level, for the lapse rate.
+      elevationM: this.reportElevationToMeters(reportElevation),
+
+      seaLevel: SEA_LEVEL,
+      world: this.climateWorld,
+    });
   }
 
   /**

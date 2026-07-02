@@ -3,7 +3,7 @@ import type { Vec3 } from "../../common/3DMath";
 import { Languages, type Language } from "../../common/language";
 import type { GlobeMap } from "../../common/map";
 import { makeRNG, randomChoice } from "../../common/random";
-import { COUNTRIES, POPULATION } from "../../common/settings";
+import { COUNTRIES, EARTH_SURFACE_AREA_KM2, POPULATION } from "../../common/settings";
 import { refineSphereCurve } from "../../common/sphereCurve";
 import type { NameGenerator } from "../NameGenerator";
 import { buildAdjacency, coastDistance, vertexKey } from "./adjacency";
@@ -16,8 +16,7 @@ import { cellSlope, cellSuitability, coastBonus } from "./suitability";
 // The globe is rendered as a unit sphere; we size it to Earth EXACTLY so areas read in real units.
 // Earth's published total surface area is the anchor, and the planet radius is derived from it (via
 // 4πR²) so the two never drift — rather than the old 4π·6371² which only approximated it (≈0.0015% low).
-export const EARTH_SURFACE_AREA_KM2 = 510_072_000; // Earth's total surface area
-export const PLANET_RADIUS_KM = Math.sqrt(EARTH_SURFACE_AREA_KM2 / (4 * Math.PI)); // ≈ 6371.05 km
+
 
 /** A country's land area in km², from its share of the planet's cells (whole sphere = Earth's surface). */
 export const countryAreaKm2 = (cellCount: number, totalCells: number): number =>
