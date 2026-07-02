@@ -342,7 +342,6 @@ export function classifyKoppen(args: {
     latDeg,
     lonDeg,
     elevationM,
-    isOcean: false,
     seaLevel,
     world,
   });

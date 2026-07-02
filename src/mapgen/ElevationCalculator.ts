@@ -4,7 +4,7 @@ import { SHADE_MIN_LAND_E } from "../common/elevationBands";
 import { classifyKoppen, EVEREST_M, KZ } from "../common/koppen";
 import { INVARIANTS, type TerrainParams } from "../common/settings";
 import { applyContrast, clamp, lerp, smoothstep } from "../common/util";
-import type { ClimateWorldSampler } from "./climate/oceanExposure";
+import type { ClimateWorldSampler } from "./climate/types";
 import { fbm3, ridgedFbm3 } from "./fbm";
 import {
   LAND_HAIR,
